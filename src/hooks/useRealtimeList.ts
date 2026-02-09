@@ -18,14 +18,14 @@ export function useRealtimeList(
   onChange: (change: RealtimeChange) => void
 ) {
   const [connectionStatus, setConnectionStatus] =
-    useState<ConnectionStatus>("connecting");
+    useState<ConnectionStatus>("connected"); // optimistic — assume online until proven otherwise
   const channelRef = useRef<RealtimeChannel | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!supabaseClient || !listId) {
-      setConnectionStatus("offline");
+      // Don't immediately show offline — client may still be initializing
       return;
     }
 
@@ -85,10 +85,7 @@ export function useRealtimeList(
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
           setConnectionStatus("connected");
-        } else if (
-          status === "CLOSED" ||
-          status === "CHANNEL_ERROR"
-        ) {
+        } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
           setConnectionStatus("offline");
         } else {
           setConnectionStatus("connecting");
@@ -97,7 +94,15 @@ export function useRealtimeList(
 
     channelRef.current = channel;
 
+    // Browser connectivity events
+    const goOffline = () => setConnectionStatus("offline");
+    const goOnline = () => setConnectionStatus("connecting"); // will become "connected" on resubscribe
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+
     return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
       if (channelRef.current) {
         supabaseClient.removeChannel(channelRef.current);
         channelRef.current = null;

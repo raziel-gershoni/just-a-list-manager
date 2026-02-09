@@ -36,10 +36,14 @@ function HomeContent() {
         const data = await res.json();
         setLists(data);
 
-        // Auto-open single list (AC 4)
+        // Auto-open single list (AC 4) — only on first visit to avoid back-navigation loop
         if (data.length === 1) {
-          router.push(`/list/${data[0].id}`);
-          return;
+          const autoOpened = sessionStorage.getItem("autoOpenedSingleList");
+          if (!autoOpened) {
+            sessionStorage.setItem("autoOpenedSingleList", "true");
+            router.push(`/list/${data[0].id}`);
+            return;
+          }
         }
       }
     } catch (e) {
