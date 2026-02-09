@@ -1,0 +1,109 @@
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
+
+interface RealtimeChange {
+  table: string;
+  eventType: "INSERT" | "UPDATE" | "DELETE";
+  new: any;
+  old: any;
+}
+
+type ConnectionStatus = "connected" | "connecting" | "offline";
+
+export function useRealtimeList(
+  supabaseClient: SupabaseClient | null,
+  listId: string,
+  onChange: (change: RealtimeChange) => void
+) {
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>("connecting");
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    if (!supabaseClient || !listId) {
+      setConnectionStatus("offline");
+      return;
+    }
+
+    const channel = supabaseClient
+      .channel(`list:${listId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "items",
+          filter: `list_id=eq.${listId}`,
+        },
+        (payload) => {
+          onChangeRef.current({
+            table: "items",
+            eventType: payload.eventType as any,
+            new: payload.new,
+            old: payload.old,
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lists",
+          filter: `id=eq.${listId}`,
+        },
+        (payload) => {
+          onChangeRef.current({
+            table: "lists",
+            eventType: payload.eventType as any,
+            new: payload.new,
+            old: payload.old,
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "collaborators",
+          filter: `list_id=eq.${listId}`,
+        },
+        (payload) => {
+          onChangeRef.current({
+            table: "collaborators",
+            eventType: payload.eventType as any,
+            new: payload.new,
+            old: payload.old,
+          });
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setConnectionStatus("connected");
+        } else if (
+          status === "CLOSED" ||
+          status === "CHANNEL_ERROR"
+        ) {
+          setConnectionStatus("offline");
+        } else {
+          setConnectionStatus("connecting");
+        }
+      });
+
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [supabaseClient, listId]);
+
+  return { connectionStatus };
+}
