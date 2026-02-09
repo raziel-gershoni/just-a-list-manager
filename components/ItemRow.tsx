@@ -35,10 +35,14 @@ export default function ItemRow({
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-    // Swipe left to reveal delete
-    if (deltaX < -60) {
+    const isRtl = document.documentElement.dir === "rtl";
+    const revealDelta = isRtl ? 60 : -60;
+    const dismissDelta = isRtl ? -30 : 30;
+
+    // Swipe toward the end edge to reveal delete
+    if (isRtl ? deltaX > revealDelta : deltaX < revealDelta) {
       setSwiped(true);
-    } else if (deltaX > 30) {
+    } else if (isRtl ? deltaX < dismissDelta : deltaX > dismissDelta) {
       setSwiped(false);
     }
   };
