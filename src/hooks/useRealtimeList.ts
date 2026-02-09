@@ -29,6 +29,10 @@ export function useRealtimeList(
       return;
     }
 
+    if (!navigator.onLine) {
+      setConnectionStatus("offline");
+    }
+
     const channel = supabaseClient
       .channel(`list:${listId}`)
       .on(
@@ -82,20 +86,13 @@ export function useRealtimeList(
           });
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          setConnectionStatus("connected");
-        } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setConnectionStatus("offline");
-        }
-        // Ignore transient states (SUBSCRIBING, etc.) — keep current status
-      });
+      .subscribe(); // No status callback — don't tie UI to Realtime health
 
     channelRef.current = channel;
 
     // Browser connectivity events
     const goOffline = () => setConnectionStatus("offline");
-    const goOnline = () => setConnectionStatus("connecting"); // will become "connected" on resubscribe
+    const goOnline = () => setConnectionStatus("connected");
     window.addEventListener("offline", goOffline);
     window.addEventListener("online", goOnline);
 
