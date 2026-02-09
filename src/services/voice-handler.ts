@@ -38,7 +38,9 @@ export async function handleVoiceMessage(
   voice: TgVoice,
   from: TgUser
 ) {
-  const bot = (await import("./bot")).default;
+  const { default: bot, getMsg } = await import("./bot");
+
+  let lang: string | undefined = from.language_code;
 
   // Rate limit check — fail-closed to protect Gemini API
   const rateLimitResult = await checkRateLimit(
@@ -50,7 +52,7 @@ export async function handleVoiceMessage(
     try {
       await bot.sendMessage(
         chatId,
-        "You're sending voice messages too quickly. Please wait a moment."
+        getMsg(lang, "voice.rateLimited")
       );
     } catch {}
     return;
@@ -76,7 +78,7 @@ export async function handleVoiceMessage(
       try {
         await bot.sendMessage(
           chatId,
-          "Please open the app first to get started!",
+          getMsg(lang, "voice.noUser"),
           {
             reply_markup: {
               inline_keyboard: [
@@ -93,6 +95,8 @@ export async function handleVoiceMessage(
       } catch {}
       return;
     }
+
+    lang = user.language || from.language_code;
 
     // Get user's lists
     const { data: ownedLists } = await supabase
@@ -130,7 +134,7 @@ export async function handleVoiceMessage(
       try {
         await bot.sendMessage(
           chatId,
-          "You don't have any lists yet! Open the app to create your first list.",
+          getMsg(lang, "voice.noLists"),
           {
             reply_markup: {
               inline_keyboard: [
@@ -153,7 +157,7 @@ export async function handleVoiceMessage(
       try {
         await bot.sendMessage(
           chatId,
-          "That voice message is too long. Please keep it under 1 minute."
+          getMsg(lang, "voice.tooLong")
         );
       } catch {}
       return;
@@ -168,7 +172,7 @@ export async function handleVoiceMessage(
       try {
         await bot.sendMessage(
           chatId,
-          "That voice message is too long. Please keep it under 1 minute."
+          getMsg(lang, "voice.tooLong")
         );
       } catch {}
       return;
@@ -183,7 +187,7 @@ export async function handleVoiceMessage(
       try {
         await bot.sendMessage(
           chatId,
-          "Sorry, I couldn't understand that. Please try again or use the app."
+          getMsg(lang, "voice.error")
         );
       } catch {}
       return;
@@ -228,7 +232,7 @@ export async function handleVoiceMessage(
           try {
             await bot.sendMessage(
               chatId,
-              `I couldn't find a list named '${voiceItem.targetList}'. Open the app to create it.`
+              getMsg(lang, "voice.listNotFound").replace("{listName}", voiceItem.targetList || "")
             );
           } catch {}
           continue;
@@ -249,7 +253,8 @@ export async function handleVoiceMessage(
           targetList.id,
           voiceItem,
           user.id,
-          receipt
+          receipt,
+          lang
         );
       } else {
         await processRemoveItem(
@@ -258,7 +263,9 @@ export async function handleVoiceMessage(
           chatId,
           targetList.id,
           voiceItem,
-          receipt
+          receipt,
+          lang,
+          targetList.name
         );
       }
 
@@ -270,22 +277,22 @@ export async function handleVoiceMessage(
       const lines: string[] = [];
 
       if (receipt.added.length > 0 && receipt.removed.length === 0) {
-        lines.push(`Added to ${receipt.listName}:`);
+        lines.push(getMsg(lang, "voice.added").replace("{listName}", receipt.listName));
         for (const item of receipt.added) {
           lines.push(`- ${item}`);
         }
       } else if (receipt.removed.length > 0 && receipt.added.length === 0) {
-        lines.push(`Removed from ${receipt.listName}:`);
+        lines.push(getMsg(lang, "voice.removed").replace("{listName}", receipt.listName));
         for (const item of receipt.removed) {
           lines.push(`- ${item}`);
         }
       } else {
-        lines.push(`Updated ${receipt.listName}:`);
+        lines.push(getMsg(lang, "voice.updated").replace("{listName}", receipt.listName));
         if (receipt.added.length > 0) {
-          lines.push(`Added: ${receipt.added.join(", ")}`);
+          lines.push(getMsg(lang, "voice.addedInline").replace("{items}", receipt.added.join(", ")));
         }
         if (receipt.removed.length > 0) {
-          lines.push(`Removed: ${receipt.removed.join(", ")}`);
+          lines.push(getMsg(lang, "voice.removedInline").replace("{items}", receipt.removed.join(", ")));
         }
       }
 
@@ -300,7 +307,7 @@ export async function handleVoiceMessage(
     try {
       await bot.sendMessage(
         chatId,
-        "Sorry, I couldn't understand that. Please try again or use the app."
+        getMsg(lang, "voice.error")
       );
     } catch {}
   } finally {
@@ -315,8 +322,10 @@ async function processAddItem(
   listId: string,
   voiceItem: VoiceItem,
   userId: string,
-  receipt: { added: string[]; removed: string[] }
+  receipt: { added: string[]; removed: string[] },
+  lang: string | undefined
 ) {
+  const { getMsg } = await import("./bot");
   // Check for recyclable items via fuzzy match
   const matches = await findFuzzyMatch(listId, voiceItem.text);
 
@@ -331,7 +340,7 @@ async function processAddItem(
     if (similarity > 0.6) {
       // High confidence — auto-recycle
       await recycleItem(match.id);
-      receipt.added.push(`${match.text} (recycled)`);
+      receipt.added.push(`${match.text} ${getMsg(lang, "voice.recycledLabel")}`);
       return;
     }
     // Low confidence (0.3–0.6) — fall through to create new item
@@ -344,7 +353,7 @@ async function processAddItem(
     );
     if (similarity > 0.6) {
       await recycleItem(bestMatch.id);
-      receipt.added.push(`${bestMatch.text} (recycled)`);
+      receipt.added.push(`${bestMatch.text} ${getMsg(lang, "voice.recycledLabel")}`);
       return;
     }
     // Low confidence — fall through to create new item
@@ -376,8 +385,11 @@ async function processRemoveItem(
   chatId: number,
   listId: string,
   voiceItem: VoiceItem,
-  receipt: { added: string[]; removed: string[] }
+  receipt: { added: string[]; removed: string[] },
+  lang: string | undefined,
+  listName: string
 ) {
+  const { getMsg } = await import("./bot");
   // Search active items by exact match first
   const { data: exactMatches } = await supabase
     .from("items")
@@ -444,7 +456,9 @@ async function processRemoveItem(
     try {
       await bot.sendMessage(
         chatId,
-        `'${completedMatch[0].text}' is already checked off in the list.`
+        getMsg(lang, "voice.alreadyCheckedOff")
+          .replace("{item}", completedMatch[0].text)
+          .replace("{listName}", listName)
       );
     } catch {}
     return;
@@ -453,7 +467,9 @@ async function processRemoveItem(
   try {
     await bot.sendMessage(
       chatId,
-      `Couldn't find '${voiceItem.text}' in the list.`
+      getMsg(lang, "voice.notFound")
+        .replace("{item}", voiceItem.text)
+        .replace("{listName}", listName)
     );
   } catch {}
 }

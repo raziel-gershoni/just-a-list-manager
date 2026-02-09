@@ -57,6 +57,10 @@
     "listNotFound": "I couldn't find a list named '{listName}'. Open the app to create it.",
     "alreadyCheckedOff": "'{item}' is already checked off in {listName}.",
     "notFound": "Couldn't find '{item}' in {listName}.",
+    "noUser": "Please open the app first to get started!",
+    "tooLong": "That voice message is too long. Please keep it under 1 minute.",
+    "addedInline": "Added: {items}",
+    "removedInline": "Removed: {items}",
     "pickItem": "Which one did you mean?",
     "createNew": "Create new"
   },

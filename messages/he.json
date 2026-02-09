@@ -57,6 +57,10 @@
     "listNotFound": "לא מצאתי רשימה בשם '{listName}'. פתח את האפליקציה כדי ליצור אותה.",
     "alreadyCheckedOff": "'{item}' כבר מסומן ב{listName}.",
     "notFound": "לא מצאתי '{item}' ב{listName}.",
+    "noUser": "פתח את האפליקציה כדי להתחיל!",
+    "tooLong": "ההודעה הקולית ארוכה מדי. ההגבלה היא דקה.",
+    "addedInline": "נוסף: {items}",
+    "removedInline": "הוסר: {items}",
     "pickItem": "לאיזה התכוונת?",
     "createNew": "צור חדש"
   },

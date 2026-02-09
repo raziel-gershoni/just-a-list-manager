@@ -16,7 +16,7 @@ const allMessages: Record<string, typeof enMessages> = {
   ru: ruMessages,
 };
 
-function getMsg(lang: string | undefined, path: string): string {
+export function getMsg(lang: string | undefined, path: string): string {
   const msgs = allMessages[lang || "en"] || allMessages.en;
   const keys = path.split(".");
   let val: any = msgs;

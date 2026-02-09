@@ -57,6 +57,10 @@
     "listNotFound": "Не нашёл список '{listName}'. Откройте приложение, чтобы создать его.",
     "alreadyCheckedOff": "'{item}' уже отмечен в {listName}.",
     "notFound": "Не нашёл '{item}' в {listName}.",
+    "noUser": "Откройте приложение, чтобы начать!",
+    "tooLong": "Голосовое сообщение слишком длинное. Ограничение — 1 минута.",
+    "addedInline": "Добавлено: {items}",
+    "removedInline": "Удалено: {items}",
     "pickItem": "Что вы имели в виду?",
     "createNew": "Создать новый"
   },
