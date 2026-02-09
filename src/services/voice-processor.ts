@@ -1,6 +1,6 @@
 /**
  * Voice Processor — abstracts voice-to-structured-data processing.
- * Current implementation: Gemini 2.0 Flash multimodal (audio → JSON).
+ * Current implementation: Gemini 3 Flash multimodal (audio → JSON).
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -28,7 +28,7 @@ export class GeminiVoiceProcessor implements VoiceProcessor {
 
   async process(audio: Buffer, listNames: string[]): Promise<VoiceResult> {
     const model = this.genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-3-flash",
     });
 
     const audioBase64 = audio.toString("base64");
