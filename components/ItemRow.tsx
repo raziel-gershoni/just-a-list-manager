@@ -45,15 +45,17 @@ export default function ItemRow({
 
   return (
     <div className="relative overflow-hidden">
-      {/* Delete button behind */}
-      <div className="absolute inset-y-0 end-0 flex items-center">
-        <button
-          onClick={() => onDelete(id)}
-          className="bg-tg-destructive text-white h-full px-5 flex items-center"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
+      {/* Delete button behind — only rendered when swiped */}
+      {swiped && (
+        <div className="absolute inset-y-0 end-0 flex items-center">
+          <button
+            onClick={() => onDelete(id)}
+            className="bg-tg-destructive text-white h-full px-5 flex items-center"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Main row */}
       <div

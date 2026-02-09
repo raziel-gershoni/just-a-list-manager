@@ -85,11 +85,10 @@ export function useRealtimeList(
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
           setConnectionStatus("connected");
-        } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
+        } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           setConnectionStatus("offline");
-        } else {
-          setConnectionStatus("connecting");
         }
+        // Ignore transient states (SUBSCRIBING, etc.) — keep current status
       });
 
     channelRef.current = channel;
