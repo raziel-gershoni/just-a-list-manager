@@ -8,9 +8,19 @@ import React, {
   useCallback,
   useRef,
 } from "react";
+import { NextIntlClientProvider } from "next-intl";
 import { createBrowserClient } from "@/src/lib/supabase";
 import { isRtl, resolveLocale, type SupportedLocale } from "@/src/lib/i18n";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import enMessages from "@/messages/en.json";
+import heMessages from "@/messages/he.json";
+import ruMessages from "@/messages/ru.json";
+
+const allMessages: Record<SupportedLocale, typeof enMessages> = {
+  en: enMessages,
+  he: heMessages,
+  ru: ruMessages,
+};
 
 interface TelegramUser {
   id: number;
@@ -192,7 +202,9 @@ export default function TelegramProvider({
     <TelegramContext.Provider
       value={{ user, initData, locale, supabaseClient, isReady }}
     >
-      {children}
+      <NextIntlClientProvider locale={locale} messages={allMessages[locale]}>
+        {children}
+      </NextIntlClientProvider>
     </TelegramContext.Provider>
   );
 }

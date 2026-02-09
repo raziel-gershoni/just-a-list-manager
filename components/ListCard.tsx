@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { ChevronRight, Users } from "lucide-react";
 
 interface ListCardProps {
@@ -18,6 +19,7 @@ export default function ListCard({
   role,
   onClick,
 }: ListCardProps) {
+  const t = useTranslations('lists');
   const total = activeCount + completedCount;
 
   return (
@@ -28,7 +30,9 @@ export default function ListCard({
       <div className="flex-1 min-w-0">
         <h3 className="font-medium text-tg-text truncate">{name}</h3>
         <p className="text-sm text-tg-hint mt-0.5">
-          {activeCount} active{completedCount > 0 && ` / ${total} total`}
+          {completedCount > 0
+            ? t('activeCount', { active: activeCount, total })
+            : `${activeCount}`}
         </p>
       </div>
       <div className="flex items-center gap-2">

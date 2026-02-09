@@ -6,6 +6,25 @@
 
 import TelegramBot from "node-telegram-bot-api";
 import { createServerClient } from "@/src/lib/supabase";
+import enMessages from "@/messages/en.json";
+import heMessages from "@/messages/he.json";
+import ruMessages from "@/messages/ru.json";
+
+const allMessages: Record<string, typeof enMessages> = {
+  en: enMessages,
+  he: heMessages,
+  ru: ruMessages,
+};
+
+function getMsg(lang: string | undefined, path: string): string {
+  const msgs = allMessages[lang || "en"] || allMessages.en;
+  const keys = path.split(".");
+  let val: any = msgs;
+  for (const k of keys) {
+    val = val?.[k];
+  }
+  return (val as string) || "";
+}
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN!, {
   polling: false,
@@ -64,16 +83,9 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
     return;
   }
 
-  // Welcome message with menu button
-  const welcomeMessages: Record<string, string> = {
-    en: "Welcome to Just a List! \u{1F4DD}\n\nSend me a voice message to add items to your lists, or open the app to manage them.",
-    he: "\u{05D1}\u{05E8}\u{05D5}\u{05DA} \u{05D4}\u{05D1}\u{05D0} \u{05DC}\u{05E1}\u{05EA}\u{05DD} \u{05E8}\u{05E9}\u{05D9}\u{05DE}\u{05D4}! \u{1F4DD}\n\n\u{05E9}\u{05DC}\u{05D7} \u{05DC}\u{05D9} \u{05D4}\u{05D5}\u{05D3}\u{05E2}\u{05D4} \u{05E7}\u{05D5}\u{05DC}\u{05D9}\u{05EA} \u{05DB}\u{05D3}\u{05D9} \u{05DC}\u{05D4}\u{05D5}\u{05E1}\u{05D9}\u{05E3} \u{05E4}\u{05E8}\u{05D9}\u{05D8}\u{05D9}\u{05DD} \u{05DC}\u{05E8}\u{05E9}\u{05D9}\u{05DE}\u{05D5}\u{05EA}, \u{05D0}\u{05D5} \u{05E4}\u{05EA}\u{05D7} \u{05D0}\u{05EA} \u{05D4}\u{05D0}\u{05E4}\u{05DC}\u{05D9}\u{05E7}\u{05E6}\u{05D9}\u{05D4} \u{05DC}\u{05E0}\u{05D9}\u{05D4}\u{05D5}\u{05DC}.",
-    ru: "\u{0414}\u{043E}\u{0431}\u{0440}\u{043E} \u{043F}\u{043E}\u{0436}\u{0430}\u{043B}\u{043E}\u{0432}\u{0430}\u{0442}\u{044C} \u{0432} \u{041F}\u{0440}\u{043E}\u{0441}\u{0442}\u{043E} \u{0441}\u{043F}\u{0438}\u{0441}\u{043E}\u{043A}! \u{1F4DD}\n\n\u{041E}\u{0442}\u{043F}\u{0440}\u{0430}\u{0432}\u{044C}\u{0442}\u{0435} \u{0433}\u{043E}\u{043B}\u{043E}\u{0441}\u{043E}\u{0432}\u{043E}\u{0435} \u{0441}\u{043E}\u{043E}\u{0431}\u{0449}\u{0435}\u{043D}\u{0438}\u{0435}, \u{0447}\u{0442}\u{043E}\u{0431}\u{044B} \u{0434}\u{043E}\u{0431}\u{0430}\u{0432}\u{0438}\u{0442}\u{044C} \u{044D}\u{043B}\u{0435}\u{043C}\u{0435}\u{043D}\u{0442}\u{044B} \u{0432} \u{0441}\u{043F}\u{0438}\u{0441}\u{043A}\u{0438}, \u{0438}\u{043B}\u{0438} \u{043E}\u{0442}\u{043A}\u{0440}\u{043E}\u{0439}\u{0442}\u{0435} \u{043F}\u{0440}\u{0438}\u{043B}\u{043E}\u{0436}\u{0435}\u{043D}\u{0438}\u{0435}.",
-  };
-
   await bot.sendMessage(
     chatId,
-    welcomeMessages[language || "en"] || welcomeMessages.en,
+    getMsg(language, "bot.welcome"),
     {
       reply_markup: {
         inline_keyboard: [
@@ -102,15 +114,10 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
 bot.onText(/\/help/, async (msg) => {
   const chatId = msg.chat.id;
   const lang = msg.from?.language_code;
-  const helpMessages: Record<string, string> = {
-    en: "Send me a voice message to add or remove items from your lists.\n\nExamples:\n\u2022 \"Add milk and eggs to Groceries\"\n\u2022 \"Remove bread from Shopping\"\n\nOpen the app to create and manage lists.",
-    he: "\u{05E9}\u{05DC}\u{05D7} \u{05DC}\u{05D9} \u{05D4}\u{05D5}\u{05D3}\u{05E2}\u{05D4} \u{05E7}\u{05D5}\u{05DC}\u{05D9}\u{05EA} \u{05DB}\u{05D3}\u{05D9} \u{05DC}\u{05D4}\u{05D5}\u{05E1}\u{05D9}\u{05E3} \u{05D0}\u{05D5} \u{05DC}\u{05D4}\u{05E1}\u{05D9}\u{05E8} \u{05E4}\u{05E8}\u{05D9}\u{05D8}\u{05D9}\u{05DD} \u{05DE}\u{05D4}\u{05E8}\u{05E9}\u{05D9}\u{05DE}\u{05D5}\u{05EA} \u{05E9}\u{05DC}\u{05DA}.\n\n\u{05D3}\u{05D5}\u{05D2}\u{05DE}\u{05D0}\u{05D5}\u{05EA}:\n\u2022 \"\u{05EA}\u{05D5}\u{05E1}\u{05D9}\u{05E3} \u{05D7}\u{05DC}\u{05D1} \u{05D5}\u{05D1}\u{05D9}\u{05E6}\u{05D9}\u{05DD} \u{05DC}\u{05E7}\u{05E0}\u{05D9}\u{05D5}\u{05EA}\"\n\u2022 \"\u{05EA}\u{05E1}\u{05D9}\u{05E8} \u{05DC}\u{05D7}\u{05DD} \u{05DE}\u{05D4}\u{05E8}\u{05E9}\u{05D9}\u{05DE}\u{05D4}\"\n\n\u{05E4}\u{05EA}\u{05D7} \u{05D0}\u{05EA} \u{05D4}\u{05D0}\u{05E4}\u{05DC}\u{05D9}\u{05E7}\u{05E6}\u{05D9}\u{05D4} \u{05DC}\u{05D9}\u{05E6}\u{05D9}\u{05E8}\u{05D4} \u{05D5}\u{05E0}\u{05D9}\u{05D4}\u{05D5}\u{05DC} \u{05E8}\u{05E9}\u{05D9}\u{05DE}\u{05D5}\u{05EA}.",
-    ru: "\u{041E}\u{0442}\u{043F}\u{0440}\u{0430}\u{0432}\u{044C}\u{0442}\u{0435} \u{043C}\u{043D}\u{0435} \u{0433}\u{043E}\u{043B}\u{043E}\u{0441}\u{043E}\u{0432}\u{043E}\u{0435} \u{0441}\u{043E}\u{043E}\u{0431}\u{0449}\u{0435}\u{043D}\u{0438}\u{0435}, \u{0447}\u{0442}\u{043E}\u{0431}\u{044B} \u{0434}\u{043E}\u{0431}\u{0430}\u{0432}\u{0438}\u{0442}\u{044C} \u{0438}\u{043B}\u{0438} \u{0443}\u{0434}\u{0430}\u{043B}\u{0438}\u{0442}\u{044C} \u{044D}\u{043B}\u{0435}\u{043C}\u{0435}\u{043D}\u{0442}\u{044B} \u{0438}\u{0437} \u{0441}\u{043F}\u{0438}\u{0441}\u{043A}\u{043E}\u{0432}.\n\n\u{041F}\u{0440}\u{0438}\u{043C}\u{0435}\u{0440}\u{044B}:\n\u2022 \"\u{0414}\u{043E}\u{0431}\u{0430}\u{0432}\u{044C} \u{043C}\u{043E}\u{043B}\u{043E}\u{043A}\u{043E} \u{0438} \u{044F}\u{0439}\u{0446}\u{0430} \u{0432} \u{041F}\u{0440}\u{043E}\u{0434}\u{0443}\u{043A}\u{0442}\u{044B}\"\n\u2022 \"\u{0423}\u{0431}\u{0435}\u{0440}\u{0438} \u{0445}\u{043B}\u{0435}\u{0431} \u{0438}\u{0437} \u{041F}\u{043E}\u{043A}\u{0443}\u{043F}\u{043E}\u{043A}\"\n\n\u{041E}\u{0442}\u{043A}\u{0440}\u{043E}\u{0439}\u{0442}\u{0435} \u{043F}\u{0440}\u{0438}\u{043B}\u{043E}\u{0436}\u{0435}\u{043D}\u{0438}\u{0435} \u{0434}\u{043B}\u{044F} \u{0441}\u{043E}\u{0437}\u{0434}\u{0430}\u{043D}\u{0438}\u{044F} \u{0438} \u{0443}\u{043F}\u{0440}\u{0430}\u{0432}\u{043B}\u{0435}\u{043D}\u{0438}\u{044F} \u{0441}\u{043F}\u{0438}\u{0441}\u{043A}\u{0430}\u{043C}\u{0438}.",
-  };
 
   await bot.sendMessage(
     chatId,
-    helpMessages[lang || "en"] || helpMessages.en,
+    getMsg(lang, "bot.help"),
     {
       reply_markup: {
         inline_keyboard: [
@@ -134,7 +141,9 @@ export async function sendApprovalRequest(
   try {
     await bot.sendMessage(
       ownerTelegramId,
-      `${requesterName} wants to join your list "${listName}"`,
+      getMsg("en", "bot.approvalRequest")
+        .replace("{userName}", requesterName)
+        .replace("{listName}", listName),
       {
         reply_markup: {
           inline_keyboard: [
@@ -208,7 +217,7 @@ bot.on("callback_query", async (query) => {
         if (isApprove) {
           await bot.sendMessage(
             requesterTgId,
-            `You've been added to "${listName}"!`,
+            getMsg("en", "share.approvedMessage").replace("{listName}", listName),
             {
               reply_markup: {
                 inline_keyboard: [
@@ -220,7 +229,7 @@ bot.on("callback_query", async (query) => {
         } else {
           await bot.sendMessage(
             requesterTgId,
-            `Your request to join "${listName}" was declined.`
+            getMsg("en", "share.declinedMessage").replace("{listName}", listName)
           );
         }
       } catch (e) {
@@ -237,8 +246,8 @@ bot.on("callback_query", async (query) => {
     try {
       await bot.editMessageText(
         isApprove
-          ? `\u2705 ${requesterName} has been added to "${listName}"`
-          : `\u274C Request from ${requesterName} for "${listName}" was declined`,
+          ? getMsg("en", "bot.approved").replace("{userName}", requesterName).replace("{listName}", listName)
+          : getMsg("en", "bot.declined").replace("{userName}", requesterName).replace("{listName}", listName),
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,

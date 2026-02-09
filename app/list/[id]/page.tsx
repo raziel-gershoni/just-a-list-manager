@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { ArrowLeft, Share2, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
@@ -24,6 +25,7 @@ interface ItemData {
 
 function ListContent() {
   const { initData, isReady, supabaseClient } = useTelegram();
+  const t = useTranslations();
   const router = useRouter();
   const params = useParams();
   const listId = params.id as string;
@@ -223,7 +225,7 @@ function ListContent() {
       const timeout = setTimeout(() => setUndoAction(null), 4000);
 
       setUndoAction({
-        message: "Item deleted",
+        message: t('items.deleted'),
         undo: () => {
           clearTimeout(timeout);
           setUndoAction(null);
@@ -276,7 +278,7 @@ function ListContent() {
 
     const timeout = setTimeout(() => setUndoAction(null), 4000);
     setUndoAction({
-      message: `Cleared ${completedItems.length} items`,
+      message: t('items.clearedCount', { count: completedItems.length }),
       undo: () => {
         clearTimeout(timeout);
         setUndoAction(null);
@@ -374,7 +376,7 @@ function ListContent() {
               ) : (
                 <ChevronRight className="w-4 h-4" />
               )}
-              Completed ({completedItems.length})
+              {t('items.completedSection', { count: completedItems.length })}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -383,7 +385,7 @@ function ListContent() {
                 className="ms-auto text-tg-destructive text-xs flex items-center gap-1"
               >
                 <Trash2 className="w-3 h-3" />
-                Clear
+                {t('items.clearCompleted')}
               </button>
             </button>
             {showCompleted &&
@@ -402,8 +404,8 @@ function ListContent() {
 
         {activeItems.length === 0 && completedItems.length === 0 && (
           <div className="text-center text-tg-hint py-16">
-            <p className="text-lg mb-1">This list is empty</p>
-            <p className="text-sm">Add items above or send a voice message</p>
+            <p className="text-lg mb-1">{t('items.emptyTitle')}</p>
+            <p className="text-sm">{t('items.emptyDescription')}</p>
           </div>
         )}
       </div>
@@ -416,7 +418,7 @@ function ListContent() {
             onClick={undoAction.undo}
             className="text-sm font-semibold ms-4"
           >
-            Undo
+            {t('common.undo')}
           </button>
         </div>
       )}

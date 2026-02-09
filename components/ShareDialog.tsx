@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { X, Copy, Check, Link2, Trash2 } from "lucide-react";
 import { useTelegram } from "./TelegramProvider";
 
@@ -26,6 +27,7 @@ export default function ShareDialog({
   onClose,
 }: ShareDialogProps) {
   const { initData } = useTelegram();
+  const t = useTranslations('share');
   const [permission, setPermission] = useState<"view" | "edit">("edit");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -101,7 +103,7 @@ export default function ShareDialog({
       <div className="bg-tg-bg w-full max-w-lg rounded-t-2xl p-6 max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-tg-text">
-            Share &ldquo;{listName}&rdquo;
+            {t('title')} &ldquo;{listName}&rdquo;
           </h2>
           <button onClick={onClose} className="p-1">
             <X className="w-5 h-5 text-tg-hint" />
@@ -118,7 +120,7 @@ export default function ShareDialog({
                 : "bg-tg-secondary-bg text-tg-hint"
             }`}
           >
-            Can edit
+            {t('editPerm')}
           </button>
           <button
             onClick={() => setPermission("view")}
@@ -128,7 +130,7 @@ export default function ShareDialog({
                 : "bg-tg-secondary-bg text-tg-hint"
             }`}
           >
-            View only
+            {t('view')}
           </button>
         </div>
 
@@ -156,7 +158,7 @@ export default function ShareDialog({
             className="w-full py-3 rounded-xl bg-tg-button text-tg-button-text font-medium mb-6 flex items-center justify-center gap-2 disabled:opacity-50"
           >
             <Link2 className="w-4 h-4" />
-            Generate invite link
+            {t('generateLink')}
           </button>
         )}
 
@@ -164,7 +166,7 @@ export default function ShareDialog({
         {collaborators.length > 0 && (
           <>
             <h3 className="text-sm font-medium text-tg-section-header mb-2">
-              Collaborators
+              {t('collaborators')}
             </h3>
             <div className="space-y-2">
               {collaborators.map((c) => (
@@ -178,10 +180,10 @@ export default function ShareDialog({
                     </span>
                     <span className="text-xs text-tg-hint ms-2">
                       {c.status === "pending"
-                        ? "Pending"
+                        ? t('pendingApproval')
                         : c.permission === "edit"
-                          ? "Can edit"
-                          : "View only"}
+                          ? t('editPerm')
+                          : t('view')}
                     </span>
                   </div>
                   <span
@@ -193,7 +195,11 @@ export default function ShareDialog({
                           : "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
                     }`}
                   >
-                    {c.status}
+                    {c.status === "approved"
+                      ? t('approved')
+                      : c.status === "pending"
+                        ? t('pendingApproval')
+                        : t('declined')}
                   </span>
                 </div>
               ))}

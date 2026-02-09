@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Plus, Loader2 } from "lucide-react";
 import { useTelegram } from "./TelegramProvider";
 
@@ -16,6 +17,7 @@ interface AddItemInputProps {
 
 export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
   const { initData } = useTelegram();
+  const t = useTranslations();
   const [value, setValue] = useState("");
   const [suggestions, setSuggestions] = useState<RecyclableItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -139,7 +141,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
               onFocus={() => {
                 if (suggestions.length > 0) setShowSuggestions(true);
               }}
-              placeholder="Add item..."
+              placeholder={t('items.addPlaceholder')}
               className="w-full px-4 py-2.5 rounded-xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint outline-none text-base"
             />
             {isSearching && (
@@ -165,7 +167,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
                 className="w-full px-4 py-3 text-start text-tg-text hover:bg-tg-secondary-bg active:bg-tg-secondary-bg transition-colors border-b border-border last:border-b-0"
               >
                 {item.text}
-                <span className="text-xs text-tg-hint ms-2">(recycled)</span>
+                <span className="text-xs text-tg-hint ms-2">{t('items.recycled')}</span>
               </button>
             ))}
           </div>

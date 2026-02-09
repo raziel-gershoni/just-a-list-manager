@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { WifiOff, RefreshCw } from "lucide-react";
 
 interface OfflineIndicatorProps {
@@ -7,6 +8,8 @@ interface OfflineIndicatorProps {
 }
 
 export default function OfflineIndicator({ status }: OfflineIndicatorProps) {
+  const t = useTranslations('common');
+
   if (status === "connected") return null;
 
   return (
@@ -14,12 +17,12 @@ export default function OfflineIndicator({ status }: OfflineIndicatorProps) {
       {status === "offline" ? (
         <>
           <WifiOff className="w-3.5 h-3.5 text-tg-hint" />
-          <span className="text-xs text-tg-hint">Offline</span>
+          <span className="text-xs text-tg-hint">{t('offline')}</span>
         </>
       ) : (
         <>
           <RefreshCw className="w-3.5 h-3.5 text-tg-hint animate-spin" />
-          <span className="text-xs text-tg-hint">Syncing...</span>
+          <span className="text-xs text-tg-hint">{t('syncing')}</span>
         </>
       )}
     </div>

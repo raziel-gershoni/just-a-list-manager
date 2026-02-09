@@ -2,11 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 
 function InviteContent() {
   const { initData, isReady } = useTelegram();
+  const t = useTranslations();
   const params = useParams();
   const router = useRouter();
   const token = params.token as string;
@@ -82,7 +84,7 @@ function InviteContent() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <Loader2 className="w-8 h-8 text-tg-button animate-spin mb-4" />
-        <p className="text-tg-hint">Processing invite...</p>
+        <p className="text-tg-hint">{t('share.processingInvite')}</p>
       </div>
     );
   }
@@ -94,14 +96,14 @@ function InviteContent() {
           <span className="text-2xl">!</span>
         </div>
         <h2 className="text-lg font-semibold text-tg-text mb-2">
-          Invite not valid
+          {t('share.inviteInvalid')}
         </h2>
         <p className="text-tg-hint mb-6">{errorMessage}</p>
         <button
           onClick={() => router.push("/")}
           className="px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
         >
-          Go home
+          {t('common.goHome')}
         </button>
       </div>
     );
@@ -112,19 +114,19 @@ function InviteContent() {
       <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
         <Loader2 className="w-8 h-8 text-tg-button animate-spin mb-4" />
         <h2 className="text-lg font-semibold text-tg-text mb-2">
-          Waiting for approval
+          {t('share.waitingApproval')}
         </h2>
         {listName && (
           <p className="text-tg-text mb-1 font-medium">{listName}</p>
         )}
         <p className="text-tg-hint mb-8">
-          The list owner will review your request.
+          {t('share.waitingDescription')}
         </p>
         <button
           onClick={cancelRequest}
           className="px-6 py-3 rounded-xl bg-tg-secondary-bg text-tg-text font-medium"
         >
-          Cancel request
+          {t('share.cancelRequest')}
         </button>
       </div>
     );

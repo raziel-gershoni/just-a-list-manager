@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Plus } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import ListCard from "@/components/ListCard";
@@ -17,6 +18,7 @@ interface ListData {
 
 function HomeContent() {
   const { initData, isReady } = useTelegram();
+  const t = useTranslations();
   const router = useRouter();
   const [lists, setLists] = useState<ListData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,7 +114,7 @@ function HomeContent() {
   return (
     <div className="flex flex-col min-h-screen">
       <header className="p-4 pb-2">
-        <h1 className="text-xl font-bold text-tg-text">My Lists</h1>
+        <h1 className="text-xl font-bold text-tg-text">{t('lists.title')}</h1>
       </header>
 
       <div className="flex-1 p-4 pt-2 space-y-2">
@@ -163,11 +165,12 @@ function CreateListSheet({
   onClose: () => void;
   creating: boolean;
 }) {
+  const t = useTranslations();
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
       <div className="bg-tg-bg w-full max-w-lg rounded-t-2xl p-6">
         <h2 className="text-lg font-semibold text-tg-text mb-4">
-          New list
+          {t('lists.newList')}
         </h2>
         <input
           type="text"
@@ -176,7 +179,7 @@ function CreateListSheet({
           onKeyDown={(e) => {
             if (e.key === "Enter") onSubmit();
           }}
-          placeholder="List name"
+          placeholder={t('lists.newListPlaceholder')}
           autoFocus
           maxLength={100}
           className="w-full px-4 py-3 rounded-xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint outline-none text-base mb-4"
@@ -186,14 +189,14 @@ function CreateListSheet({
             onClick={onClose}
             className="flex-1 py-3 rounded-xl bg-tg-secondary-bg text-tg-text font-medium"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={onSubmit}
             disabled={!value.trim() || creating}
             className="flex-1 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium disabled:opacity-40"
           >
-            {creating ? "Creating..." : "Create"}
+            {creating ? t('common.creating') : t('common.create')}
           </button>
         </div>
       </div>

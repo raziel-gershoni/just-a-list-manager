@@ -12,7 +12,10 @@
     "ok": "OK",
     "close": "Close",
     "offline": "Offline",
-    "syncing": "Syncing..."
+    "syncing": "Syncing...",
+    "create": "Create",
+    "creating": "Creating...",
+    "goHome": "Go home"
   },
   "lists": {
     "title": "My Lists",
@@ -25,6 +28,8 @@
     "deleteConfirm": "Delete this list?",
     "deleted": "List deleted",
     "items": "{count, plural, =0 {no items} one {# item} other {# items}}",
+    "activeCount": "{active} active / {total} total",
+    "newList": "New list",
     "maxLists": "You've reached the 50-list limit. Delete a list to create more.",
     "share": "Share"
   },
@@ -35,6 +40,9 @@
     "completedSection": "Completed ({count})",
     "deleted": "Item deleted",
     "recycled": "(recycled)",
+    "emptyTitle": "This list is empty",
+    "emptyDescription": "Add items above or send a voice message",
+    "clearedCount": "Cleared {count} items",
     "maxItems": "This list has a 500-item limit.",
     "partialAdd": "Added {added} items. {skipped} items skipped — this list has a 500-item limit."
   },
@@ -68,6 +76,8 @@
     "declined": "Declined",
     "approveRequest": "Approve",
     "declineRequest": "Decline",
+    "inviteInvalid": "Invite not valid",
+    "processingInvite": "Processing invite...",
     "inviteExpired": "This invite link has expired or been revoked.",
     "waitingApproval": "Waiting for approval",
     "waitingDescription": "The list owner will review your request.",

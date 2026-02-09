@@ -12,7 +12,10 @@
     "ok": "אישור",
     "close": "סגירה",
     "offline": "אופליין",
-    "syncing": "מסנכרן..."
+    "syncing": "מסנכרן...",
+    "create": "צור",
+    "creating": "יוצר...",
+    "goHome": "חזרה הביתה"
   },
   "lists": {
     "title": "הרשימות שלי",
@@ -25,6 +28,8 @@
     "deleteConfirm": "למחוק את הרשימה?",
     "deleted": "הרשימה נמחקה",
     "items": "{count, plural, =0 {אין פריטים} one {פריט #} other {# פריטים}}",
+    "activeCount": "{active} פעילים / {total} סה\"כ",
+    "newList": "רשימה חדשה",
     "maxLists": "הגעת למגבלת 50 הרשימות. מחק רשימה כדי ליצור חדשה.",
     "share": "שיתוף"
   },
@@ -35,6 +40,9 @@
     "completedSection": "הושלמו ({count})",
     "deleted": "הפריט נמחק",
     "recycled": "(שוחזר)",
+    "emptyTitle": "הרשימה ריקה",
+    "emptyDescription": "הוסף פריטים למעלה או שלח הודעה קולית",
+    "clearedCount": "נוקו {count} פריטים",
     "maxItems": "רשימה זו מוגבלת ל-500 פריטים.",
     "partialAdd": "נוספו {added} פריטים. {skipped} פריטים דולגו — רשימה זו מוגבלת ל-500 פריטים."
   },
@@ -68,6 +76,8 @@
     "declined": "נדחה",
     "approveRequest": "אשר",
     "declineRequest": "דחה",
+    "inviteInvalid": "הזמנה לא תקפה",
+    "processingInvite": "מעבד הזמנה...",
     "inviteExpired": "קישור ההזמנה פג תוקף או בוטל.",
     "waitingApproval": "ממתין לאישור",
     "waitingDescription": "בעל הרשימה יבדוק את הבקשה שלך.",
