@@ -131,9 +131,57 @@ function ListContent() {
     }
   }, [initData, listId]);
 
+  const refreshItems = useCallback(async () => {
+    if (!initData) return;
+    try {
+      const res = await fetch(`/api/lists/${listId}/items`, {
+        headers: { "x-telegram-init-data": initData },
+      });
+      if (!res.ok) return;
+      const { items: fetchedItems } = await res.json();
+      const mapped = (fetchedItems || []).map((item: any) => ({
+        ...item,
+        creator_name: item.users?.name ?? null,
+        editor_name: item.editor?.name ?? null,
+        users: undefined,
+        editor: undefined,
+      }));
+      setItems((prev) => {
+        const pendingItems = prev.filter((i) => i._pending);
+        const serverIds = new Set(mapped.map((i: ItemData) => i.id));
+        const unresolvedPending = pendingItems.filter((i) => !serverIds.has(i.id));
+        return [...unresolvedPending, ...mapped];
+      });
+    } catch (e) {
+      console.error("[List] Background refresh error:", e);
+    }
+  }, [initData, listId]);
+
   useEffect(() => {
     if (isReady) fetchItems();
   }, [isReady, fetchItems]);
+
+  useEffect(() => {
+    if (!isReady || loading) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !isDraggingRef.current) {
+        refreshItems();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === "visible" && !isDraggingRef.current) {
+        refreshItems();
+      }
+    }, 30_000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearInterval(intervalId);
+    };
+  }, [isReady, loading, refreshItems]);
 
   const handleAddItem = useCallback(
     async (text: string, recycleId?: string) => {
