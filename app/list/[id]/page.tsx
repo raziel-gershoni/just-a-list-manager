@@ -386,21 +386,24 @@ function ListContent() {
         return;
       }
 
-      const sourceIndex = (source as any).sortable?.index as number | undefined;
-      const targetIndex = (target as any).sortable?.index as number | undefined;
-      if (sourceIndex == null || targetIndex == null || sourceIndex === targetIndex) {
-        isDraggingRef.current = false;
-        return;
-      }
+      const sourceId = source.id as string;
+      const projectedIndex = (source as any).sortable?.index as number | undefined;
 
       // Compute new order from current active items
       const currentActive = items
         .filter((i) => !i.completed && !i.deleted_at)
         .sort((a, b) => b.position - a.position);
 
+      const originalIndex = currentActive.findIndex((i) => i.id === sourceId);
+
+      if (originalIndex === -1 || projectedIndex == null || originalIndex === projectedIndex) {
+        isDraggingRef.current = false;
+        return;
+      }
+
       const reordered = [...currentActive];
-      const [moved] = reordered.splice(sourceIndex, 1);
-      reordered.splice(targetIndex, 0, moved);
+      const [moved] = reordered.splice(originalIndex, 1);
+      reordered.splice(projectedIndex, 0, moved);
 
       // Assign new positions (highest position = first item)
       const updatedIds: string[] = [];
