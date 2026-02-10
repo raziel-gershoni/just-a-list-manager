@@ -1,9 +1,14 @@
 "use client";
 
 import { useSortable } from "@dnd-kit/react/sortable";
-import { GripVertical } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { PointerSensor, PointerActivationConstraints } from "@dnd-kit/dom";
 import ItemRow from "./ItemRow";
+
+const longPressSensor = PointerSensor.configure({
+  activationConstraints: [
+    new PointerActivationConstraints.Delay({ value: 400, tolerance: 5 }),
+  ],
+});
 
 interface SortableItemProps {
   id: string;
@@ -15,6 +20,7 @@ interface SortableItemProps {
   isOwnItem?: boolean;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
+  onEdit?: (id: string, newText: string) => void;
 }
 
 export default function SortableItem({
@@ -27,35 +33,31 @@ export default function SortableItem({
   isOwnItem,
   onToggle,
   onDelete,
+  onEdit,
 }: SortableItemProps) {
-  const t = useTranslations();
-  const { ref, handleRef, isDragSource } = useSortable({ id, index });
+  const { ref, isDragSource } = useSortable({
+    id,
+    index,
+    sensors: [longPressSensor],
+  });
 
   return (
     <div
       ref={ref}
-      className={`flex items-center ${isDragSource ? "opacity-50" : ""}`}
+      className={`touch-none ${isDragSource ? "opacity-50" : ""}`}
     >
-      <button
-        ref={handleRef}
-        className="touch-none px-2 py-3 text-tg-hint shrink-0 cursor-grab active:cursor-grabbing"
-        aria-label={t("items.dragHandle")}
-      >
-        <GripVertical className="w-4 h-4" />
-      </button>
-      <div className="flex-1 min-w-0">
-        <ItemRow
-          id={id}
-          text={text}
-          completed={false}
-          isPending={isPending}
-          isDuplicate={isDuplicate}
-          creatorName={creatorName}
-          isOwnItem={isOwnItem}
-          onToggle={onToggle}
-          onDelete={onDelete}
-        />
-      </div>
+      <ItemRow
+        id={id}
+        text={text}
+        completed={false}
+        isPending={isPending}
+        isDuplicate={isDuplicate}
+        creatorName={creatorName}
+        isOwnItem={isOwnItem}
+        onToggle={onToggle}
+        onDelete={onDelete}
+        onEdit={onEdit}
+      />
     </div>
   );
 }

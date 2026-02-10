@@ -301,6 +301,31 @@ function ListContent() {
     [initData, listId, items, addMutation]
   );
 
+  const handleEditItem = useCallback(
+    async (itemId: string, newText: string) => {
+      setItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, text: newText } : i))
+      );
+
+      addMutation({
+        type: "edit",
+        payload: { listId, itemId, text: newText },
+        execute: async () => {
+          const res = await fetch(`/api/lists/${listId}/items`, {
+            method: "PATCH",
+            headers: {
+              "x-telegram-init-data": initData!,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId, text: newText }),
+          });
+          if (!res.ok) throw new Error(`Edit failed: ${res.status}`);
+        },
+      });
+    },
+    [initData, listId, addMutation]
+  );
+
   const handleClearCompleted = useCallback(async () => {
     if (!initData) return;
     const tg = (window as any).Telegram?.WebApp;
@@ -395,23 +420,27 @@ function ListContent() {
         })
       );
 
-      // Persist to server
+      // Persist to server — keep isDraggingRef true until server responds
+      // so realtime UPDATE events don't overwrite optimistic positions
       addMutation({
         type: "reorder",
         payload: { listId, orderedIds: updatedIds },
         execute: async () => {
-          await fetch(`/api/lists/${listId}/items/reorder`, {
-            method: "POST",
-            headers: {
-              "x-telegram-init-data": initData!,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ orderedIds: updatedIds }),
-          });
+          try {
+            const res = await fetch(`/api/lists/${listId}/items/reorder`, {
+              method: "POST",
+              headers: {
+                "x-telegram-init-data": initData!,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ orderedIds: updatedIds }),
+            });
+            if (!res.ok) throw new Error(`Reorder failed: ${res.status}`);
+          } finally {
+            isDraggingRef.current = false;
+          }
         },
       });
-
-      isDraggingRef.current = false;
     },
     [items, initData, listId, addMutation]
   );
@@ -494,6 +523,7 @@ function ListContent() {
               isOwnItem={item.created_by === userId}
               onToggle={handleToggle}
               onDelete={handleDelete}
+              onEdit={handleEditItem}
             />
           ))}
         </DragDropProvider>
@@ -533,6 +563,7 @@ function ListContent() {
                   isOwnItem={item.created_by === userId}
                   onToggle={handleToggle}
                   onDelete={handleDelete}
+                  onEdit={handleEditItem}
                 />
               ))}
           </>

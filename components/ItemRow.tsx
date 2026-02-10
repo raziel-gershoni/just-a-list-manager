@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { Check, Clock, Copy, Trash2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Check, Clock, Copy, X } from "lucide-react";
 
 interface ItemRowProps {
   id: string;
@@ -13,6 +13,7 @@ interface ItemRowProps {
   isOwnItem?: boolean;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
+  onEdit?: (id: string, newText: string) => void;
 }
 
 export default function ItemRow({
@@ -25,9 +26,18 @@ export default function ItemRow({
   isOwnItem,
   onToggle,
   onDelete,
+  onEdit,
 }: ItemRowProps) {
-  const [swiped, setSwiped] = useState(false);
-  const touchStartX = useRef(0);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(text);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
 
   const handleToggle = () => {
     const tg = (window as any).Telegram?.WebApp;
@@ -35,85 +45,102 @@ export default function ItemRow({
     onToggle(id, !completed);
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
+  const handleSave = () => {
+    const trimmed = editText.trim();
+    if (trimmed && trimmed !== text && onEdit) {
+      onEdit(id, trimmed);
+    }
+    setIsEditing(false);
+    setEditText(text);
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-    const isRtl = document.documentElement.dir === "rtl";
-    const revealDelta = isRtl ? 60 : -60;
-    const dismissDelta = isRtl ? -30 : 30;
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditText(text);
+  };
 
-    // Swipe toward the end edge to reveal delete
-    if (isRtl ? deltaX > revealDelta : deltaX < revealDelta) {
-      setSwiped(true);
-    } else if (isRtl ? deltaX < dismissDelta : deltaX > dismissDelta) {
-      setSwiped(false);
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancel();
     }
   };
 
   return (
-    <div className="relative overflow-hidden">
-      {/* Delete button behind — only rendered when swiped */}
-      {swiped && (
-        <div className="absolute inset-y-0 end-0 flex items-center">
-          <button
-            onClick={() => onDelete(id)}
-            className="bg-tg-destructive text-white h-full px-5 flex items-center"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Main row */}
-      <div
-        className={`flex items-center gap-3 py-3 px-4 bg-tg-bg transition-all ${
-          swiped ? "pe-14" : ""
+    <div className="flex items-center gap-3 py-3 px-4 bg-tg-bg">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          handleToggle();
+        }}
+        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+          completed
+            ? "bg-tg-button border-tg-button"
+            : "border-tg-hint"
         }`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onClick={() => swiped && setSwiped(false)}
       >
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleToggle();
-          }}
-          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-            completed
-              ? "bg-tg-button border-tg-button"
-              : "border-tg-hint"
-          }`}
-        >
-          {completed && <Check className="w-4 h-4 text-tg-button-text" />}
-        </button>
+        {completed && <Check className="w-4 h-4 text-tg-button-text" />}
+      </button>
 
-        <div className={`flex-1 min-w-0 ${isPending ? "opacity-60" : ""}`}>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`truncate ${
-                completed ? "line-through text-tg-hint" : "text-tg-text"
-              }`}
-            >
-              {text}
-            </span>
-            {isDuplicate && !completed && (
-              <Copy className="w-3 h-3 text-amber-500/70 shrink-0" />
+      <div className={`flex-1 min-w-0 ${isPending ? "opacity-60" : ""}`}>
+        {isEditing && !completed ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={handleKeyDown}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="w-full bg-transparent text-tg-text outline-none border-b border-tg-button py-0.5"
+            maxLength={500}
+          />
+        ) : (
+          <div
+            onClick={() => {
+              if (!completed && onEdit) {
+                setEditText(text);
+                setIsEditing(true);
+              }
+            }}
+          >
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`truncate ${
+                  completed ? "line-through text-tg-hint" : "text-tg-text"
+                }`}
+              >
+                {text}
+              </span>
+              {isDuplicate && !completed && (
+                <Copy className="w-3 h-3 text-amber-500/70 shrink-0" />
+              )}
+            </div>
+            {creatorName && !isOwnItem && (
+              <p className="text-[11px] text-tg-hint truncate">
+                {creatorName.split(" ")[0]}
+              </p>
             )}
           </div>
-          {creatorName && !isOwnItem && (
-            <p className="text-[11px] text-tg-hint truncate">
-              {creatorName.split(" ")[0]}
-            </p>
-          )}
-        </div>
-
-        {isPending && (
-          <Clock className="w-4 h-4 text-tg-hint shrink-0" />
         )}
       </div>
+
+      {isPending && (
+        <Clock className="w-4 h-4 text-tg-hint shrink-0" />
+      )}
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(id);
+        }}
+        className="p-1 shrink-0"
+      >
+        <X className="w-4 h-4 text-tg-hint" />
+      </button>
     </div>
   );
 }
