@@ -30,7 +30,7 @@ interface ItemData {
 }
 
 function ListContent() {
-  const { initData, isReady, supabaseClient, userId } = useTelegram();
+  const { initData, isReady, supabaseClient, userId, jwt } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
   const params = useParams();
@@ -667,8 +667,10 @@ function ListContent() {
               setDebugLoading(true);
               setDebugResult(null);
               try {
-                // Test 1: Server diagnostics
-                const res = await fetch("/api/debug/realtime");
+                // Test 1: Server diagnostics (with user JWT for RLS testing)
+                const headers: Record<string, string> = {};
+                if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
+                const res = await fetch("/api/debug/realtime", { headers });
                 const serverData = await res.json();
 
                 // Test 2: Broadcast channel (no RLS) to test basic Realtime
