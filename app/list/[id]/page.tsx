@@ -29,6 +29,15 @@ interface ItemData {
   _pending?: boolean;
 }
 
+function lookupUserName(items: ItemData[], targetUserId: string | null): string | null {
+  if (!targetUserId) return null;
+  for (const item of items) {
+    if (item.created_by === targetUserId && item.creator_name) return item.creator_name;
+    if (item.edited_by === targetUserId && item.editor_name) return item.editor_name;
+  }
+  return null;
+}
+
 function ListContent() {
   const { initData, isReady, supabaseClient, userId } = useTelegram();
   const t = useTranslations();
@@ -128,18 +137,29 @@ function ListContent() {
         if (change.eventType === "INSERT") {
           setItems((prev) => {
             if (prev.find((i) => i.id === change.new.id)) return prev;
-            return [...prev, { ...change.new, creator_name: null, editor_name: null } as ItemData];
+            return [...prev, {
+              ...change.new,
+              creator_name: lookupUserName(prev, change.new.created_by),
+              editor_name: lookupUserName(prev, change.new.edited_by),
+            } as ItemData];
           });
         } else if (change.eventType === "UPDATE") {
           setItems((prev) =>
             prev.map((i) => {
               if (i.id !== change.new.id) return i;
+              const updates = change.new;
+              let merged;
               // During drag, skip position-only updates to avoid fighting local reorder
               if (isDraggingRef.current) {
-                const { position, ...rest } = change.new;
-                return { ...i, ...rest };
+                const { position, ...rest } = updates;
+                merged = { ...i, ...rest };
+              } else {
+                merged = { ...i, ...updates };
               }
-              return { ...i, ...change.new };
+              if (updates.edited_by && updates.edited_by !== i.edited_by) {
+                merged.editor_name = lookupUserName(prev, updates.edited_by);
+              }
+              return merged;
             })
           );
         } else if (change.eventType === "DELETE") {
