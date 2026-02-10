@@ -86,7 +86,42 @@ $$;
     console.log("[Debug Realtime] RPC not available — function needs to be created");
   }
 
-  // 5. Quick sample of recent items
+  // 5. Decode JWT claims (without verification) to check sub matches user UUID
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    // Service role client won't have a session, so also try to decode a token
+    // from the most recent user if available
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (anonKey) {
+      // Decode the anon key (it's a JWT) to show its claims
+      const parts = anonKey.split(".");
+      if (parts.length === 3) {
+        const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+        results.anon_key_claims = {
+          role: claims.role,
+          iss: claims.iss,
+          // Don't log the full key, just the role/issuer
+        };
+      }
+    }
+
+    // Check the get_user_id_from_jwt function definition
+    const { data: funcDef, error: funcErr } = await supabase.rpc(
+      "get_user_id_from_jwt"
+    );
+    results.get_user_id_from_jwt = {
+      result: funcDef,
+      error: funcErr?.message,
+      hint: funcErr
+        ? "Function may be returning NULL — check if auth.uid() works in your JWT context"
+        : "Function returned a value successfully",
+    };
+    console.log(`[Debug Realtime] get_user_id_from_jwt result: ${funcDef}, error: ${funcErr?.message}`);
+  } catch (e: any) {
+    results.jwt_check = { error: e.message };
+  }
+
+  // 6. Quick sample of recent items
   try {
     const { data: recent, error: recentErr } = await supabase
       .from("items")

@@ -659,6 +659,7 @@ function ListContent() {
           <span>
             RT: <span className={connectionStatus === "connected" ? "text-green-300" : "text-red-300"}>{connectionStatus}</span>
           </span>
+          <span>UID: {userId?.substring(0, 8) || "?"}</span>
           <span>Events: {realtimeEventCount}</span>
           <span className="truncate max-w-[200px]">Last: {lastRealtimeEvent || "none"}</span>
           <button
