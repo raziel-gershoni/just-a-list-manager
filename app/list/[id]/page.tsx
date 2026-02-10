@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Share2, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { ArrowLeft, Share2, ChevronDown, ChevronRight, Trash2, Users } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
 import ItemRow from "@/components/ItemRow";
@@ -35,6 +35,7 @@ function ListContent() {
   const [loading, setLoading] = useState(true);
   const [showCompleted, setShowCompleted] = useState(true);
   const [showShare, setShowShare] = useState(false);
+  const [isShared, setIsShared] = useState(false);
   const [undoAction, setUndoAction] = useState<{
     message: string;
     undo: () => void;
@@ -85,7 +86,10 @@ function ListContent() {
       if (listsRes.ok) {
         const allLists = await listsRes.json();
         const currentList = allLists.find((l: any) => l.id === listId);
-        if (currentList) setListName(currentList.name);
+        if (currentList) {
+          setListName(currentList.name);
+          setIsShared(currentList.is_shared ?? false);
+        }
       }
 
       // Fetch items
@@ -337,9 +341,15 @@ function ListContent() {
         <button onClick={() => router.push("/")} className="p-1">
           <ArrowLeft className="w-5 h-5 text-tg-text" />
         </button>
-        <h1 className="flex-1 text-lg font-bold text-tg-text truncate">
-          {listName}
-        </h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold text-tg-text truncate">{listName}</h1>
+          {isShared && (
+            <p className="text-xs text-tg-hint flex items-center gap-1">
+              <Users className="w-3 h-3" />
+              {t('lists.shared')}
+            </p>
+          )}
+        </div>
         <button onClick={() => setShowShare(true)} className="p-1">
           <Share2 className="w-5 h-5 text-tg-hint" />
         </button>

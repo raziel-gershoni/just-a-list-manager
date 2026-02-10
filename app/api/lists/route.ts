@@ -61,6 +61,19 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Determine which lists are shared (have approved collaborators)
+  const sharedSet = new Set<string>();
+  if (listIds.length > 0) {
+    const { data: sharedRows } = await supabase
+      .from("collaborators")
+      .select("list_id")
+      .in("list_id", listIds)
+      .eq("status", "approved");
+    for (const row of sharedRows || []) {
+      sharedSet.add(row.list_id);
+    }
+  }
+
   const listsWithCounts = uniqueLists.map((list) => {
     const counts = countsMap.get(list.id) || { active_count: 0, completed_count: 0 };
     const role =
@@ -73,6 +86,7 @@ export async function GET(request: NextRequest) {
       ...list,
       ...counts,
       role,
+      is_shared: role !== "owner" || sharedSet.has(list.id),
     };
   });
 

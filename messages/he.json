@@ -31,7 +31,8 @@
     "activeCount": "{active} פעילים / {total} סה\"כ",
     "newList": "רשימה חדשה",
     "maxLists": "הגעת למגבלת 50 הרשימות. מחק רשימה כדי ליצור חדשה.",
-    "share": "שיתוף"
+    "share": "שיתוף",
+    "shared": "משותפת"
   },
   "items": {
     "addPlaceholder": "הוסף פריט...",

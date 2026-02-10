@@ -8,7 +8,7 @@ interface ListCardProps {
   name: string;
   activeCount: number;
   completedCount: number;
-  role: string;
+  isShared: boolean;
   onClick: () => void;
 }
 
@@ -16,7 +16,7 @@ export default function ListCard({
   name,
   activeCount,
   completedCount,
-  role,
+  isShared,
   onClick,
 }: ListCardProps) {
   const t = useTranslations('lists');
@@ -36,7 +36,7 @@ export default function ListCard({
         </p>
       </div>
       <div className="flex items-center gap-2">
-        {role !== "owner" && (
+        {isShared && (
           <Users className="w-4 h-4 text-tg-hint" />
         )}
         <ChevronRight className="w-5 h-5 text-tg-hint" />

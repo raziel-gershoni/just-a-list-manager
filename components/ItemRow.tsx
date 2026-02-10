@@ -63,8 +63,8 @@ export default function ItemRow({
 
       {/* Main row */}
       <div
-        className={`flex items-center gap-3 py-3 px-4 bg-tg-bg transition-transform ${
-          swiped ? "-translate-x-14 rtl:translate-x-14" : ""
+        className={`flex items-center gap-3 py-3 px-4 bg-tg-bg transition-all ${
+          swiped ? "pe-14" : ""
         }`}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}

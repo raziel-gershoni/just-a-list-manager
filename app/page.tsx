@@ -13,7 +13,7 @@ interface ListData {
   name: string;
   active_count: number;
   completed_count: number;
-  role: string;
+  is_shared: boolean;
 }
 
 function HomeContent() {
@@ -129,7 +129,7 @@ function HomeContent() {
             name={list.name}
             activeCount={list.active_count}
             completedCount={list.completed_count}
-            role={list.role}
+            isShared={list.is_shared}
             onClick={() => router.push(`/list/${list.id}`)}
           />
         ))}
