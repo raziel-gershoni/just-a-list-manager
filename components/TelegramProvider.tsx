@@ -38,7 +38,6 @@ interface TelegramContextType {
   locale: SupportedLocale;
   supabaseClient: SupabaseClient | null;
   isReady: boolean;
-  jwt: string | null;
 }
 
 const TelegramContext = createContext<TelegramContextType>({
@@ -48,7 +47,6 @@ const TelegramContext = createContext<TelegramContextType>({
   locale: "en",
   supabaseClient: null,
   isReady: false,
-  jwt: null,
 });
 
 export function useTelegram() {
@@ -68,7 +66,6 @@ export default function TelegramProvider({
     null
   );
   const [isReady, setIsReady] = useState(false);
-  const [jwt, setJwt] = useState<string | null>(null);
   const router = useRouter();
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const jwtRef = useRef<string | null>(null);
@@ -89,7 +86,6 @@ export default function TelegramProvider({
         if (!res.ok) return null;
         const { token } = await res.json();
         jwtRef.current = token;
-        setJwt(token);
         return token;
       } catch (e) {
         console.error("[TelegramProvider] Token fetch error:", e);
@@ -215,7 +211,7 @@ export default function TelegramProvider({
 
   return (
     <TelegramContext.Provider
-      value={{ user, userId, initData, locale, supabaseClient, isReady, jwt }}
+      value={{ user, userId, initData, locale, supabaseClient, isReady }}
     >
       <NextIntlClientProvider locale={locale} messages={allMessages[locale]}>
         {children}

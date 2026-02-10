@@ -30,7 +30,7 @@ interface ItemData {
 }
 
 function ListContent() {
-  const { initData, isReady, supabaseClient, userId, jwt } = useTelegram();
+  const { initData, isReady, supabaseClient, userId } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
   const params = useParams();
@@ -119,10 +119,7 @@ function ListContent() {
     }
   }, [initData, listId]);
 
-  const [debugResult, setDebugResult] = useState<string | null>(null);
-  const [debugLoading, setDebugLoading] = useState(false);
-
-  const { connectionStatus, realtimeEventCount, lastRealtimeEvent, lastError } = useRealtimeList(
+  const { connectionStatus } = useRealtimeList(
     supabaseClient,
     listId,
     (change) => {
@@ -652,68 +649,6 @@ function ListContent() {
           </button>
         </div>
       )}
-
-      {/* Debug overlay */}
-      <div className="bg-black/80 text-green-400 text-[10px] font-mono px-3 py-2 flex flex-col gap-1 z-50">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span>
-            RT: <span className={connectionStatus === "connected" ? "text-green-300" : "text-red-300"}>{connectionStatus}</span>
-          </span>
-          <span>UID: {userId?.substring(0, 8) || "?"}</span>
-          <span>Events: {realtimeEventCount}</span>
-          <span className="truncate max-w-[200px]">Last: {lastRealtimeEvent || "none"}</span>
-          <button
-            onClick={async () => {
-              setDebugLoading(true);
-              setDebugResult(null);
-              try {
-                // Test 1: Server diagnostics (with user JWT for RLS testing)
-                const headers: Record<string, string> = {};
-                if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
-                const res = await fetch("/api/debug/realtime", { headers });
-                const serverData = await res.json();
-
-                // Test 2: Broadcast channel (no RLS) to test basic Realtime
-                let broadcastResult = "skipped (no client)";
-                if (supabaseClient) {
-                  broadcastResult = await new Promise<string>((resolve) => {
-                    const timeout = setTimeout(() => resolve("TIMEOUT (5s)"), 5000);
-                    const ch = supabaseClient.channel("debug-broadcast-test");
-                    ch.subscribe((status, err) => {
-                      clearTimeout(timeout);
-                      supabaseClient.removeChannel(ch);
-                      resolve(err ? `${status}: ${typeof err === "string" ? err : JSON.stringify(err)}` : status);
-                    });
-                  });
-                }
-
-                const result = {
-                  broadcast_test: broadcastResult,
-                  channel_error: lastError,
-                  ...serverData,
-                };
-                setDebugResult(JSON.stringify(result, null, 2));
-              } catch (e: any) {
-                setDebugResult(`Error: ${e.message}`);
-              } finally {
-                setDebugLoading(false);
-              }
-            }}
-            disabled={debugLoading}
-            className="bg-green-700 text-white px-2 py-0.5 rounded text-[10px] ms-auto"
-          >
-            {debugLoading ? "..." : "Test Realtime"}
-          </button>
-        </div>
-        {lastError && (
-          <div className="text-[9px] text-red-400 truncate">Err: {lastError}</div>
-        )}
-        {debugResult && (
-          <pre className="text-[9px] text-green-300 max-h-40 overflow-auto whitespace-pre-wrap mt-1 border-t border-green-700 pt-1">
-            {debugResult}
-          </pre>
-        )}
-      </div>
 
       <ShareDialog
         listId={listId}

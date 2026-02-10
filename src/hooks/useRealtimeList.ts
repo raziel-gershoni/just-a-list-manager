@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 
 interface RealtimeChange {
@@ -23,9 +23,6 @@ export function useRealtimeList(
 ) {
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connecting");
-  const [realtimeEventCount, setRealtimeEventCount] = useState(0);
-  const [lastRealtimeEvent, setLastRealtimeEvent] = useState<string | null>(null);
-  const [lastError, setLastError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -59,7 +56,6 @@ export function useRealtimeList(
       // Use unique channel name to avoid stale channel conflicts on retry
       subscribeCount++;
       const channelName = `list:${listId}:${subscribeCount}`;
-      console.log(`[Realtime] Subscribing to channel "${channelName}"`);
       const channel = supabaseClient
         .channel(channelName)
         .on(
@@ -71,10 +67,6 @@ export function useRealtimeList(
             filter: `list_id=eq.${listId}`,
           },
           (payload) => {
-            const desc = `items:${payload.eventType}:${(payload.new as any)?.id || (payload.old as any)?.id || "?"}`;
-            console.log(`[Realtime] Event received: ${desc}`, payload);
-            setRealtimeEventCount((c) => c + 1);
-            setLastRealtimeEvent(desc);
             onChangeRef.current({
               table: "items",
               eventType: payload.eventType as any,
@@ -92,10 +84,6 @@ export function useRealtimeList(
             filter: `id=eq.${listId}`,
           },
           (payload) => {
-            const desc = `lists:${payload.eventType}:${(payload.new as any)?.id || (payload.old as any)?.id || "?"}`;
-            console.log(`[Realtime] Event received: ${desc}`, payload);
-            setRealtimeEventCount((c) => c + 1);
-            setLastRealtimeEvent(desc);
             onChangeRef.current({
               table: "lists",
               eventType: payload.eventType as any,
@@ -113,10 +101,6 @@ export function useRealtimeList(
             filter: `list_id=eq.${listId}`,
           },
           (payload) => {
-            const desc = `collaborators:${payload.eventType}:${(payload.new as any)?.id || (payload.old as any)?.id || "?"}`;
-            console.log(`[Realtime] Event received: ${desc}`, payload);
-            setRealtimeEventCount((c) => c + 1);
-            setLastRealtimeEvent(desc);
             onChangeRef.current({
               table: "collaborators",
               eventType: payload.eventType as any,
@@ -125,9 +109,8 @@ export function useRealtimeList(
             });
           }
         )
-        .subscribe((status, err) => {
+        .subscribe((status) => {
           if (!active) return;
-          console.log("[Realtime] Channel status:", status, err || "");
 
           if (status === "SUBSCRIBED") {
             const wasReconnecting = hadSuccessfulConnection && retryCount > 0;
@@ -137,14 +120,9 @@ export function useRealtimeList(
 
             // Fire onReconnect if this was a recovery from a failure
             if (wasReconnecting) {
-              console.log("[Realtime] Recovered — refreshing data");
               onReconnectRef.current?.();
             }
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            const errStr = err ? (typeof err === "string" ? err : JSON.stringify(err)) : "no details";
-            console.warn(`[Realtime] ${status} on channel "${channelName}", scheduling retry #${retryCount + 1}`, err);
-            setLastRealtimeEvent(`ERROR:${status}`);
-            setLastError(`${status}: ${errStr}`);
             scheduleRetry();
           }
         });
@@ -168,7 +146,6 @@ export function useRealtimeList(
 
       const delay = Math.min(MIN_RETRY_MS * Math.pow(2, retryCount), MAX_RETRY_MS);
       retryCount++;
-      console.log(`[Realtime] Retrying in ${delay}ms (attempt #${retryCount})`);
 
       retryTimer = setTimeout(() => {
         retryTimer = null;
@@ -184,7 +161,6 @@ export function useRealtimeList(
 
     const goOnline = () => {
       if (!active) return;
-      console.log("[Realtime] Browser online — re-subscribing immediately");
       retryCount = 0;
       if (retryTimer) {
         clearTimeout(retryTimer);
@@ -214,5 +190,5 @@ export function useRealtimeList(
     };
   }, [supabaseClient, listId]);
 
-  return { connectionStatus, realtimeEventCount, lastRealtimeEvent, lastError };
+  return { connectionStatus };
 }
