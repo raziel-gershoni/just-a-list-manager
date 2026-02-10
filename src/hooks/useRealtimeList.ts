@@ -29,6 +29,8 @@ export function useRealtimeList(
       return;
     }
 
+    let active = true;
+
     if (!navigator.onLine) {
       setConnectionStatus("offline");
     }
@@ -87,11 +89,13 @@ export function useRealtimeList(
         }
       )
       .subscribe((status, err) => {
+        if (!active) return; // ignore events from stale channels
         if (status === "SUBSCRIBED") setConnectionStatus("connected");
         else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           console.error("[Realtime] Subscription error:", status, err);
           setConnectionStatus("offline");
-        } else if (status === "CLOSED") setConnectionStatus("offline");
+        }
+        // Don't set offline on CLOSED — it fires during normal cleanup
       });
 
     channelRef.current = channel;
@@ -103,6 +107,7 @@ export function useRealtimeList(
     window.addEventListener("online", goOnline);
 
     return () => {
+      active = false;
       window.removeEventListener("offline", goOffline);
       window.removeEventListener("online", goOnline);
       if (channelRef.current) {

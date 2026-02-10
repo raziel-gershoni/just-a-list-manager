@@ -1,8 +1,7 @@
 "use client";
 
-import { useRef, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { ChevronRight, Users } from "lucide-react";
+import { ChevronRight, Users, Pencil, Trash2 } from "lucide-react";
 
 interface ListCardProps {
   id: string;
@@ -12,7 +11,8 @@ interface ListCardProps {
   isShared: boolean;
   role: "owner" | "view" | "edit";
   onClick: () => void;
-  onLongPress?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 export default function ListCard({
@@ -21,70 +21,15 @@ export default function ListCard({
   completedCount,
   isShared,
   onClick,
-  onLongPress,
+  onEdit,
+  onDelete,
 }: ListCardProps) {
   const t = useTranslations('lists');
   const total = activeCount + completedCount;
 
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const didLongPress = useRef(false);
-
-  const clearTimer = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }, []);
-
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      if (!onLongPress) return;
-      didLongPress.current = false;
-      const touch = e.touches[0];
-      touchStart.current = { x: touch.clientX, y: touch.clientY };
-      longPressTimer.current = setTimeout(() => {
-        didLongPress.current = true;
-        const tg = (window as any).Telegram?.WebApp;
-        tg?.HapticFeedback?.impactOccurred("medium");
-        onLongPress();
-      }, 500);
-    },
-    [onLongPress]
-  );
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      if (!touchStart.current) return;
-      const touch = e.touches[0];
-      const dx = touch.clientX - touchStart.current.x;
-      const dy = touch.clientY - touchStart.current.y;
-      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-        clearTimer();
-      }
-    },
-    [clearTimer]
-  );
-
-  const handleTouchEnd = useCallback(() => {
-    clearTimer();
-  }, [clearTimer]);
-
-  const handleClick = useCallback(() => {
-    if (didLongPress.current) {
-      didLongPress.current = false;
-      return;
-    }
-    onClick();
-  }, [onClick]);
-
   return (
     <button
-      onClick={handleClick}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onContextMenu={(e) => e.preventDefault()}
+      onClick={onClick}
       className="w-full bg-tg-section-bg rounded-xl p-4 flex items-center gap-3 active:opacity-80 transition-opacity text-start"
     >
       <div className="flex-1 min-w-0">
@@ -96,6 +41,24 @@ export default function ListCard({
         </p>
       </div>
       <div className="flex items-center gap-2">
+        {onEdit && (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            className="p-1.5 rounded-lg active:bg-tg-secondary-bg transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5 text-tg-hint" />
+          </span>
+        )}
+        {onDelete && (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="p-1.5 rounded-lg active:bg-tg-secondary-bg transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-tg-hint" />
+          </span>
+        )}
         {isShared && (
           <Users className="w-4 h-4 text-tg-hint" />
         )}

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import ListCard from "@/components/ListCard";
 import EmptyState from "@/components/EmptyState";
@@ -28,7 +28,6 @@ function HomeContent() {
   const [creating, setCreating] = useState(false);
 
   // List management state
-  const [actionList, setActionList] = useState<ListData | null>(null);
   const [showRename, setShowRename] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -37,6 +36,9 @@ function HomeContent() {
     undo: () => void;
     timeout: NodeJS.Timeout;
   } | null>(null);
+
+  // Track the rename target ID separately so it persists through sheet open
+  const renameTargetRef = useRef<string>("");
 
   const fetchLists = useCallback(async () => {
     if (!initData) return;
@@ -97,8 +99,10 @@ function HomeContent() {
     }
   };
 
-  const handleLongPress = useCallback((list: ListData) => {
-    setActionList(list);
+  const handleEditList = useCallback((list: ListData) => {
+    renameTargetRef.current = list.id;
+    setRenameValue(list.name);
+    setShowRename(true);
   }, []);
 
   const handleRenameSubmit = useCallback(async () => {
@@ -128,22 +132,9 @@ function HomeContent() {
     }
   }, [renameValue, initData]);
 
-  // Track the rename target ID separately so it persists through sheet open
-  const renameTargetRef = useRef<string>("");
-
-  const openRenameSheet = useCallback(() => {
-    if (!actionList) return;
-    renameTargetRef.current = actionList.id;
-    setRenameValue(actionList.name);
-    setActionList(null);
-    setShowRename(true);
-  }, [actionList]);
-
-  const handleDelete = useCallback(async () => {
-    if (!actionList || !initData) return;
+  const handleDeleteList = useCallback((listToDelete: ListData) => {
+    if (!initData) return;
     const tg = (window as any).Telegram?.WebApp;
-    const listToDelete = actionList;
-    setActionList(null);
 
     const doDelete = () => {
       tg?.HapticFeedback?.notificationOccurred("warning");
@@ -152,10 +143,10 @@ function HomeContent() {
       setLists((prev) => prev.filter((l) => l.id !== listToDelete.id));
 
       // Clear any existing undo
-      if (undoAction) {
-        clearTimeout(undoAction.timeout);
-        setUndoAction(null);
-      }
+      setUndoAction((prev) => {
+        if (prev) clearTimeout(prev.timeout);
+        return null;
+      });
 
       const timeout = setTimeout(() => setUndoAction(null), 4000);
 
@@ -196,7 +187,7 @@ function HomeContent() {
         doDelete();
       }
     }
-  }, [actionList, initData, t, undoAction]);
+  }, [initData, t]);
 
   if (loading) {
     return (
@@ -245,9 +236,8 @@ function HomeContent() {
             isShared={list.is_shared}
             role={list.role}
             onClick={() => router.push(`/list/${list.id}`)}
-            onLongPress={
-              list.role === "owner" ? () => handleLongPress(list) : undefined
-            }
+            onEdit={list.role === "owner" ? () => handleEditList(list) : undefined}
+            onDelete={list.role === "owner" ? () => handleDeleteList(list) : undefined}
           />
         ))}
       </div>
@@ -267,16 +257,6 @@ function HomeContent() {
           onSubmit={createList}
           onClose={() => setShowCreate(false)}
           creating={creating}
-        />
-      )}
-
-      {/* Action sheet for list management */}
-      {actionList && (
-        <ListActionSheet
-          listName={actionList.name}
-          onRename={openRenameSheet}
-          onDelete={handleDelete}
-          onClose={() => setActionList(null)}
         />
       )}
 
@@ -354,52 +334,6 @@ function CreateListSheet({
             {creating ? t('common.creating') : t('common.create')}
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ListActionSheet({
-  listName,
-  onRename,
-  onDelete,
-  onClose,
-}: {
-  listName: string;
-  onRename: () => void;
-  onDelete: () => void;
-  onClose: () => void;
-}) {
-  const t = useTranslations();
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose}>
-      <div className="bg-tg-bg w-full max-w-lg rounded-t-2xl p-4 pb-8" onClick={(e) => e.stopPropagation()}>
-        <div className="w-10 h-1 bg-tg-hint/30 rounded-full mx-auto mb-4" />
-        <h3 className="text-base font-semibold text-tg-text text-center mb-4 truncate px-4">
-          {listName}
-        </h3>
-        <div className="space-y-1">
-          <button
-            onClick={onRename}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl active:bg-tg-secondary-bg transition-colors"
-          >
-            <Pencil className="w-5 h-5 text-tg-hint" />
-            <span className="text-tg-text">{t('lists.rename')}</span>
-          </button>
-          <button
-            onClick={onDelete}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl active:bg-tg-secondary-bg transition-colors"
-          >
-            <Trash2 className="w-5 h-5 text-red-500" />
-            <span className="text-red-500">{t('common.delete')}</span>
-          </button>
-        </div>
-        <button
-          onClick={onClose}
-          className="w-full mt-2 py-3 rounded-xl bg-tg-secondary-bg text-tg-text font-medium"
-        >
-          {t('common.cancel')}
-        </button>
       </div>
     </div>
   );
