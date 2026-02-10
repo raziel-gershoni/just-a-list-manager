@@ -53,44 +53,6 @@ function ListContent() {
   const isDraggingRef = useRef(false);
   const previousItemsRef = useRef<ItemData[]>([]);
 
-  const { connectionStatus } = useRealtimeList(
-    supabaseClient,
-    listId,
-    (change) => {
-      // Handle real-time item changes
-      if (change.table === "items") {
-        if (change.eventType === "INSERT") {
-          setItems((prev) => {
-            if (prev.find((i) => i.id === change.new.id)) return prev;
-            return [...prev, { ...change.new, creator_name: null, editor_name: null } as ItemData];
-          });
-        } else if (change.eventType === "UPDATE") {
-          setItems((prev) =>
-            prev.map((i) => {
-              if (i.id !== change.new.id) return i;
-              // During drag, skip position-only updates to avoid fighting local reorder
-              if (isDraggingRef.current) {
-                const { position, ...rest } = change.new;
-                return { ...i, ...rest };
-              }
-              return { ...i, ...change.new };
-            })
-          );
-        } else if (change.eventType === "DELETE") {
-          setItems((prev) => prev.filter((i) => i.id !== change.old.id));
-        }
-      } else if (change.table === "lists") {
-        if (change.eventType === "UPDATE") {
-          if (change.new.deleted_at) {
-            router.push("/");
-          } else if (change.new.name) {
-            setListName(change.new.name);
-          }
-        }
-      }
-    }
-  );
-
   const { addMutation } = useMutationQueue(listId);
 
   const fetchItems = useCallback(async () => {
@@ -157,31 +119,48 @@ function ListContent() {
     }
   }, [initData, listId]);
 
+  const { connectionStatus } = useRealtimeList(
+    supabaseClient,
+    listId,
+    (change) => {
+      // Handle real-time item changes
+      if (change.table === "items") {
+        if (change.eventType === "INSERT") {
+          setItems((prev) => {
+            if (prev.find((i) => i.id === change.new.id)) return prev;
+            return [...prev, { ...change.new, creator_name: null, editor_name: null } as ItemData];
+          });
+        } else if (change.eventType === "UPDATE") {
+          setItems((prev) =>
+            prev.map((i) => {
+              if (i.id !== change.new.id) return i;
+              // During drag, skip position-only updates to avoid fighting local reorder
+              if (isDraggingRef.current) {
+                const { position, ...rest } = change.new;
+                return { ...i, ...rest };
+              }
+              return { ...i, ...change.new };
+            })
+          );
+        } else if (change.eventType === "DELETE") {
+          setItems((prev) => prev.filter((i) => i.id !== change.old.id));
+        }
+      } else if (change.table === "lists") {
+        if (change.eventType === "UPDATE") {
+          if (change.new.deleted_at) {
+            router.push("/");
+          } else if (change.new.name) {
+            setListName(change.new.name);
+          }
+        }
+      }
+    },
+    { onReconnect: refreshItems }
+  );
+
   useEffect(() => {
     if (isReady) fetchItems();
   }, [isReady, fetchItems]);
-
-  useEffect(() => {
-    if (!isReady || loading) return;
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && !isDraggingRef.current) {
-        refreshItems();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    const intervalId = setInterval(() => {
-      if (document.visibilityState === "visible" && !isDraggingRef.current) {
-        refreshItems();
-      }
-    }, 30_000);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      clearInterval(intervalId);
-    };
-  }, [isReady, loading, refreshItems]);
 
   const handleAddItem = useCallback(
     async (text: string, recycleId?: string) => {
