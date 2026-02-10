@@ -492,7 +492,7 @@ function ListContent() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col h-dvh overflow-hidden">
       {/* Header */}
       <header className="flex items-center gap-3 p-4 pb-0">
         <button onClick={() => router.push("/")} className="p-1">
@@ -517,7 +517,7 @@ function ListContent() {
       <AddItemInput listId={listId} onAddItem={handleAddItem} />
 
       {/* Item list */}
-      <div className="flex-1">
+      <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y">
         {/* Active items */}
         <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           {activeItems.map((item, index) => (

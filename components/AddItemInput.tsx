@@ -128,7 +128,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
   }, []);
 
   return (
-    <div className="sticky top-0 z-10 bg-tg-bg border-b border-border p-3">
+    <div className="z-10 bg-tg-bg border-b border-border p-3">
       <div className="relative">
         <div className="flex gap-2">
           <div className="relative flex-1">
