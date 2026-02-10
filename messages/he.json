@@ -46,7 +46,8 @@
     "clearedCount": "נוקו {count} פריטים",
     "maxItems": "רשימה זו מוגבלת ל-500 פריטים.",
     "partialAdd": "נוספו {added} פריטים. {skipped} פריטים דולגו — רשימה זו מוגבלת ל-500 פריטים.",
-    "dragHandle": "גרור לשינוי סדר"
+    "dragHandle": "גרור לשינוי סדר",
+    "duplicateWarning": "פריט זה כבר קיים ברשימה"
   },
   "voice": {
     "added": "נוסף ל{listName}:",

@@ -1,13 +1,16 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Check, Clock, Trash2 } from "lucide-react";
+import { Check, Clock, Copy, Trash2 } from "lucide-react";
 
 interface ItemRowProps {
   id: string;
   text: string;
   completed: boolean;
   isPending?: boolean;
+  isDuplicate?: boolean;
+  creatorName?: string | null;
+  isOwnItem?: boolean;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
 }
@@ -17,6 +20,9 @@ export default function ItemRow({
   text,
   completed,
   isPending,
+  isDuplicate,
+  creatorName,
+  isOwnItem,
   onToggle,
   onDelete,
 }: ItemRowProps) {
@@ -84,13 +90,25 @@ export default function ItemRow({
           {completed && <Check className="w-4 h-4 text-tg-button-text" />}
         </button>
 
-        <span
-          className={`flex-1 min-w-0 truncate ${
-            completed ? "line-through text-tg-hint" : "text-tg-text"
-          } ${isPending ? "opacity-60" : ""}`}
-        >
-          {text}
-        </span>
+        <div className={`flex-1 min-w-0 ${isPending ? "opacity-60" : ""}`}>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`truncate ${
+                completed ? "line-through text-tg-hint" : "text-tg-text"
+              }`}
+            >
+              {text}
+            </span>
+            {isDuplicate && !completed && (
+              <Copy className="w-3 h-3 text-amber-500/70 shrink-0" />
+            )}
+          </div>
+          {creatorName && !isOwnItem && (
+            <p className="text-[11px] text-tg-hint truncate">
+              {creatorName.split(" ")[0]}
+            </p>
+          )}
+        </div>
 
         {isPending && (
           <Clock className="w-4 h-4 text-tg-hint shrink-0" />

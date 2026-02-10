@@ -23,11 +23,12 @@ interface ItemData {
   deleted_at: string | null;
   position: number;
   created_by: string | null;
+  creator_name: string | null;
   _pending?: boolean;
 }
 
 function ListContent() {
-  const { initData, isReady, supabaseClient } = useTelegram();
+  const { initData, isReady, supabaseClient, userId } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
   const params = useParams();
@@ -45,6 +46,8 @@ function ListContent() {
     timeout: NodeJS.Timeout;
   } | null>(null);
 
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+
   const isDraggingRef = useRef(false);
   const previousItemsRef = useRef<ItemData[]>([]);
 
@@ -57,7 +60,7 @@ function ListContent() {
         if (change.eventType === "INSERT") {
           setItems((prev) => {
             if (prev.find((i) => i.id === change.new.id)) return prev;
-            return [...prev, change.new as ItemData];
+            return [...prev, { ...change.new, creator_name: null } as ItemData];
           });
         } else if (change.eventType === "UPDATE") {
           setItems((prev) =>
@@ -110,7 +113,12 @@ function ListContent() {
       });
       if (res.ok) {
         const { items: fetchedItems } = await res.json();
-        setItems(fetchedItems || []);
+        const mapped = (fetchedItems || []).map((item: any) => ({
+          ...item,
+          creator_name: item.users?.name ?? null,
+          users: undefined,
+        }));
+        setItems(mapped);
       }
     } catch (e) {
       console.error("[List] Fetch error:", e);
@@ -126,6 +134,17 @@ function ListContent() {
   const handleAddItem = useCallback(
     async (text: string, recycleId?: string) => {
       if (!initData) return;
+
+      // Check for duplicate
+      const existing = items.find(
+        (i) => !i.completed && !i.deleted_at && i.text.toLowerCase() === text.toLowerCase()
+      );
+      if (existing) {
+        const tg = (window as any).Telegram?.WebApp;
+        tg?.HapticFeedback?.notificationOccurred("warning");
+        setDuplicateWarning(t("items.duplicateWarning"));
+        setTimeout(() => setDuplicateWarning(null), 2500);
+      }
 
       if (recycleId) {
         // Recycle: optimistic update
@@ -161,7 +180,8 @@ function ListContent() {
           completed_at: null,
           deleted_at: null,
           position: Date.now(),
-          created_by: null,
+          created_by: userId,
+          creator_name: null,
           _pending: true,
         };
         setItems((prev) => [newItem, ...prev]);
@@ -192,7 +212,7 @@ function ListContent() {
         });
       }
     },
-    [initData, listId, addMutation]
+    [initData, listId, addMutation, items, t, userId]
   );
 
   const handleToggle = useCallback(
@@ -408,6 +428,17 @@ function ListContent() {
       return bTime - aTime;
     });
 
+  // Compute duplicate text set for active items
+  const duplicateTexts = new Set<string>();
+  const seenTexts = new Map<string, number>();
+  for (const item of activeItems) {
+    const key = item.text.toLowerCase();
+    seenTexts.set(key, (seenTexts.get(key) || 0) + 1);
+  }
+  for (const [key, count] of seenTexts) {
+    if (count > 1) duplicateTexts.add(key);
+  }
+
   if (loading) {
     return (
       <div className="p-4 space-y-3">
@@ -458,6 +489,9 @@ function ListContent() {
               index={index}
               text={item.text}
               isPending={item._pending}
+              isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+              creatorName={isShared ? item.creator_name : null}
+              isOwnItem={item.created_by === userId}
               onToggle={handleToggle}
               onDelete={handleDelete}
             />
@@ -495,6 +529,8 @@ function ListContent() {
                   id={item.id}
                   text={item.text}
                   completed={true}
+                  creatorName={isShared ? item.creator_name : null}
+                  isOwnItem={item.created_by === userId}
                   onToggle={handleToggle}
                   onDelete={handleDelete}
                 />
@@ -509,6 +545,13 @@ function ListContent() {
           </div>
         )}
       </div>
+
+      {/* Duplicate warning toast */}
+      {duplicateWarning && !undoAction && (
+        <div className="fixed bottom-6 start-4 end-4 bg-amber-500 text-white rounded-xl py-3 px-4 z-30 shadow-lg">
+          <span className="text-sm">{duplicateWarning}</span>
+        </div>
+      )}
 
       {/* Undo toast */}
       {undoAction && (

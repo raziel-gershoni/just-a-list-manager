@@ -33,6 +33,7 @@ interface TelegramUser {
 
 interface TelegramContextType {
   user: TelegramUser | null;
+  userId: string | null;
   initData: string | null;
   locale: SupportedLocale;
   supabaseClient: SupabaseClient | null;
@@ -41,6 +42,7 @@ interface TelegramContextType {
 
 const TelegramContext = createContext<TelegramContextType>({
   user: null,
+  userId: null,
   initData: null,
   locale: "en",
   supabaseClient: null,
@@ -57,6 +59,7 @@ export default function TelegramProvider({
   children: React.ReactNode;
 }) {
   const [user, setUser] = useState<TelegramUser | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [initData, setInitData] = useState<string | null>(null);
   const [locale, setLocale] = useState<SupportedLocale>("en");
   const [supabaseClient, setSupabaseClient] = useState<SupabaseClient | null>(
@@ -157,10 +160,14 @@ export default function TelegramProvider({
       // Register user
       if (rawInitData) {
         try {
-          await fetch("/api/user", {
+          const userRes = await fetch("/api/user", {
             method: "POST",
             headers: { "x-telegram-init-data": rawInitData },
           });
+          if (userRes.ok) {
+            const userData2 = await userRes.json();
+            if (userData2?.id) setUserId(userData2.id);
+          }
         } catch (e) {
           console.error("[TelegramProvider] User registration error:", e);
         }
@@ -204,7 +211,7 @@ export default function TelegramProvider({
 
   return (
     <TelegramContext.Provider
-      value={{ user, initData, locale, supabaseClient, isReady }}
+      value={{ user, userId, initData, locale, supabaseClient, isReady }}
     >
       <NextIntlClientProvider locale={locale} messages={allMessages[locale]}>
         {children}

@@ -27,7 +27,7 @@ export async function GET(
 
   let query = supabase
     .from("items")
-    .select("id, text, completed, completed_at, deleted_at, position, created_by, created_at")
+    .select("id, text, completed, completed_at, deleted_at, position, created_by, created_at, users!created_by(name)")
     .eq("list_id", listId)
     .is("deleted_at", null)
     .order("position", { ascending: false })

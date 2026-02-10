@@ -10,6 +10,9 @@ interface SortableItemProps {
   index: number;
   text: string;
   isPending?: boolean;
+  isDuplicate?: boolean;
+  creatorName?: string | null;
+  isOwnItem?: boolean;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
 }
@@ -19,6 +22,9 @@ export default function SortableItem({
   index,
   text,
   isPending,
+  isDuplicate,
+  creatorName,
+  isOwnItem,
   onToggle,
   onDelete,
 }: SortableItemProps) {
@@ -43,6 +49,9 @@ export default function SortableItem({
           text={text}
           completed={false}
           isPending={isPending}
+          isDuplicate={isDuplicate}
+          creatorName={creatorName}
+          isOwnItem={isOwnItem}
           onToggle={onToggle}
           onDelete={onDelete}
         />
