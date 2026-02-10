@@ -136,12 +136,13 @@ export async function sendApprovalRequest(
   requesterName: string,
   listId: string,
   listName: string,
-  collaboratorId: string
+  collaboratorId: string,
+  ownerLanguage: string
 ) {
   try {
     await bot.sendMessage(
       ownerTelegramId,
-      getMsg("en", "bot.approvalRequest")
+      getMsg(ownerLanguage, "bot.approvalRequest")
         .replace("{userName}", requesterName)
         .replace("{listName}", listName),
       {
@@ -149,11 +150,11 @@ export async function sendApprovalRequest(
           inline_keyboard: [
             [
               {
-                text: "Approve \u2705",
+                text: `${getMsg(ownerLanguage, "share.approveRequest")} \u2705`,
                 callback_data: `approve:${collaboratorId}`,
               },
               {
-                text: "Decline \u274C",
+                text: `${getMsg(ownerLanguage, "share.declineRequest")} \u274C`,
                 callback_data: `decline:${collaboratorId}`,
               },
             ],
@@ -180,7 +181,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     // Get collaborator details with list owner info
     const { data: collab } = await supabase
       .from("collaborators")
-      .select("*, users!collaborators_user_id_fkey(telegram_id, name), lists!collaborators_list_id_fkey(name, owner_id, users!lists_owner_id_fkey(telegram_id))")
+      .select("*, users!collaborators_user_id_fkey(telegram_id, name, language), lists!collaborators_list_id_fkey(name, owner_id, users!lists_owner_id_fkey(telegram_id, language))")
       .eq("id", collaboratorId)
       .single();
 
@@ -210,6 +211,8 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     const requesterTgId = (collab as any).users?.telegram_id;
     const requesterName = (collab as any).users?.name || "Someone";
     const listName = (collab as any).lists?.name || "a list";
+    const requesterLang = (collab as any).users?.language || "en";
+    const ownerLang = (collab as any).lists?.users?.language || "en";
 
     // Notify requester
     if (requesterTgId) {
@@ -217,7 +220,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         if (isApprove) {
           await bot.sendMessage(
             requesterTgId,
-            getMsg("en", "share.approvedMessage").replace("{listName}", listName),
+            getMsg(requesterLang, "share.approvedMessage").replace("{listName}", listName),
             {
               reply_markup: {
                 inline_keyboard: [
@@ -229,7 +232,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         } else {
           await bot.sendMessage(
             requesterTgId,
-            getMsg("en", "share.declinedMessage").replace("{listName}", listName)
+            getMsg(requesterLang, "share.declinedMessage").replace("{listName}", listName)
           );
         }
       } catch (e) {
@@ -246,8 +249,8 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     try {
       await bot.editMessageText(
         isApprove
-          ? getMsg("en", "bot.approved").replace("{userName}", requesterName).replace("{listName}", listName)
-          : getMsg("en", "bot.declined").replace("{userName}", requesterName).replace("{listName}", listName),
+          ? getMsg(ownerLang, "bot.approved").replace("{userName}", requesterName).replace("{listName}", listName)
+          : getMsg(ownerLang, "bot.declined").replace("{userName}", requesterName).replace("{listName}", listName),
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,

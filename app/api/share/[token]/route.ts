@@ -280,7 +280,7 @@ async function sendApprovalNotification(
     // Get owner's telegram_id
     const { data: owner } = await supabase
       .from("users")
-      .select("telegram_id")
+      .select("telegram_id, language")
       .eq("id", ownerId)
       .single();
 
@@ -292,7 +292,8 @@ async function sendApprovalNotification(
         requesterName,
         listId,
         listName,
-        collaboratorId
+        collaboratorId,
+        owner.language
       );
     }
   } catch (e) {
