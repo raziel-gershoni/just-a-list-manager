@@ -7,10 +7,13 @@ import { ArrowLeft, Share2, ChevronDown, ChevronRight, Trash2, Users } from "luc
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
 import ItemRow from "@/components/ItemRow";
+import SortableItem from "@/components/SortableItem";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import ShareDialog from "@/components/ShareDialog";
 import { useRealtimeList } from "@/src/hooks/useRealtimeList";
 import { useMutationQueue } from "@/src/hooks/useMutationQueue";
+import { DragDropProvider } from "@dnd-kit/react";
+import type { DragDropEvents } from "@dnd-kit/react";
 
 interface ItemData {
   id: string;
@@ -42,6 +45,9 @@ function ListContent() {
     timeout: NodeJS.Timeout;
   } | null>(null);
 
+  const isDraggingRef = useRef(false);
+  const previousItemsRef = useRef<ItemData[]>([]);
+
   const { connectionStatus } = useRealtimeList(
     supabaseClient,
     listId,
@@ -55,9 +61,15 @@ function ListContent() {
           });
         } else if (change.eventType === "UPDATE") {
           setItems((prev) =>
-            prev.map((i) =>
-              i.id === change.new.id ? { ...i, ...change.new } : i
-            )
+            prev.map((i) => {
+              if (i.id !== change.new.id) return i;
+              // During drag, skip position-only updates to avoid fighting local reorder
+              if (isDraggingRef.current) {
+                const { position, ...rest } = change.new;
+                return { ...i, ...rest };
+              }
+              return { ...i, ...change.new };
+            })
           );
         } else if (change.eventType === "DELETE") {
           setItems((prev) => prev.filter((i) => i.id !== change.old.id));
@@ -308,6 +320,82 @@ function ListContent() {
     });
   }, [initData, listId, items]);
 
+  const handleDragStart: DragDropEvents["dragstart"] = useCallback(() => {
+    isDraggingRef.current = true;
+    previousItemsRef.current = [...items];
+    const tg = (window as any).Telegram?.WebApp;
+    tg?.HapticFeedback?.impactOccurred("medium");
+  }, [items]);
+
+  const handleDragEnd: DragDropEvents["dragend"] = useCallback(
+    (event) => {
+      if (event.canceled) {
+        setItems(previousItemsRef.current);
+        isDraggingRef.current = false;
+        return;
+      }
+
+      const { source, target } = event.operation;
+      if (!source || !target) {
+        isDraggingRef.current = false;
+        return;
+      }
+
+      const sourceIndex = (source as any).sortable?.index as number | undefined;
+      const targetIndex = (target as any).sortable?.index as number | undefined;
+      if (sourceIndex == null || targetIndex == null || sourceIndex === targetIndex) {
+        isDraggingRef.current = false;
+        return;
+      }
+
+      // Compute new order from current active items
+      const currentActive = items
+        .filter((i) => !i.completed && !i.deleted_at)
+        .sort((a, b) => b.position - a.position);
+
+      const reordered = [...currentActive];
+      const [moved] = reordered.splice(sourceIndex, 1);
+      reordered.splice(targetIndex, 0, moved);
+
+      // Assign new positions (highest position = first item)
+      const updatedIds: string[] = [];
+      const positionMap = new Map<string, number>();
+      reordered.forEach((item, index) => {
+        const newPosition = reordered.length - index;
+        positionMap.set(item.id, newPosition);
+        updatedIds.push(item.id);
+      });
+
+      // Update items state with new positions
+      setItems((prev) =>
+        prev.map((item) => {
+          const newPos = positionMap.get(item.id);
+          if (newPos != null) return { ...item, position: newPos };
+          return item;
+        })
+      );
+
+      // Persist to server
+      addMutation({
+        type: "reorder",
+        payload: { listId, orderedIds: updatedIds },
+        execute: async () => {
+          await fetch(`/api/lists/${listId}/items/reorder`, {
+            method: "POST",
+            headers: {
+              "x-telegram-init-data": initData!,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ orderedIds: updatedIds }),
+          });
+        },
+      });
+
+      isDraggingRef.current = false;
+    },
+    [items, initData, listId, addMutation]
+  );
+
   const activeItems = items
     .filter((i) => !i.completed && !i.deleted_at)
     .sort((a, b) => b.position - a.position);
@@ -362,17 +450,19 @@ function ListContent() {
       {/* Item list */}
       <div className="flex-1">
         {/* Active items */}
-        {activeItems.map((item) => (
-          <ItemRow
-            key={item.id}
-            id={item.id}
-            text={item.text}
-            completed={false}
-            isPending={item._pending}
-            onToggle={handleToggle}
-            onDelete={handleDelete}
-          />
-        ))}
+        <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          {activeItems.map((item, index) => (
+            <SortableItem
+              key={item.id}
+              id={item.id}
+              index={index}
+              text={item.text}
+              isPending={item._pending}
+              onToggle={handleToggle}
+              onDelete={handleDelete}
+            />
+          ))}
+        </DragDropProvider>
 
         {/* Completed section */}
         {completedItems.length > 0 && (

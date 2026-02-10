@@ -45,7 +45,8 @@
     "emptyDescription": "Add items above or send a voice message",
     "clearedCount": "Cleared {count} items",
     "maxItems": "This list has a 500-item limit.",
-    "partialAdd": "Added {added} items. {skipped} items skipped — this list has a 500-item limit."
+    "partialAdd": "Added {added} items. {skipped} items skipped — this list has a 500-item limit.",
+    "dragHandle": "Drag to reorder"
   },
   "voice": {
     "added": "Added to {listName}:",

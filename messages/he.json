@@ -45,7 +45,8 @@
     "emptyDescription": "הוסף פריטים למעלה או שלח הודעה קולית",
     "clearedCount": "נוקו {count} פריטים",
     "maxItems": "רשימה זו מוגבלת ל-500 פריטים.",
-    "partialAdd": "נוספו {added} פריטים. {skipped} פריטים דולגו — רשימה זו מוגבלת ל-500 פריטים."
+    "partialAdd": "נוספו {added} פריטים. {skipped} פריטים דולגו — רשימה זו מוגבלת ל-500 פריטים.",
+    "dragHandle": "גרור לשינוי סדר"
   },
   "voice": {
     "added": "נוסף ל{listName}:",
