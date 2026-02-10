@@ -24,6 +24,8 @@ interface ItemData {
   position: number;
   created_by: string | null;
   creator_name: string | null;
+  edited_by: string | null;
+  editor_name: string | null;
   _pending?: boolean;
 }
 
@@ -60,7 +62,7 @@ function ListContent() {
         if (change.eventType === "INSERT") {
           setItems((prev) => {
             if (prev.find((i) => i.id === change.new.id)) return prev;
-            return [...prev, { ...change.new, creator_name: null } as ItemData];
+            return [...prev, { ...change.new, creator_name: null, editor_name: null } as ItemData];
           });
         } else if (change.eventType === "UPDATE") {
           setItems((prev) =>
@@ -116,7 +118,9 @@ function ListContent() {
         const mapped = (fetchedItems || []).map((item: any) => ({
           ...item,
           creator_name: item.users?.name ?? null,
+          editor_name: item.editor?.name ?? null,
           users: undefined,
+          editor: undefined,
         }));
         setItems(mapped);
       }
@@ -182,6 +186,8 @@ function ListContent() {
           position: Date.now(),
           created_by: userId,
           creator_name: null,
+          edited_by: null,
+          editor_name: null,
           _pending: true,
         };
         setItems((prev) => [newItem, ...prev]);
@@ -304,7 +310,7 @@ function ListContent() {
   const handleEditItem = useCallback(
     async (itemId: string, newText: string) => {
       setItems((prev) =>
-        prev.map((i) => (i.id === itemId ? { ...i, text: newText } : i))
+        prev.map((i) => (i.id === itemId ? { ...i, text: newText, edited_by: userId, editor_name: null } : i))
       );
 
       addMutation({
@@ -323,7 +329,7 @@ function ListContent() {
         },
       });
     },
-    [initData, listId, addMutation]
+    [initData, listId, addMutation, userId]
   );
 
   const handleClearCompleted = useCallback(async () => {
@@ -524,6 +530,8 @@ function ListContent() {
               isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
               creatorName={isShared ? item.creator_name : null}
               isOwnItem={item.created_by === userId}
+              editorName={isShared ? item.editor_name : null}
+              isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
               onToggle={handleToggle}
               onDelete={handleDelete}
               onEdit={handleEditItem}
@@ -564,6 +572,8 @@ function ListContent() {
                   completed={true}
                   creatorName={isShared ? item.creator_name : null}
                   isOwnItem={item.created_by === userId}
+                  editorName={isShared ? item.editor_name : null}
+                  isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
                   onToggle={handleToggle}
                   onDelete={handleDelete}
                   onEdit={handleEditItem}

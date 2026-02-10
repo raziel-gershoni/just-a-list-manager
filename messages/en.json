@@ -47,7 +47,8 @@
     "maxItems": "This list has a 500-item limit.",
     "partialAdd": "Added {added} items. {skipped} items skipped — this list has a 500-item limit.",
     "dragHandle": "Drag to reorder",
-    "duplicateWarning": "This item already exists in the list"
+    "duplicateWarning": "This item already exists in the list",
+    "editedBy": "edited by {name}"
   },
   "voice": {
     "added": "Added to {listName}:",

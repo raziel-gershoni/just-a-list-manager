@@ -18,6 +18,8 @@ interface SortableItemProps {
   isDuplicate?: boolean;
   creatorName?: string | null;
   isOwnItem?: boolean;
+  editorName?: string | null;
+  isOwnEdit?: boolean;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
   onEdit?: (id: string, newText: string) => void;
@@ -31,6 +33,8 @@ export default function SortableItem({
   isDuplicate,
   creatorName,
   isOwnItem,
+  editorName,
+  isOwnEdit,
   onToggle,
   onDelete,
   onEdit,
@@ -54,6 +58,8 @@ export default function SortableItem({
         isDuplicate={isDuplicate}
         creatorName={creatorName}
         isOwnItem={isOwnItem}
+        editorName={editorName}
+        isOwnEdit={isOwnEdit}
         onToggle={onToggle}
         onDelete={onDelete}
         onEdit={onEdit}

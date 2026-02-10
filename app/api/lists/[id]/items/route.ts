@@ -27,7 +27,7 @@ export async function GET(
 
   let query = supabase
     .from("items")
-    .select("id, text, completed, completed_at, deleted_at, position, created_by, created_at, users!created_by(name)")
+    .select("id, text, completed, completed_at, deleted_at, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
     .eq("list_id", listId)
     .is("deleted_at", null)
     .order("position", { ascending: false })
@@ -192,6 +192,7 @@ export async function PATCH(
 
   if (typeof updates.text === "string" && updates.text.trim().length > 0 && updates.text.trim().length <= 500) {
     patchData.text = updates.text.trim();
+    patchData.edited_by = auth.userId;
   }
 
   if (typeof updates.position === "number") {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Check, Clock, Copy, X } from "lucide-react";
+import { Check, Clock, Copy, Pencil, X } from "lucide-react";
 
 interface ItemRowProps {
   id: string;
@@ -11,6 +11,8 @@ interface ItemRowProps {
   isDuplicate?: boolean;
   creatorName?: string | null;
   isOwnItem?: boolean;
+  editorName?: string | null;
+  isOwnEdit?: boolean;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
   onEdit?: (id: string, newText: string) => void;
@@ -24,6 +26,8 @@ export default function ItemRow({
   isDuplicate,
   creatorName,
   isOwnItem,
+  editorName,
+  isOwnEdit,
   onToggle,
   onDelete,
   onEdit,
@@ -119,9 +123,16 @@ export default function ItemRow({
                 <Copy className="w-3 h-3 text-amber-500/70 shrink-0" />
               )}
             </div>
-            {creatorName && !isOwnItem && (
+            {((creatorName && !isOwnItem) || (editorName && !isOwnEdit)) && (
               <p className="text-[11px] text-tg-hint truncate">
-                {creatorName.split(" ")[0]}
+                {creatorName && !isOwnItem && creatorName.split(" ")[0]}
+                {creatorName && !isOwnItem && editorName && !isOwnEdit && " · "}
+                {editorName && !isOwnEdit && (
+                  <>
+                    <Pencil className="inline w-2.5 h-2.5 mr-0.5" />
+                    {editorName.split(" ")[0]}
+                  </>
+                )}
               </p>
             )}
           </div>
