@@ -1,6 +1,6 @@
 /**
  * Smart item recycling service.
- * Matches new items against completed/soft-deleted items to prevent duplicates.
+ * Matches new items against completed items to prevent duplicates.
  */
 
 import { createServerClient } from "@/src/lib/supabase";
@@ -21,7 +21,7 @@ export interface RecyclableItem {
 
 /**
  * Find recyclable items for UI typeahead autocomplete.
- * Searches both completed items and soft-deleted items (within 7-day window).
+ * Searches completed items only (deleted items excluded).
  * Uses ILIKE substring matching (fast for partial typing).
  */
 export async function findRecyclableItems(
@@ -29,19 +29,15 @@ export async function findRecyclableItems(
   searchText: string
 ): Promise<RecyclableItem[]> {
   const supabase = createServerClient();
-  const sevenDaysAgo = new Date(
-    Date.now() - 7 * 24 * 60 * 60 * 1000
-  ).toISOString();
 
-  // Search completed items (active and soft-deleted within 7 days)
+  // Search completed items (not deleted)
   const { data: completedItems } = await supabase
     .from("items")
     .select("id, text, completed, completed_at, deleted_at, position")
     .eq("list_id", listId)
     .ilike("text", `%${escapeIlike(searchText)}%`)
-    .or(
-      `and(completed.eq.true,deleted_at.is.null),and(deleted_at.not.is.null,deleted_at.gte.${sevenDaysAgo})`
-    )
+    .eq("completed", true)
+    .is("deleted_at", null)
     .order("completed_at", { ascending: false, nullsFirst: false })
     .limit(10);
 
@@ -96,22 +92,18 @@ export async function recycleItem(
 /**
  * Find fuzzy matches for voice processing.
  * Uses pg_trgm similarity matching for typo tolerance.
- * Searches both completed and soft-deleted items within 7-day window.
+ * Searches completed items only (deleted items excluded).
  */
 export async function findFuzzyMatch(
   listId: string,
   text: string
 ): Promise<RecyclableItem[]> {
   const supabase = createServerClient();
-  const sevenDaysAgo = new Date(
-    Date.now() - 7 * 24 * 60 * 60 * 1000
-  ).toISOString();
 
   // Use RPC for pg_trgm similarity search
   const { data, error } = await supabase.rpc("find_fuzzy_items", {
     p_list_id: listId,
     p_search_text: text,
-    p_since: sevenDaysAgo,
     p_threshold: 0.3,
   });
 
