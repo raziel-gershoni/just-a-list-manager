@@ -22,7 +22,7 @@ export function useRealtimeList(
   options?: { onReconnect?: () => void }
 ) {
   const [connectionStatus, setConnectionStatus] =
-    useState<ConnectionStatus>("connected"); // Optimistic — REST works, Realtime is bonus
+    useState<ConnectionStatus>("connecting");
   const [realtimeEventCount, setRealtimeEventCount] = useState(0);
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
