@@ -170,7 +170,9 @@ export default function TelegramProvider({
       const startParam = tg.initDataUnsafe?.start_param;
       if (startParam?.startsWith("invite_")) {
         const inviteToken = startParam.replace("invite_", "");
-        window.location.href = `/invite/${inviteToken}`;
+        if (!window.location.pathname.startsWith("/invite/")) {
+          window.location.href = `/invite/${inviteToken}`;
+        }
       }
     })();
 
