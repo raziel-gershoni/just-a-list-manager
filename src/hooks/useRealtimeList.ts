@@ -31,10 +31,6 @@ export function useRealtimeList(
 
     let active = true;
 
-    if (!navigator.onLine) {
-      setConnectionStatus("offline");
-    }
-
     const channel = supabaseClient
       .channel(`list:${listId}`)
       .on(
@@ -89,13 +85,13 @@ export function useRealtimeList(
         }
       )
       .subscribe((status, err) => {
-        if (!active) return; // ignore events from stale channels
-        if (status === "SUBSCRIBED") setConnectionStatus("connected");
-        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.error("[Realtime] Subscription error:", status, err);
-          setConnectionStatus("offline");
+        if (!active) return;
+        console.log("[Realtime] Channel status:", status, err || "");
+        if (status === "SUBSCRIBED") {
+          setConnectionStatus("connected");
         }
-        // Don't set offline on CLOSED — it fires during normal cleanup
+        // Don't set offline on subscription errors — REST API still works.
+        // Only browser online/offline events should drive the offline indicator.
       });
 
     channelRef.current = channel;
