@@ -8,6 +8,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
+import { useRouter } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { createBrowserClient } from "@/src/lib/supabase";
 import { isRtl, resolveLocale, type SupportedLocale } from "@/src/lib/i18n";
@@ -62,6 +63,7 @@ export default function TelegramProvider({
     null
   );
   const [isReady, setIsReady] = useState(false);
+  const router = useRouter();
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const jwtRef = useRef<string | null>(null);
 
@@ -164,16 +166,16 @@ export default function TelegramProvider({
         }
       }
 
-      setIsReady(true);
-
-      // Handle deep link for invites
+      // Handle deep link for invites (before setIsReady to prevent unnecessary API calls)
       const startParam = tg.initDataUnsafe?.start_param;
       if (startParam?.startsWith("invite_")) {
         const inviteToken = startParam.replace("invite_", "");
         if (!window.location.pathname.startsWith("/invite/")) {
-          window.location.href = `/invite/${inviteToken}`;
+          router.push(`/invite/${inviteToken}`);
         }
       }
+
+      setIsReady(true);
     })();
 
     // JWT refresh every 50 minutes

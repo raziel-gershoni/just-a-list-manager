@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     .limit(1);
 
   const activeLink = activeLinks?.[0]
-    ? `https://t.me/${BOT_USERNAME}/app?startapp=invite_${activeLinks[0].token}`
+    ? `https://t.me/${BOT_USERNAME}?start=invite_${activeLinks[0].token}`
     : null;
 
   return NextResponse.json({
@@ -96,6 +96,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const link = `https://t.me/${BOT_USERNAME}/app?startapp=invite_${token}`;
+  const link = `https://t.me/${BOT_USERNAME}?start=invite_${token}`;
   return NextResponse.json({ token, link, expiresAt }, { status: 201 });
 }
