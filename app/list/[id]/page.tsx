@@ -162,6 +162,19 @@ function ListContent() {
     if (isReady) fetchItems();
   }, [isReady, fetchItems]);
 
+  // Refresh items when tab becomes visible (catches missed changes)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !isDraggingRef.current) {
+        refreshItems();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshItems]);
+
   const handleAddItem = useCallback(
     async (text: string, recycleId?: string) => {
       if (!initData) return;

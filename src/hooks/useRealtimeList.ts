@@ -22,7 +22,7 @@ export function useRealtimeList(
   options?: { onReconnect?: () => void }
 ) {
   const [connectionStatus, setConnectionStatus] =
-    useState<ConnectionStatus>("connecting");
+    useState<ConnectionStatus>("connected"); // Optimistic — REST works, Realtime is bonus
   const channelRef = useRef<RealtimeChannel | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -36,6 +36,7 @@ export function useRealtimeList(
     let retryCount = 0;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let hadSuccessfulConnection = false;
+    let subscribeCount = 0;
 
     function subscribe() {
       if (!active || !supabaseClient) return;
@@ -46,10 +47,16 @@ export function useRealtimeList(
         channelRef.current = null;
       }
 
-      setConnectionStatus("connecting");
+      // Only show "connecting" if we previously had a successful connection
+      // (i.e., we're recovering from a failure, not on first attempt)
+      if (hadSuccessfulConnection) {
+        setConnectionStatus("connecting");
+      }
 
+      // Use unique channel name to avoid stale channel conflicts on retry
+      subscribeCount++;
       const channel = supabaseClient
-        .channel(`list:${listId}`)
+        .channel(`list:${listId}:${subscribeCount}`)
         .on(
           "postgres_changes",
           {
@@ -134,7 +141,10 @@ export function useRealtimeList(
         channelRef.current = null;
       }
 
-      setConnectionStatus("connecting");
+      // Only show "connecting" if we previously had a successful connection
+      if (hadSuccessfulConnection) {
+        setConnectionStatus("connecting");
+      }
 
       const delay = Math.min(MIN_RETRY_MS * Math.pow(2, retryCount), MAX_RETRY_MS);
       retryCount++;
