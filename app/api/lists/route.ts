@@ -148,16 +148,56 @@ export async function PATCH(request: NextRequest) {
   if (!auth.success) return auth.response;
 
   const body = await request.json();
-  const { id, name } = body;
+  const { id, restore } = body;
 
-  if (!id || !name?.trim() || name.trim().length > 100) {
+  if (!id) {
     return NextResponse.json(
-      { error: "List ID and name required (max 100 chars)" },
+      { error: "List ID is required" },
       { status: 400 }
     );
   }
 
   const supabase = createServerClient();
+
+  // Restore (undelete) flow
+  if (restore) {
+    const { data: list } = await supabase
+      .from("lists")
+      .select("owner_id")
+      .eq("id", id)
+      .not("deleted_at", "is", null)
+      .single();
+
+    if (!list || list.owner_id !== auth.userId) {
+      return NextResponse.json(
+        { error: "Not found or not authorized" },
+        { status: 403 }
+      );
+    }
+
+    const { data: restored, error } = await supabase
+      .from("lists")
+      .update({ deleted_at: null })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: "Restore failed" }, { status: 500 });
+    }
+
+    return NextResponse.json(restored);
+  }
+
+  // Rename flow
+  const { name } = body;
+
+  if (!name?.trim() || name.trim().length > 100) {
+    return NextResponse.json(
+      { error: "List name required (max 100 chars)" },
+      { status: 400 }
+    );
+  }
 
   // Only owner can rename
   const { data: list } = await supabase

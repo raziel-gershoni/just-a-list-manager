@@ -86,7 +86,13 @@ export function useRealtimeList(
           });
         }
       )
-      .subscribe(); // No status callback — don't tie UI to Realtime health
+      .subscribe((status, err) => {
+        if (status === "SUBSCRIBED") setConnectionStatus("connected");
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error("[Realtime] Subscription error:", status, err);
+          setConnectionStatus("offline");
+        } else if (status === "CLOSED") setConnectionStatus("offline");
+      });
 
     channelRef.current = channel;
 

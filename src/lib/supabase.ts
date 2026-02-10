@@ -13,10 +13,12 @@ export function createServerClient(): SupabaseClient {
 export function createBrowserClient(accessToken: string): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(url, anonKey, {
+  const client = createClient(url, anonKey, {
     global: {
       headers: { Authorization: `Bearer ${accessToken}` },
     },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  client.realtime.setAuth(accessToken);
+  return client;
 }
