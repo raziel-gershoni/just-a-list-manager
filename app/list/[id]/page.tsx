@@ -119,7 +119,10 @@ function ListContent() {
     }
   }, [initData, listId]);
 
-  const { connectionStatus } = useRealtimeList(
+  const [debugResult, setDebugResult] = useState<string | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
+
+  const { connectionStatus, realtimeEventCount, lastRealtimeEvent } = useRealtimeList(
     supabaseClient,
     listId,
     (change) => {
@@ -649,6 +652,43 @@ function ListContent() {
           </button>
         </div>
       )}
+
+      {/* Debug overlay */}
+      <div className="bg-black/80 text-green-400 text-[10px] font-mono px-3 py-2 flex flex-col gap-1 z-50">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span>
+            RT: <span className={connectionStatus === "connected" ? "text-green-300" : "text-red-300"}>{connectionStatus}</span>
+          </span>
+          <span>Events: {realtimeEventCount}</span>
+          <span className="truncate max-w-[200px]">Last: {lastRealtimeEvent || "none"}</span>
+          <button
+            onClick={async () => {
+              setDebugLoading(true);
+              setDebugResult(null);
+              try {
+                const res = await fetch("/api/debug/realtime");
+                const data = await res.json();
+                const str = JSON.stringify(data, null, 2);
+                console.log("[Debug Realtime] API response:", data);
+                setDebugResult(str);
+              } catch (e: any) {
+                setDebugResult(`Error: ${e.message}`);
+              } finally {
+                setDebugLoading(false);
+              }
+            }}
+            disabled={debugLoading}
+            className="bg-green-700 text-white px-2 py-0.5 rounded text-[10px] ms-auto"
+          >
+            {debugLoading ? "..." : "Test Realtime"}
+          </button>
+        </div>
+        {debugResult && (
+          <pre className="text-[9px] text-green-300 max-h-40 overflow-auto whitespace-pre-wrap mt-1 border-t border-green-700 pt-1">
+            {debugResult}
+          </pre>
+        )}
+      </div>
 
       <ShareDialog
         listId={listId}

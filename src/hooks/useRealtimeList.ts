@@ -23,6 +23,8 @@ export function useRealtimeList(
 ) {
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connected"); // Optimistic — REST works, Realtime is bonus
+  const [realtimeEventCount, setRealtimeEventCount] = useState(0);
+  const [lastRealtimeEvent, setLastRealtimeEvent] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -55,8 +57,10 @@ export function useRealtimeList(
 
       // Use unique channel name to avoid stale channel conflicts on retry
       subscribeCount++;
+      const channelName = `list:${listId}:${subscribeCount}`;
+      console.log(`[Realtime] Subscribing to channel "${channelName}"`);
       const channel = supabaseClient
-        .channel(`list:${listId}:${subscribeCount}`)
+        .channel(channelName)
         .on(
           "postgres_changes",
           {
@@ -66,6 +70,10 @@ export function useRealtimeList(
             filter: `list_id=eq.${listId}`,
           },
           (payload) => {
+            const desc = `items:${payload.eventType}:${(payload.new as any)?.id || (payload.old as any)?.id || "?"}`;
+            console.log(`[Realtime] Event received: ${desc}`, payload);
+            setRealtimeEventCount((c) => c + 1);
+            setLastRealtimeEvent(desc);
             onChangeRef.current({
               table: "items",
               eventType: payload.eventType as any,
@@ -83,6 +91,10 @@ export function useRealtimeList(
             filter: `id=eq.${listId}`,
           },
           (payload) => {
+            const desc = `lists:${payload.eventType}:${(payload.new as any)?.id || (payload.old as any)?.id || "?"}`;
+            console.log(`[Realtime] Event received: ${desc}`, payload);
+            setRealtimeEventCount((c) => c + 1);
+            setLastRealtimeEvent(desc);
             onChangeRef.current({
               table: "lists",
               eventType: payload.eventType as any,
@@ -100,6 +112,10 @@ export function useRealtimeList(
             filter: `list_id=eq.${listId}`,
           },
           (payload) => {
+            const desc = `collaborators:${payload.eventType}:${(payload.new as any)?.id || (payload.old as any)?.id || "?"}`;
+            console.log(`[Realtime] Event received: ${desc}`, payload);
+            setRealtimeEventCount((c) => c + 1);
+            setLastRealtimeEvent(desc);
             onChangeRef.current({
               table: "collaborators",
               eventType: payload.eventType as any,
@@ -124,7 +140,8 @@ export function useRealtimeList(
               onReconnectRef.current?.();
             }
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.warn(`[Realtime] ${status}, scheduling retry #${retryCount + 1}`);
+            console.warn(`[Realtime] ${status} on channel "${channelName}", scheduling retry #${retryCount + 1}`, err);
+            setLastRealtimeEvent(`ERROR:${status}`);
             scheduleRetry();
           }
         });
@@ -194,5 +211,5 @@ export function useRealtimeList(
     };
   }, [supabaseClient, listId]);
 
-  return { connectionStatus };
+  return { connectionStatus, realtimeEventCount, lastRealtimeEvent };
 }
