@@ -122,7 +122,7 @@ function ListContent() {
   const [debugResult, setDebugResult] = useState<string | null>(null);
   const [debugLoading, setDebugLoading] = useState(false);
 
-  const { connectionStatus, realtimeEventCount, lastRealtimeEvent } = useRealtimeList(
+  const { connectionStatus, realtimeEventCount, lastRealtimeEvent, lastError } = useRealtimeList(
     supabaseClient,
     listId,
     (change) => {
@@ -667,11 +667,30 @@ function ListContent() {
               setDebugLoading(true);
               setDebugResult(null);
               try {
+                // Test 1: Server diagnostics
                 const res = await fetch("/api/debug/realtime");
-                const data = await res.json();
-                const str = JSON.stringify(data, null, 2);
-                console.log("[Debug Realtime] API response:", data);
-                setDebugResult(str);
+                const serverData = await res.json();
+
+                // Test 2: Broadcast channel (no RLS) to test basic Realtime
+                let broadcastResult = "skipped (no client)";
+                if (supabaseClient) {
+                  broadcastResult = await new Promise<string>((resolve) => {
+                    const timeout = setTimeout(() => resolve("TIMEOUT (5s)"), 5000);
+                    const ch = supabaseClient.channel("debug-broadcast-test");
+                    ch.subscribe((status, err) => {
+                      clearTimeout(timeout);
+                      supabaseClient.removeChannel(ch);
+                      resolve(err ? `${status}: ${typeof err === "string" ? err : JSON.stringify(err)}` : status);
+                    });
+                  });
+                }
+
+                const result = {
+                  broadcast_test: broadcastResult,
+                  channel_error: lastError,
+                  ...serverData,
+                };
+                setDebugResult(JSON.stringify(result, null, 2));
               } catch (e: any) {
                 setDebugResult(`Error: ${e.message}`);
               } finally {
@@ -684,6 +703,9 @@ function ListContent() {
             {debugLoading ? "..." : "Test Realtime"}
           </button>
         </div>
+        {lastError && (
+          <div className="text-[9px] text-red-400 truncate">Err: {lastError}</div>
+        )}
         {debugResult && (
           <pre className="text-[9px] text-green-300 max-h-40 overflow-auto whitespace-pre-wrap mt-1 border-t border-green-700 pt-1">
             {debugResult}

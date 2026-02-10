@@ -25,6 +25,7 @@ export function useRealtimeList(
     useState<ConnectionStatus>("connecting");
   const [realtimeEventCount, setRealtimeEventCount] = useState(0);
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -140,8 +141,10 @@ export function useRealtimeList(
               onReconnectRef.current?.();
             }
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            const errStr = err ? (typeof err === "string" ? err : JSON.stringify(err)) : "no details";
             console.warn(`[Realtime] ${status} on channel "${channelName}", scheduling retry #${retryCount + 1}`, err);
             setLastRealtimeEvent(`ERROR:${status}`);
+            setLastError(`${status}: ${errStr}`);
             scheduleRetry();
           }
         });
@@ -211,5 +214,5 @@ export function useRealtimeList(
     };
   }, [supabaseClient, listId]);
 
-  return { connectionStatus, realtimeEventCount, lastRealtimeEvent };
+  return { connectionStatus, realtimeEventCount, lastRealtimeEvent, lastError };
 }
