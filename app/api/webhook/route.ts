@@ -24,6 +24,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  // Handle callback queries synchronously (must respond before Telegram's timeout)
+  if (body.callback_query) {
+    try {
+      const { handleCallbackQuery } = await import("@/src/services/bot");
+      await handleCallbackQuery(body.callback_query);
+    } catch (error) {
+      console.error("[Webhook] Error processing callback query:", error);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   // Process asynchronously after response
   after(async () => {
     try {

@@ -166,8 +166,8 @@ export async function sendApprovalRequest(
   }
 }
 
-// Handle approval/decline callbacks
-bot.on("callback_query", async (query) => {
+// Handle approval/decline callbacks (called directly from webhook route)
+export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<void> {
   const data = query.data;
   if (!data) return;
 
@@ -257,4 +257,4 @@ bot.on("callback_query", async (query) => {
       console.error("[Bot] Failed to edit message:", e);
     }
   }
-});
+}
