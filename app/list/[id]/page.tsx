@@ -137,11 +137,21 @@ function ListContent() {
         if (change.eventType === "INSERT") {
           setItems((prev) => {
             if (prev.find((i) => i.id === change.new.id)) return prev;
-            return [...prev, {
+            const serverItem = {
               ...change.new,
               creator_name: lookupUserName(prev, change.new.created_by),
               editor_name: lookupUserName(prev, change.new.edited_by),
-            } as ItemData];
+            } as ItemData;
+            // Replace pending optimistic item if it matches this server item
+            const pendingIndex = prev.findIndex(
+              (i) => i._pending && i.text === change.new.text
+            );
+            if (pendingIndex !== -1) {
+              const updated = [...prev];
+              updated[pendingIndex] = serverItem;
+              return updated;
+            }
+            return [...prev, serverItem];
           });
         } else if (change.eventType === "UPDATE") {
           setItems((prev) =>
