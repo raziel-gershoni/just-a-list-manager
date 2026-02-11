@@ -1,9 +1,9 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Server-side client with service-role key (bypasses RLS)
+// Server-side client with secret key (bypasses RLS)
 export function createServerClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const key = process.env.SUPABASE_SECRET_KEY!;
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -12,8 +12,8 @@ export function createServerClient(): SupabaseClient {
 // Browser client with custom JWT for Realtime subscriptions
 export function createBrowserClient(accessToken: string): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const client = createClient(url, anonKey, {
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+  const client = createClient(url, publishableKey, {
     global: {
       headers: { Authorization: `Bearer ${accessToken}` },
     },
