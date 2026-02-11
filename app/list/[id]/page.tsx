@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Bell, Share2, ChevronDown, ChevronRight, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Send, Share2, ChevronDown, ChevronRight, Trash2, Users } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
 import ItemRow from "@/components/ItemRow";
@@ -594,7 +594,7 @@ function ListContent() {
         </div>
         {isShared && (
           <button onClick={handleRemind} className="p-1">
-            <Bell className="w-5 h-5 text-tg-hint" />
+            <Send className="w-5 h-5 text-tg-hint" />
           </button>
         )}
         <button onClick={() => setShowShare(true)} className="p-1">
