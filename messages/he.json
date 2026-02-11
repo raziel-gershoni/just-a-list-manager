@@ -48,7 +48,8 @@
     "partialAdd": "נוספו {added} פריטים. {skipped} פריטים דולגו — רשימה זו מוגבלת ל-500 פריטים.",
     "dragHandle": "גרור לשינוי סדר",
     "duplicateWarning": "פריט זה כבר קיים ברשימה",
-    "editedBy": "נערך ע\"י {name}"
+    "editedBy": "נערך ע\"י {name}",
+    "reminderSent": "תזכורת נשלחה!"
   },
   "voice": {
     "added": "נוסף ל{listName}:",
@@ -108,6 +109,8 @@
     "help": "שלח לי הודעה קולית כדי להוסיף או להסיר פריטים מהרשימות שלך.\n\nדוגמאות:\n• \"תוסיף חלב וביצים לקניות\"\n• \"תסיר לחם מהרשימה\"\n\nפתח את האפליקציה ליצירה וניהול רשימות.",
     "approvalRequest": "{userName} רוצה להצטרף לרשימה \"{listName}\"",
     "approved": "✅ {userName} נוסף לרשימה \"{listName}\"",
-    "declined": "❌ הבקשה של {userName} לרשימה \"{listName}\" נדחתה"
+    "declined": "❌ הבקשה של {userName} לרשימה \"{listName}\" נדחתה",
+    "listReminder": "{senderName} מזכיר לך לעדכן את \"{listName}\"",
+    "openList": "פתח רשימה"
   }
 }

@@ -167,6 +167,38 @@ export async function sendApprovalRequest(
   }
 }
 
+export async function sendListReminder(
+  telegramId: number,
+  language: string,
+  senderName: string,
+  listName: string,
+  listId: string
+) {
+  try {
+    await bot.sendMessage(
+      telegramId,
+      getMsg(language, "bot.listReminder")
+        .replace("{senderName}", senderName)
+        .replace("{listName}", listName),
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: getMsg(language, "bot.openList"),
+                web_app: { url: `${APP_URL}/list/${listId}` },
+              },
+            ],
+          ],
+        },
+      }
+    );
+  } catch (error) {
+    console.error("[Bot] Failed to send list reminder:", error);
+    throw error;
+  }
+}
+
 // Handle approval/decline callbacks (called directly from webhook route)
 export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<void> {
   const data = query.data;

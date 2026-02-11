@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Share2, ChevronDown, ChevronRight, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Bell, Share2, ChevronDown, ChevronRight, Trash2, Users } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
 import ItemRow from "@/components/ItemRow";
@@ -58,6 +58,7 @@ function ListContent() {
   } | null>(null);
 
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const [reminderToast, setReminderToast] = useState<string | null>(null);
 
   const isDraggingRef = useRef(false);
   const previousItemsRef = useRef<ItemData[]>([]);
@@ -441,6 +442,20 @@ function ListContent() {
     });
   }, [initData, listId, items]);
 
+  const handleRemind = useCallback(async () => {
+    if (!initData) return;
+    try {
+      await fetch(`/api/lists/${listId}/remind`, {
+        method: "POST",
+        headers: { "x-telegram-init-data": initData },
+      });
+      setReminderToast(t("items.reminderSent"));
+      setTimeout(() => setReminderToast(null), 2500);
+    } catch (e) {
+      console.error("[List] Remind error:", e);
+    }
+  }, [initData, listId, t]);
+
   const handleDragStart: DragDropEvents["dragstart"] = useCallback(() => {
     isDraggingRef.current = true;
     previousItemsRef.current = [...items];
@@ -577,6 +592,11 @@ function ListContent() {
             </p>
           )}
         </div>
+        {isShared && (
+          <button onClick={handleRemind} className="p-1">
+            <Bell className="w-5 h-5 text-tg-hint" />
+          </button>
+        )}
         <button onClick={() => setShowShare(true)} className="p-1">
           <Share2 className="w-5 h-5 text-tg-hint" />
         </button>
@@ -660,8 +680,15 @@ function ListContent() {
         )}
       </div>
 
+      {/* Reminder toast */}
+      {reminderToast && !undoAction && (
+        <div className="fixed bottom-6 start-4 end-4 bg-tg-button text-tg-button-text rounded-xl py-3 px-4 z-30 shadow-lg">
+          <span className="text-sm">{reminderToast}</span>
+        </div>
+      )}
+
       {/* Duplicate warning toast */}
-      {duplicateWarning && !undoAction && (
+      {duplicateWarning && !undoAction && !reminderToast && (
         <div className="fixed bottom-6 start-4 end-4 bg-amber-500 text-white rounded-xl py-3 px-4 z-30 shadow-lg">
           <span className="text-sm">{duplicateWarning}</span>
         </div>
