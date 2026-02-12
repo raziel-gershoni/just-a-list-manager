@@ -22,7 +22,7 @@ export function useRealtimeList(
   options?: { onReconnect?: () => void }
 ) {
   const [connectionStatus, setConnectionStatus] =
-    useState<ConnectionStatus>("connecting");
+    useState<ConnectionStatus>("connected");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
