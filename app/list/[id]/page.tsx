@@ -11,7 +11,8 @@ import SortableItem from "@/components/SortableItem";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import ShareDialog from "@/components/ShareDialog";
 import { useRealtimeList } from "@/src/hooks/useRealtimeList";
-import { useMutationQueue } from "@/src/hooks/useMutationQueue";
+import { useMutationQueue, ExecutorFactory } from "@/src/hooks/useMutationQueue";
+import type { QueuedMutation } from "@/src/utils/mutation-queue";
 import { DragDropProvider } from "@dnd-kit/react";
 import type { DragDropEvents } from "@dnd-kit/react";
 
@@ -63,7 +64,83 @@ function ListContent() {
   const isDraggingRef = useRef(false);
   const previousItemsRef = useRef<ItemData[]>([]);
 
-  const { addMutation } = useMutationQueue(listId);
+  const executorFactory: ExecutorFactory = useCallback(
+    (mutation: QueuedMutation) => {
+      if (!initData) return null;
+      const { type, payload } = mutation;
+      switch (type) {
+        case "toggle":
+          return async () => {
+            const res = await fetch(`/api/lists/${payload.listId}/items`, {
+              method: "PATCH",
+              headers: {
+                "x-telegram-init-data": initData!,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ itemId: payload.itemId, completed: payload.completed }),
+              keepalive: true,
+            });
+            if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
+          };
+        case "delete":
+          return async () => {
+            const res = await fetch(
+              `/api/lists/${payload.listId}/items?itemId=${payload.itemId}`,
+              {
+                method: "DELETE",
+                headers: { "x-telegram-init-data": initData! },
+                keepalive: true,
+              }
+            );
+            if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+          };
+        case "edit":
+          return async () => {
+            const res = await fetch(`/api/lists/${payload.listId}/items`, {
+              method: "PATCH",
+              headers: {
+                "x-telegram-init-data": initData!,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ itemId: payload.itemId, text: payload.text }),
+              keepalive: true,
+            });
+            if (!res.ok) throw new Error(`Edit failed: ${res.status}`);
+          };
+        case "reorder":
+          return async () => {
+            const res = await fetch(`/api/lists/${payload.listId}/items/reorder`, {
+              method: "POST",
+              headers: {
+                "x-telegram-init-data": initData!,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ orderedIds: payload.orderedIds }),
+              keepalive: true,
+            });
+            if (!res.ok) throw new Error(`Reorder failed: ${res.status}`);
+          };
+        case "recycle":
+          return async () => {
+            const res = await fetch(`/api/lists/${payload.listId}/items`, {
+              method: "POST",
+              headers: {
+                "x-telegram-init-data": initData!,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ text: "", recycleId: payload.recycleId }),
+              keepalive: true,
+            });
+            if (!res.ok) throw new Error(`Recycle failed: ${res.status}`);
+          };
+        default:
+          return null; // includes "create" — can't replay safely
+      }
+    },
+    [initData]
+  );
+
+  const { addMutation } = useMutationQueue(listId, executorFactory);
 
   const fetchItems = useCallback(async () => {
     if (!initData) return;
@@ -235,14 +312,16 @@ function ListContent() {
           type: "recycle",
           payload: { listId, recycleId },
           execute: async () => {
-            await fetch(`/api/lists/${listId}/items`, {
+            const res = await fetch(`/api/lists/${listId}/items`, {
               method: "POST",
               headers: {
                 "x-telegram-init-data": initData!,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ text, recycleId }),
+              keepalive: true,
             });
+            if (!res.ok) throw new Error(`Recycle failed: ${res.status}`);
           },
         });
       } else {
@@ -274,6 +353,7 @@ function ListContent() {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ text }),
+              keepalive: true,
             });
             if (res.ok) {
               const { items: created } = await res.json();
@@ -311,14 +391,16 @@ function ListContent() {
         type: "toggle",
         payload: { listId, itemId, completed },
         execute: async () => {
-          await fetch(`/api/lists/${listId}/items`, {
+          const res = await fetch(`/api/lists/${listId}/items`, {
             method: "PATCH",
             headers: {
               "x-telegram-init-data": initData!,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ itemId, completed }),
+            keepalive: true,
           });
+          if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
         },
       });
     },
@@ -365,13 +447,15 @@ function ListContent() {
         type: "delete",
         payload: { listId, itemId },
         execute: async () => {
-          await fetch(
+          const res = await fetch(
             `/api/lists/${listId}/items?itemId=${itemId}`,
             {
               method: "DELETE",
               headers: { "x-telegram-init-data": initData! },
+              keepalive: true,
             }
           );
+          if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
         },
       });
     },
@@ -395,6 +479,7 @@ function ListContent() {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ itemId, text: newText }),
+            keepalive: true,
           });
           if (!res.ok) throw new Error(`Edit failed: ${res.status}`);
         },
@@ -528,6 +613,7 @@ function ListContent() {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ orderedIds: updatedIds }),
+              keepalive: true,
             });
             if (!res.ok) throw new Error(`Reorder failed: ${res.status}`);
           } finally {
