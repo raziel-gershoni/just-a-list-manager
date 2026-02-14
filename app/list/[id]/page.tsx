@@ -667,7 +667,7 @@ function ListContent() {
       {/* Header */}
       <header className="flex items-center gap-3 p-4 pb-0">
         <button onClick={() => router.push("/")} className="p-1">
-          <ArrowLeft className="w-5 h-5 text-tg-text" />
+          <ArrowLeft className="w-5 h-5 text-tg-text rtl:scale-x-[-1]" />
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold text-tg-text truncate">{listName}</h1>
@@ -725,7 +725,7 @@ function ListContent() {
               {showCompleted ? (
                 <ChevronDown className="w-4 h-4" />
               ) : (
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
               )}
               {t('items.completedSection', { count: completedItems.length })}
               <button

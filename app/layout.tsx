@@ -24,12 +24,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
         />
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            var u = window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe;
+            if (u && u.user) {
+              var lc = u.user.language_code;
+              if (lc === 'he') { document.documentElement.dir = 'rtl'; document.documentElement.lang = 'he'; }
+              else if (lc === 'ru') { document.documentElement.lang = 'ru'; }
+            }
+          } catch(e) {}
+        `}} />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}

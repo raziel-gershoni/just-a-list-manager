@@ -62,7 +62,7 @@ export default function ListCard({
         {isShared && (
           <Users className="w-4 h-4 text-tg-hint" />
         )}
-        <ChevronRight className="w-5 h-5 text-tg-hint" />
+        <ChevronRight className="w-5 h-5 text-tg-hint rtl:scale-x-[-1]" />
       </div>
     </button>
   );

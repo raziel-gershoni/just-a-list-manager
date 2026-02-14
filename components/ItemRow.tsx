@@ -129,7 +129,7 @@ export default function ItemRow({
                 {creatorName && !isOwnItem && editorName && !isOwnEdit && " · "}
                 {editorName && !isOwnEdit && (
                   <>
-                    <Pencil className="inline w-2.5 h-2.5 mr-0.5" />
+                    <Pencil className="inline w-2.5 h-2.5 me-0.5" />
                     {editorName.split(" ")[0]}
                   </>
                 )}
