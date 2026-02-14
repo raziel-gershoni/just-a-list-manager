@@ -36,6 +36,7 @@ interface TelegramContextType {
   userId: string | null;
   initData: string | null;
   locale: SupportedLocale;
+  setLanguage: (lang: SupportedLocale) => Promise<void>;
   supabaseClient: SupabaseClient | null;
   isReady: boolean;
 }
@@ -45,6 +46,7 @@ const TelegramContext = createContext<TelegramContextType>({
   userId: null,
   initData: null,
   locale: "en",
+  setLanguage: async () => {},
   supabaseClient: null,
   isReady: false,
 });
@@ -69,6 +71,30 @@ export default function TelegramProvider({
   const router = useRouter();
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const jwtRef = useRef<string | null>(null);
+
+  const applyLocale = useCallback((lang: SupportedLocale) => {
+    setLocale(lang);
+    document.documentElement.dir = isRtl(lang) ? "rtl" : "ltr";
+    document.documentElement.lang = lang;
+    try { localStorage.setItem("app_locale", lang); } catch {}
+  }, []);
+
+  const setLanguage = useCallback(async (lang: SupportedLocale) => {
+    applyLocale(lang);
+    if (!initData) return;
+    try {
+      await fetch("/api/user", {
+        method: "PATCH",
+        headers: {
+          "x-telegram-init-data": initData,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ language: lang }),
+      });
+    } catch (e) {
+      console.error("[TelegramProvider] Language update error:", e);
+    }
+  }, [applyLocale, initData]);
 
   const fetchToken = useCallback(
     async (initDataStr: string | null) => {
@@ -111,12 +137,20 @@ export default function TelegramProvider({
     if (rawInitData) setInitData(rawInitData);
     if (userData) {
       setUser(userData);
-      const resolved = resolveLocale(userData.language_code);
-      setLocale(resolved);
-
-      // Set RTL direction
-      document.documentElement.dir = isRtl(resolved) ? "rtl" : "ltr";
-      document.documentElement.lang = resolved;
+      // Use localStorage cache as initial locale (set by inline script or previous session)
+      // Fall back to Telegram's language_code for first-time users
+      try {
+        const cached = localStorage.getItem("app_locale");
+        if (cached && ["en", "he", "ru"].includes(cached)) {
+          setLocale(cached as SupportedLocale);
+        } else {
+          const resolved = resolveLocale(userData.language_code);
+          applyLocale(resolved);
+        }
+      } catch {
+        const resolved = resolveLocale(userData.language_code);
+        applyLocale(resolved);
+      }
     }
 
     // Apply Telegram theme colors as CSS custom properties
@@ -167,6 +201,11 @@ export default function TelegramProvider({
           if (userRes.ok) {
             const userData2 = await userRes.json();
             if (userData2?.id) setUserId(userData2.id);
+            // Server-stored language is authoritative
+            if (userData2?.language) {
+              const serverLocale = resolveLocale(userData2.language);
+              applyLocale(serverLocale);
+            }
           }
         } catch (e) {
           console.error("[TelegramProvider] User registration error:", e);
@@ -207,11 +246,11 @@ export default function TelegramProvider({
         clearInterval(refreshIntervalRef.current);
       }
     };
-  }, [fetchToken]);
+  }, [fetchToken, applyLocale]);
 
   return (
     <TelegramContext.Provider
-      value={{ user, userId, initData, locale, supabaseClient, isReady }}
+      value={{ user, userId, initData, locale, setLanguage, supabaseClient, isReady }}
     >
       <NextIntlClientProvider locale={locale} messages={allMessages[locale]}>
         {children}

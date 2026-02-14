@@ -73,11 +73,6 @@ export async function GET(request: NextRequest) {
   const name = [telegramUser.first_name, telegramUser.last_name]
     .filter(Boolean)
     .join(" ");
-  const language = ["en", "he", "ru"].includes(
-    telegramUser.language_code || ""
-  )
-    ? telegramUser.language_code
-    : "en";
 
   const { data: user, error } = await supabase
     .from("users")
@@ -86,7 +81,6 @@ export async function GET(request: NextRequest) {
         telegram_id: telegramUser.id,
         name,
         username: telegramUser.username || null,
-        language,
       },
       { onConflict: "telegram_id" }
     )

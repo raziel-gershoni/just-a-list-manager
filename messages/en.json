@@ -96,6 +96,12 @@
     "approvedMessage": "You've been added to {listName}!",
     "declinedMessage": "Your request to join {listName} was declined."
   },
+  "settings": {
+    "language": "Language",
+    "english": "English",
+    "hebrew": "עברית",
+    "russian": "Русский"
+  },
   "errors": {
     "unauthorized": "Unauthorized. Please reopen the app.",
     "permissionDenied": "You don't have permission to do that.",

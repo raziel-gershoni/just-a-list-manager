@@ -3,10 +3,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Plus } from "lucide-react";
+import { Plus, Globe, Check } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import ListCard from "@/components/ListCard";
 import EmptyState from "@/components/EmptyState";
+import type { SupportedLocale } from "@/src/lib/i18n";
 
 interface ListData {
   id: string;
@@ -18,7 +19,7 @@ interface ListData {
 }
 
 function HomeContent() {
-  const { initData, isReady } = useTelegram();
+  const { initData, isReady, locale, setLanguage } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
   const [lists, setLists] = useState<ListData[]>([]);
@@ -36,6 +37,8 @@ function HomeContent() {
     undo: () => void;
     timeout: NodeJS.Timeout;
   } | null>(null);
+
+  const [showLanguage, setShowLanguage] = useState(false);
 
   // Track the rename target ID separately so it persists through sheet open
   const renameTargetRef = useRef<string>("");
@@ -205,6 +208,14 @@ function HomeContent() {
   if (lists.length === 0) {
     return (
       <>
+        <div className="absolute top-4 end-4 z-10">
+          <button
+            onClick={() => setShowLanguage(true)}
+            className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+          >
+            <Globe className="w-5 h-5" />
+          </button>
+        </div>
         <EmptyState onCreateList={() => setShowCreate(true)} />
         {showCreate && (
           <CreateListSheet
@@ -215,14 +226,30 @@ function HomeContent() {
             creating={creating}
           />
         )}
+        {showLanguage && (
+          <LanguageSheet
+            currentLocale={locale}
+            onSelect={async (lang) => {
+              await setLanguage(lang);
+              setShowLanguage(false);
+            }}
+            onClose={() => setShowLanguage(false)}
+          />
+        )}
       </>
     );
   }
 
   return (
     <div className="flex flex-col min-h-screen">
-      <header className="p-4 pb-2">
+      <header className="p-4 pb-2 flex items-center justify-between">
         <h1 className="text-xl font-bold text-tg-text">{t('lists.title')}</h1>
+        <button
+          onClick={() => setShowLanguage(true)}
+          className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+        >
+          <Globe className="w-5 h-5" />
+        </button>
       </header>
 
       <div className="flex-1 p-4 pt-2 space-y-2">
@@ -268,6 +295,18 @@ function HomeContent() {
           onSubmit={handleRenameSubmit}
           onClose={() => setShowRename(false)}
           renaming={renaming}
+        />
+      )}
+
+      {/* Language sheet */}
+      {showLanguage && (
+        <LanguageSheet
+          currentLocale={locale}
+          onSelect={async (lang) => {
+            await setLanguage(lang);
+            setShowLanguage(false);
+          }}
+          onClose={() => setShowLanguage(false)}
         />
       )}
 
@@ -386,6 +425,53 @@ function RenameListSheet({
             {t('common.save')}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+const LANGUAGE_OPTIONS: { value: SupportedLocale; labelKey: string }[] = [
+  { value: "en", labelKey: "settings.english" },
+  { value: "he", labelKey: "settings.hebrew" },
+  { value: "ru", labelKey: "settings.russian" },
+];
+
+function LanguageSheet({
+  currentLocale,
+  onSelect,
+  onClose,
+}: {
+  currentLocale: SupportedLocale;
+  onSelect: (lang: SupportedLocale) => void;
+  onClose: () => void;
+}) {
+  const t = useTranslations();
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-tg-bg w-full max-w-lg rounded-t-2xl p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-semibold text-tg-text mb-4">
+          {t("settings.language")}
+        </h2>
+        <div className="space-y-1">
+          {LANGUAGE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onSelect(opt.value)}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-tg-text active:bg-tg-secondary-bg transition-colors"
+            >
+              <span className="text-base">{t(opt.labelKey)}</span>
+              {currentLocale === opt.value && (
+                <Check className="w-5 h-5 text-tg-button" />
+              )}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={onClose}
+          className="w-full mt-4 py-3 rounded-xl bg-tg-secondary-bg text-tg-text font-medium"
+        >
+          {t("common.close")}
+        </button>
       </div>
     </div>
   );

@@ -62,26 +62,54 @@ export async function POST(request: NextRequest) {
   const name = [telegramUser.first_name, telegramUser.last_name]
     .filter(Boolean)
     .join(" ");
+
+  // Check if user already exists
+  const { data: existing } = await supabase
+    .from("users")
+    .select()
+    .eq("telegram_id", telegramUser.id)
+    .single();
+
+  if (existing) {
+    // Existing user: update name/username but preserve their stored language
+    const { data: user, error } = await supabase
+      .from("users")
+      .update({
+        name,
+        username: telegramUser.username || null,
+      })
+      .eq("telegram_id", telegramUser.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("[User] Update error:", error);
+      return NextResponse.json(
+        { error: "Failed to update user" },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json(user);
+  }
+
+  // New user: set language from Telegram's language_code
   const language = ["en", "he", "ru"].includes(telegramUser.language_code || "")
     ? telegramUser.language_code
     : "en";
 
   const { data: user, error } = await supabase
     .from("users")
-    .upsert(
-      {
-        telegram_id: telegramUser.id,
-        name,
-        username: telegramUser.username || null,
-        language,
-      },
-      { onConflict: "telegram_id" }
-    )
+    .insert({
+      telegram_id: telegramUser.id,
+      name,
+      username: telegramUser.username || null,
+      language,
+    })
     .select()
     .single();
 
   if (error) {
-    console.error("[User] Upsert error:", error);
+    console.error("[User] Insert error:", error);
     return NextResponse.json(
       { error: "Failed to register user" },
       { status: 500 }

@@ -32,12 +32,13 @@ export default function RootLayout({
         />
         <script dangerouslySetInnerHTML={{ __html: `
           try {
-            var u = window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe;
-            if (u && u.user) {
-              var lc = u.user.language_code;
-              if (lc === 'he') { document.documentElement.dir = 'rtl'; document.documentElement.lang = 'he'; }
-              else if (lc === 'ru') { document.documentElement.lang = 'ru'; }
+            var lc = localStorage.getItem('app_locale');
+            if (!lc || ['en','he','ru'].indexOf(lc) === -1) {
+              var u = window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe;
+              lc = u && u.user && u.user.language_code || null;
             }
+            if (lc === 'he') { document.documentElement.dir = 'rtl'; document.documentElement.lang = 'he'; }
+            else if (lc === 'ru') { document.documentElement.lang = 'ru'; }
           } catch(e) {}
         `}} />
       </head>

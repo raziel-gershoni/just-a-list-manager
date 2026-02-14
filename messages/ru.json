@@ -96,6 +96,12 @@
     "approvedMessage": "Вы добавлены в {listName}!",
     "declinedMessage": "Ваш запрос на вступление в {listName} отклонён."
   },
+  "settings": {
+    "language": "Язык",
+    "english": "English",
+    "hebrew": "עברית",
+    "russian": "Русский"
+  },
   "errors": {
     "unauthorized": "Не авторизован. Пожалуйста, откройте приложение заново.",
     "permissionDenied": "У вас нет разрешения на это.",

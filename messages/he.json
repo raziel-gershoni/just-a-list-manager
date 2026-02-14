@@ -96,6 +96,12 @@
     "approvedMessage": "נוספת ל{listName}!",
     "declinedMessage": "הבקשה שלך להצטרף ל{listName} נדחתה."
   },
+  "settings": {
+    "language": "שפה",
+    "english": "English",
+    "hebrew": "עברית",
+    "russian": "Русский"
+  },
   "errors": {
     "unauthorized": "לא מורשה. פתח מחדש את האפליקציה.",
     "permissionDenied": "אין לך הרשאה לכך.",
