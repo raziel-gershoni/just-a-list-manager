@@ -31,6 +31,20 @@ export const apiRateLimiter = new Ratelimit({
   prefix: "ratelimit:api",
 });
 
+// Auth token endpoint — Tier 1: 20 req/min per IP (before validation)
+export const authIpRateLimiter = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, "1 m"),
+  prefix: "ratelimit:auth-ip",
+});
+
+// Auth token endpoint — Tier 2: 10 req/min per verified user
+export const authUserRateLimiter = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(10, "1 m"),
+  prefix: "ratelimit:auth-user",
+});
+
 export interface RateLimitResult {
   success: boolean;
   remaining: number;

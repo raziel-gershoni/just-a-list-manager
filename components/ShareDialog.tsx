@@ -26,7 +26,7 @@ export default function ShareDialog({
   isOpen,
   onClose,
 }: ShareDialogProps) {
-  const { initData } = useTelegram();
+  const { jwtRef } = useTelegram();
   const t = useTranslations('share');
   const [permission, setPermission] = useState<"view" | "edit">("edit");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -35,10 +35,11 @@ export default function ShareDialog({
   const [loading, setLoading] = useState(false);
 
   const loadCollaborators = useCallback(async () => {
-    if (!initData) return;
+    const jwt = jwtRef.current;
+    if (!jwt) return;
     try {
       const res = await fetch(`/api/share?listId=${listId}`, {
-        headers: { "x-telegram-init-data": initData },
+        headers: { Authorization: `Bearer ${jwt}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -50,22 +51,23 @@ export default function ShareDialog({
     } catch (e) {
       console.error("[ShareDialog] Failed to load:", e);
     }
-  }, [initData, listId]);
+  }, [jwtRef, listId]);
 
   useEffect(() => {
-    if (isOpen && initData) {
+    if (isOpen && jwtRef.current) {
       loadCollaborators();
     }
-  }, [isOpen, initData, loadCollaborators]);
+  }, [isOpen, jwtRef, loadCollaborators]);
 
   const generateLink = async () => {
-    if (!initData) return;
+    const jwt = jwtRef.current;
+    if (!jwt) return;
     setLoading(true);
     try {
       const res = await fetch("/api/share", {
         method: "POST",
         headers: {
-          "x-telegram-init-data": initData,
+          Authorization: `Bearer ${jwt}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ listId, permission }),

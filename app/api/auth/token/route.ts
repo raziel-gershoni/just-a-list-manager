@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { SignJWT, jwtVerify } from "jose";
 import { validateInitData } from "@/src/lib/telegram-auth";
 import { createServerClient } from "@/src/lib/supabase";
+import {
+  authIpRateLimiter,
+  authUserRateLimiter,
+  checkRateLimit,
+  getRateLimitHeaders,
+} from "@/src/lib/rate-limit";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.SUPABASE_JWT_SECRET!
@@ -23,6 +29,18 @@ async function signToken(userId: string, telegramId: number): Promise<string> {
 }
 
 export async function GET(request: NextRequest) {
+  // Tier 1: IP-based rate limit (before any validation)
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown";
+  const ipRateLimit = await checkRateLimit(authIpRateLimiter, ip);
+  if (!ipRateLimit.success) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait a minute." },
+      { status: 429, headers: getRateLimitHeaders(ipRateLimit) }
+    );
+  }
+
   // Path 1: Refresh via existing JWT
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
@@ -40,6 +58,15 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           { error: "Invalid token claims" },
           { status: 401 }
+        );
+      }
+
+      // Tier 2: Per-user rate limit (after validation)
+      const userRateLimit = await checkRateLimit(authUserRateLimiter, userId);
+      if (!userRateLimit.success) {
+        return NextResponse.json(
+          { error: "Too many requests. Please wait a minute." },
+          { status: 429, headers: getRateLimitHeaders(userRateLimit) }
         );
       }
 
@@ -92,6 +119,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { error: "Failed to register user" },
       { status: 500 }
+    );
+  }
+
+  // Tier 2: Per-user rate limit (after validation)
+  const userRateLimit = await checkRateLimit(authUserRateLimiter, user.id);
+  if (!userRateLimit.success) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait a minute." },
+      { status: 429, headers: getRateLimitHeaders(userRateLimit) }
     );
   }
 

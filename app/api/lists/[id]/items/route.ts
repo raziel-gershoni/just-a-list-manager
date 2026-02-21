@@ -70,7 +70,106 @@ export async function POST(
   const body = await request.json();
   const supabase = createServerClient();
 
-  // Support single item or comma-separated group
+  // Idempotent single-item create (from mutation queue replay)
+  if (body.idempotencyKey && typeof body.text === "string") {
+    // Validate idempotency key (must fit VARCHAR(64) column)
+    if (typeof body.idempotencyKey !== "string" || body.idempotencyKey.length > 64) {
+      return NextResponse.json(
+        { error: "Invalid idempotency key" },
+        { status: 400 }
+      );
+    }
+
+    const text = body.text.trim();
+    if (!text || text.length > 500) {
+      return NextResponse.json(
+        { error: "Item text is required (max 500 chars)" },
+        { status: 400 }
+      );
+    }
+
+    // Check for existing item with same idempotency key
+    const { data: existing } = await supabase
+      .from("items")
+      .select()
+      .eq("list_id", listId)
+      .eq("idempotency_key", body.idempotencyKey)
+      .single();
+
+    if (existing) {
+      // Duplicate — return existing item without creating a new one
+      return NextResponse.json(
+        { items: [{ ...existing, recycled: false }] },
+        { status: 200 }
+      );
+    }
+
+    // Check item count limit
+    const { count: currentCount } = await supabase
+      .from("items")
+      .select("id", { count: "exact", head: true })
+      .eq("list_id", listId)
+      .is("deleted_at", null);
+
+    if ((currentCount || 0) >= 500) {
+      return NextResponse.json(
+        { error: "This list has reached the 500-item limit." },
+        { status: 400 }
+      );
+    }
+
+    // Use client-provided position if available (avoids concurrent position collisions),
+    // otherwise fall back to max+1
+    let position = typeof body.position === "number" && Number.isFinite(body.position) && body.position > 0
+      ? body.position
+      : null;
+    if (position === null) {
+      const { data: maxPosResult } = await supabase
+        .from("items")
+        .select("position")
+        .eq("list_id", listId)
+        .order("position", { ascending: false })
+        .limit(1);
+      position = (maxPosResult?.[0]?.position || 0) + 1;
+    }
+
+    const { data: item, error } = await supabase
+      .from("items")
+      .insert({
+        list_id: listId,
+        text,
+        position,
+        created_by: auth.userId,
+        idempotency_key: body.idempotencyKey,
+      })
+      .select()
+      .single();
+
+    if (error || !item) {
+      return NextResponse.json(
+        { error: "Failed to create item" },
+        { status: 500 }
+      );
+    }
+
+    // Piggyback cleanup: nullify old idempotency keys (>24h) to free unique constraint
+    // Fire-and-forget — doesn't block the response
+    supabase
+      .from("items")
+      .update({ idempotency_key: null })
+      .eq("list_id", listId)
+      .not("idempotency_key", "is", null)
+      .lt("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .limit(10)
+      .then(() => {}, () => {});
+
+    return NextResponse.json(
+      { items: [{ ...item, recycled: false }] },
+      { status: 201 }
+    );
+  }
+
+  // Non-idempotent path: support single item or comma-separated group
   let itemTexts: string[] = [];
   if (body.text) {
     itemTexts = body.text
@@ -195,7 +294,7 @@ export async function PATCH(
     patchData.edited_by = auth.userId;
   }
 
-  if (typeof updates.position === "number") {
+  if (typeof updates.position === "number" && Number.isFinite(updates.position) && updates.position > 0) {
     patchData.position = updates.position;
   }
 

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Send, Share2, ChevronDown, ChevronRight, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Send, Share2, ChevronDown, ChevronRight, Trash2, Users, RefreshCw } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
 import ItemRow from "@/components/ItemRow";
@@ -30,6 +30,10 @@ interface ItemData {
   _pending?: boolean;
 }
 
+function genMutId(): string {
+  return `mut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function lookupUserName(items: ItemData[], targetUserId: string | null): string | null {
   if (!targetUserId) return null;
   for (const item of items) {
@@ -40,7 +44,16 @@ function lookupUserName(items: ItemData[], targetUserId: string | null): string 
 }
 
 function ListContent() {
-  const { initData, isReady, supabaseClient, userId } = useTelegram();
+  const {
+    isReady,
+    supabaseClient,
+    supabaseClientRef,
+    userId,
+    jwtRef,
+    onFlushNeeded,
+    onResubscribeNeeded,
+    onRefreshNeeded,
+  } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
   const params = useParams();
@@ -49,6 +62,7 @@ function ListContent() {
   const [listName, setListName] = useState("");
   const [items, setItems] = useState<ItemData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
   const [showShare, setShowShare] = useState(false);
   const [isShared, setIsShared] = useState(false);
@@ -64,17 +78,40 @@ function ListContent() {
   const isDraggingRef = useRef(false);
   const previousItemsRef = useRef<ItemData[]>([]);
 
+  // JWT getter for mutation queue (reads latest from ref)
+  const getJwt = useCallback(() => jwtRef.current, [jwtRef]);
+
   const executorFactory: ExecutorFactory = useCallback(
-    (mutation: QueuedMutation) => {
-      if (!initData) return null;
+    (mutation: QueuedMutation, getJwtParam: () => string) => {
       const { type, payload } = mutation;
       switch (type) {
+        case "create":
+          return async () => {
+            const jwt = getJwtParam();
+            const res = await fetch(`/api/lists/${payload.listId}/items`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${jwt}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                text: payload.text,
+                idempotencyKey: payload.idempotencyKey,
+                position: payload.position,
+              }),
+              keepalive: true,
+            });
+            if (!res.ok) throw new Error(`Create failed: ${res.status}`);
+            const { items: created } = await res.json();
+            return created?.[0]?.id as string | undefined;
+          };
         case "toggle":
           return async () => {
+            const jwt = getJwtParam();
             const res = await fetch(`/api/lists/${payload.listId}/items`, {
               method: "PATCH",
               headers: {
-                "x-telegram-init-data": initData!,
+                Authorization: `Bearer ${jwt}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ itemId: payload.itemId, completed: payload.completed }),
@@ -84,11 +121,12 @@ function ListContent() {
           };
         case "delete":
           return async () => {
+            const jwt = getJwtParam();
             const res = await fetch(
               `/api/lists/${payload.listId}/items?itemId=${payload.itemId}`,
               {
                 method: "DELETE",
-                headers: { "x-telegram-init-data": initData! },
+                headers: { Authorization: `Bearer ${jwt}` },
                 keepalive: true,
               }
             );
@@ -96,10 +134,11 @@ function ListContent() {
           };
         case "edit":
           return async () => {
+            const jwt = getJwtParam();
             const res = await fetch(`/api/lists/${payload.listId}/items`, {
               method: "PATCH",
               headers: {
-                "x-telegram-init-data": initData!,
+                Authorization: `Bearer ${jwt}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ itemId: payload.itemId, text: payload.text }),
@@ -109,10 +148,11 @@ function ListContent() {
           };
         case "reorder":
           return async () => {
+            const jwt = getJwtParam();
             const res = await fetch(`/api/lists/${payload.listId}/items/reorder`, {
               method: "POST",
               headers: {
-                "x-telegram-init-data": initData!,
+                Authorization: `Bearer ${jwt}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ orderedIds: payload.orderedIds }),
@@ -122,32 +162,35 @@ function ListContent() {
           };
         case "recycle":
           return async () => {
+            const jwt = getJwtParam();
             const res = await fetch(`/api/lists/${payload.listId}/items`, {
               method: "POST",
               headers: {
-                "x-telegram-init-data": initData!,
+                Authorization: `Bearer ${jwt}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({ text: "", recycleId: payload.recycleId }),
+              body: JSON.stringify({ text: payload.text, recycleId: payload.recycleId }),
               keepalive: true,
             });
             if (!res.ok) throw new Error(`Recycle failed: ${res.status}`);
           };
         default:
-          return null; // includes "create" — can't replay safely
+          return null;
       }
     },
-    [initData]
+    []
   );
 
-  const { addMutation } = useMutationQueue(listId, executorFactory);
+  const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory);
 
   const fetchItems = useCallback(async () => {
-    if (!initData) return;
+    const jwt = jwtRef.current;
+    if (!jwt) return;
     try {
+      setError(false);
       // Fetch list info
       const listsRes = await fetch("/api/lists", {
-        headers: { "x-telegram-init-data": initData },
+        headers: { Authorization: `Bearer ${jwt}` },
       });
       if (listsRes.ok) {
         const allLists = await listsRes.json();
@@ -160,7 +203,7 @@ function ListContent() {
 
       // Fetch items
       const res = await fetch(`/api/lists/${listId}/items`, {
-        headers: { "x-telegram-init-data": initData },
+        headers: { Authorization: `Bearer ${jwt}` },
       });
       if (res.ok) {
         const { items: fetchedItems } = await res.json();
@@ -172,19 +215,23 @@ function ListContent() {
           editor: undefined,
         }));
         setItems(mapped);
+      } else {
+        setError(true);
       }
     } catch (e) {
       console.error("[List] Fetch error:", e);
+      setError(true);
     } finally {
       setLoading(false);
     }
-  }, [initData, listId]);
+  }, [jwtRef, listId]);
 
   const refreshItems = useCallback(async () => {
-    if (!initData) return;
+    const jwt = jwtRef.current;
+    if (!jwt) return;
     try {
       const res = await fetch(`/api/lists/${listId}/items`, {
-        headers: { "x-telegram-init-data": initData },
+        headers: { Authorization: `Bearer ${jwt}` },
       });
       if (!res.ok) return;
       const { items: fetchedItems } = await res.json();
@@ -204,10 +251,11 @@ function ListContent() {
     } catch (e) {
       console.error("[List] Background refresh error:", e);
     }
-  }, [initData, listId]);
+  }, [jwtRef, listId]);
 
-  const { connectionStatus } = useRealtimeList(
+  const { resubscribe } = useRealtimeList(
     supabaseClient,
+    supabaseClientRef,
     listId,
     (change) => {
       // Handle real-time item changes
@@ -262,30 +310,83 @@ function ListContent() {
           }
         }
       }
-    },
-    { onReconnect: refreshItems }
+    }
   );
+
+  // Register orchestrator callbacks
+  useEffect(() => {
+    onFlushNeeded.current = flushQueue;
+    onResubscribeNeeded.current = resubscribe;
+    onRefreshNeeded.current = refreshItems;
+    return () => {
+      onFlushNeeded.current = null;
+      onResubscribeNeeded.current = null;
+      onRefreshNeeded.current = null;
+    };
+  }, [flushQueue, resubscribe, refreshItems, onFlushNeeded, onResubscribeNeeded, onRefreshNeeded]);
 
   useEffect(() => {
     if (isReady) fetchItems();
   }, [isReady, fetchItems]);
 
-  // Refresh items when tab becomes visible (catches missed changes)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && !isDraggingRef.current) {
-        refreshItems();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [refreshItems]);
+  const addSingleItem = useCallback(
+    (text: string) => {
+      const tempId = `temp-${Date.now()}-${Math.random()}`;
+      const position = Date.now();
+      const mutId = genMutId();
+
+      const newItem: ItemData = {
+        id: tempId,
+        text,
+        completed: false,
+        completed_at: null,
+        deleted_at: null,
+        position,
+        created_by: userId,
+        creator_name: null,
+        edited_by: null,
+        editor_name: null,
+        _pending: true,
+      };
+      setItems((prev) => [newItem, ...prev]);
+
+      addMutation({
+        id: mutId,
+        type: "create",
+        payload: { listId, text, position, idempotencyKey: mutId, tempId },
+        execute: async () => {
+          const currentJwt = jwtRef.current;
+          const res = await fetch(`/api/lists/${listId}/items`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${currentJwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ text, idempotencyKey: mutId, position }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Create failed: ${res.status}`);
+          const { items: created } = await res.json();
+          if (created?.[0]) {
+            setItems((prev) =>
+              prev.map((i) =>
+                i.id === tempId
+                  ? { ...created[0], creator_name: null, editor_name: null, _pending: false }
+                  : i
+              )
+            );
+            return created[0].id;
+          }
+        },
+      });
+    },
+    [jwtRef, listId, addMutation, userId]
+  );
 
   const handleAddItem = useCallback(
     async (text: string, recycleId?: string) => {
-      if (!initData) return;
+      const jwt = jwtRef.current;
+      if (!jwt) return;
 
       // Check for duplicate
       const existing = items.find(
@@ -308,14 +409,17 @@ function ListContent() {
           )
         );
 
+        const mutId = genMutId();
         addMutation({
+          id: mutId,
           type: "recycle",
-          payload: { listId, recycleId },
+          payload: { listId, recycleId, text },
           execute: async () => {
+            const currentJwt = jwtRef.current;
             const res = await fetch(`/api/lists/${listId}/items`, {
               method: "POST",
               headers: {
-                "x-telegram-init-data": initData!,
+                Authorization: `Bearer ${currentJwt}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ text, recycleId }),
@@ -325,51 +429,18 @@ function ListContent() {
           },
         });
       } else {
-        // Create new: optimistic
-        const tempId = `temp-${Date.now()}-${Math.random()}`;
-        const newItem: ItemData = {
-          id: tempId,
-          text,
-          completed: false,
-          completed_at: null,
-          deleted_at: null,
-          position: Date.now(),
-          created_by: userId,
-          creator_name: null,
-          edited_by: null,
-          editor_name: null,
-          _pending: true,
-        };
-        setItems((prev) => [newItem, ...prev]);
+        // Split comma-separated items into individual mutations
+        const segments = text
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
 
-        addMutation({
-          type: "create",
-          payload: { listId, text },
-          execute: async () => {
-            const res = await fetch(`/api/lists/${listId}/items`, {
-              method: "POST",
-              headers: {
-                "x-telegram-init-data": initData!,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ text }),
-              keepalive: true,
-            });
-            if (res.ok) {
-              const { items: created } = await res.json();
-              if (created?.[0]) {
-                setItems((prev) =>
-                  prev.map((i) =>
-                    i.id === tempId ? { ...created[0], _pending: false } : i
-                  )
-                );
-              }
-            }
-          },
-        });
+        for (const segment of segments) {
+          addSingleItem(segment);
+        }
       }
     },
-    [initData, listId, addMutation, items, t, userId]
+    [jwtRef, listId, addMutation, addSingleItem, items, t]
   );
 
   const handleToggle = useCallback(
@@ -387,14 +458,17 @@ function ListContent() {
         )
       );
 
+      const mutId = genMutId();
       addMutation({
+        id: mutId,
         type: "toggle",
         payload: { listId, itemId, completed },
         execute: async () => {
+          const jwt = jwtRef.current;
           const res = await fetch(`/api/lists/${listId}/items`, {
             method: "PATCH",
             headers: {
-              "x-telegram-init-data": initData!,
+              Authorization: `Bearer ${jwt}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ itemId, completed }),
@@ -404,7 +478,7 @@ function ListContent() {
         },
       });
     },
-    [initData, listId, addMutation]
+    [jwtRef, listId, addMutation]
   );
 
   const handleDelete = useCallback(
@@ -427,10 +501,11 @@ function ListContent() {
           if (deletedItem) {
             setItems((prev) => [...prev, deletedItem]);
             // Restore on server
+            const jwt = jwtRef.current;
             fetch(`/api/lists/${listId}/items`, {
               method: "PATCH",
               headers: {
-                "x-telegram-init-data": initData!,
+                Authorization: `Bearer ${jwt}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
@@ -443,15 +518,18 @@ function ListContent() {
         timeout,
       });
 
+      const mutId = genMutId();
       addMutation({
+        id: mutId,
         type: "delete",
         payload: { listId, itemId },
         execute: async () => {
+          const jwt = jwtRef.current;
           const res = await fetch(
             `/api/lists/${listId}/items?itemId=${itemId}`,
             {
               method: "DELETE",
-              headers: { "x-telegram-init-data": initData! },
+              headers: { Authorization: `Bearer ${jwt}` },
               keepalive: true,
             }
           );
@@ -459,7 +537,7 @@ function ListContent() {
         },
       });
     },
-    [initData, listId, items, addMutation]
+    [jwtRef, listId, items, addMutation, t]
   );
 
   const handleEditItem = useCallback(
@@ -468,14 +546,17 @@ function ListContent() {
         prev.map((i) => (i.id === itemId ? { ...i, text: newText, edited_by: userId, editor_name: null } : i))
       );
 
+      const mutId = genMutId();
       addMutation({
+        id: mutId,
         type: "edit",
         payload: { listId, itemId, text: newText },
         execute: async () => {
+          const jwt = jwtRef.current;
           const res = await fetch(`/api/lists/${listId}/items`, {
             method: "PATCH",
             headers: {
-              "x-telegram-init-data": initData!,
+              Authorization: `Bearer ${jwt}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ itemId, text: newText }),
@@ -485,11 +566,12 @@ function ListContent() {
         },
       });
     },
-    [initData, listId, addMutation, userId]
+    [jwtRef, listId, addMutation, userId]
   );
 
   const handleClearCompleted = useCallback(async () => {
-    if (!initData) return;
+    const jwt = jwtRef.current;
+    if (!jwt) return;
     const tg = (window as any).Telegram?.WebApp;
     tg?.HapticFeedback?.notificationOccurred("warning");
 
@@ -506,12 +588,13 @@ function ListContent() {
         clearTimeout(timeout);
         setUndoAction(null);
         setItems((prev) => [...prev, ...completedItems]);
-        // Restore on server — undo by patching deleted_at to null for each
+        // Restore on server
+        const currentJwt = jwtRef.current;
         for (const item of completedItems) {
           fetch(`/api/lists/${listId}/items`, {
             method: "PATCH",
             headers: {
-              "x-telegram-init-data": initData!,
+              Authorization: `Bearer ${currentJwt}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ itemId: item.id, deleted_at: null }),
@@ -523,23 +606,24 @@ function ListContent() {
 
     await fetch(`/api/lists/${listId}/items/clear-completed`, {
       method: "POST",
-      headers: { "x-telegram-init-data": initData },
+      headers: { Authorization: `Bearer ${jwt}` },
     });
-  }, [initData, listId, items]);
+  }, [jwtRef, listId, items, t]);
 
   const handleRemind = useCallback(async () => {
-    if (!initData) return;
+    const jwt = jwtRef.current;
+    if (!jwt) return;
     try {
       await fetch(`/api/lists/${listId}/remind`, {
         method: "POST",
-        headers: { "x-telegram-init-data": initData },
+        headers: { Authorization: `Bearer ${jwt}` },
       });
       setReminderToast(t("items.reminderSent"));
       setTimeout(() => setReminderToast(null), 2500);
     } catch (e) {
       console.error("[List] Remind error:", e);
     }
-  }, [initData, listId, t]);
+  }, [jwtRef, listId, t]);
 
   const handleDragStart: DragDropEvents["dragstart"] = useCallback(() => {
     isDraggingRef.current = true;
@@ -599,17 +683,18 @@ function ListContent() {
         })
       );
 
-      // Persist to server — keep isDraggingRef true until server responds
-      // so realtime UPDATE events don't overwrite optimistic positions
+      const mutId = genMutId();
       addMutation({
+        id: mutId,
         type: "reorder",
         payload: { listId, orderedIds: updatedIds },
         execute: async () => {
           try {
+            const jwt = jwtRef.current;
             const res = await fetch(`/api/lists/${listId}/items/reorder`, {
               method: "POST",
               headers: {
-                "x-telegram-init-data": initData!,
+                Authorization: `Bearer ${jwt}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ orderedIds: updatedIds }),
@@ -622,7 +707,7 @@ function ListContent() {
         },
       });
     },
-    [items, initData, listId, addMutation]
+    [items, jwtRef, listId, addMutation]
   );
 
   const activeItems = items
@@ -662,6 +747,21 @@ function ListContent() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
+        <button
+          onClick={fetchItems}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
+        >
+          <RefreshCw className="w-4 h-4" />
+          {t('common.retry')}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-dvh overflow-hidden">
       {/* Header */}
@@ -688,7 +788,7 @@ function ListContent() {
         </button>
       </header>
 
-      <OfflineIndicator status={connectionStatus} />
+      <OfflineIndicator />
 
       <AddItemInput listId={listId} onAddItem={handleAddItem} />
 

@@ -7,7 +7,7 @@ import { Loader2 } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 
 function InviteContent() {
-  const { initData, isReady } = useTelegram();
+  const { initData, isReady, jwtRef } = useTelegram();
   const t = useTranslations();
   const params = useParams();
   const router = useRouter();
@@ -68,11 +68,19 @@ function InviteContent() {
   }, [isReady, initData, acceptInvite]);
 
   const cancelRequest = async () => {
-    if (!collaboratorId || !initData) return;
+    if (!collaboratorId) return;
+    const jwt = jwtRef.current;
+    // Use JWT if available, fall back to initData for early cancellation
+    const headers: Record<string, string> = jwt
+      ? { Authorization: `Bearer ${jwt}` }
+      : initData
+        ? { "x-telegram-init-data": initData }
+        : {};
+    if (Object.keys(headers).length === 0) return;
     try {
       await fetch(`/api/share/${token}?collaboratorId=${collaboratorId}`, {
         method: "DELETE",
-        headers: { "x-telegram-init-data": initData },
+        headers,
       });
     } catch {
       // ignore

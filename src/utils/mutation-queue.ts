@@ -36,11 +36,9 @@ export class MutationQueue {
     }
   }
 
-  enqueue(mutation: Omit<QueuedMutation, "id" | "timestamp">): string {
+  enqueue(mutation: Omit<QueuedMutation, "timestamp">): string {
     const queue = this.getQueue();
-    const id = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const entry: QueuedMutation = {
-      id,
       ...mutation,
       timestamp: Date.now(),
     };
@@ -53,7 +51,7 @@ export class MutationQueue {
     }
 
     this.saveQueue(queue);
-    return id;
+    return mutation.id;
   }
 
   dequeue(id: string) {

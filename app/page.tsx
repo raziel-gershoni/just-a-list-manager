@@ -3,10 +3,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Plus, Globe, Check } from "lucide-react";
+import { Plus, Globe, Check, RefreshCw, X, Smartphone } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import ListCard from "@/components/ListCard";
 import EmptyState from "@/components/EmptyState";
+import OfflineIndicator from "@/components/OfflineIndicator";
 import type { SupportedLocale } from "@/src/lib/i18n";
 
 interface ListData {
@@ -19,11 +20,12 @@ interface ListData {
 }
 
 function HomeContent() {
-  const { initData, isReady, locale, setLanguage } = useTelegram();
+  const { isReady, locale, setLanguage, jwtRef, onRefreshNeeded, homeScreenStatus, addToHomeScreen } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
   const [lists, setLists] = useState<ListData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -39,21 +41,33 @@ function HomeContent() {
   } | null>(null);
 
   const [showLanguage, setShowLanguage] = useState(false);
+  const [homeScreenDismissed, setHomeScreenDismissed] = useState<boolean | null>(null);
+
+  // Read localStorage in effect to avoid SSR hydration mismatch
+  useEffect(() => {
+    try {
+      setHomeScreenDismissed(localStorage.getItem("homescreen_banner_dismissed") === "true");
+    } catch {
+      setHomeScreenDismissed(false);
+    }
+  }, []);
 
   // Track the rename target ID separately so it persists through sheet open
   const renameTargetRef = useRef<string>("");
 
   const fetchLists = useCallback(async () => {
-    if (!initData) return;
+    const jwt = jwtRef.current;
+    if (!jwt) return;
     try {
+      setError(false);
       const res = await fetch("/api/lists", {
-        headers: { "x-telegram-init-data": initData },
+        headers: { Authorization: `Bearer ${jwt}` },
       });
       if (res.ok) {
         const data = await res.json();
         setLists(data);
 
-        // Auto-open single list (AC 4) — only on first visit to avoid back-navigation loop
+        // Auto-open single list — only on first visit to avoid back-navigation loop
         if (data.length === 1) {
           const autoOpened = sessionStorage.getItem("autoOpenedSingleList");
           if (!autoOpened) {
@@ -61,27 +75,42 @@ function HomeContent() {
             router.push(`/list/${data[0].id}`);
             return;
           }
+        } else {
+          // Clear flag when list count changes so auto-open works again
+          sessionStorage.removeItem("autoOpenedSingleList");
         }
+      } else {
+        setError(true);
       }
     } catch (e) {
       console.error("[Home] Fetch lists error:", e);
+      setError(true);
     } finally {
       setLoading(false);
     }
-  }, [initData, router]);
+  }, [jwtRef, router]);
 
   useEffect(() => {
     if (isReady) fetchLists();
   }, [isReady, fetchLists]);
 
+  // Register with orchestrator for reconnect refresh
+  useEffect(() => {
+    onRefreshNeeded.current = fetchLists;
+    return () => {
+      onRefreshNeeded.current = null;
+    };
+  }, [fetchLists, onRefreshNeeded]);
+
   const createList = async () => {
-    if (!newListName.trim() || !initData) return;
+    const jwt = jwtRef.current;
+    if (!newListName.trim() || !jwt) return;
     setCreating(true);
     try {
       const res = await fetch("/api/lists", {
         method: "POST",
         headers: {
-          "x-telegram-init-data": initData,
+          Authorization: `Bearer ${jwt}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ name: newListName.trim() }),
@@ -109,13 +138,14 @@ function HomeContent() {
   }, []);
 
   const handleRenameSubmit = useCallback(async () => {
-    if (!renameValue.trim() || !initData || !renameTargetRef.current) return;
+    const jwt = jwtRef.current;
+    if (!renameValue.trim() || !jwt || !renameTargetRef.current) return;
     setRenaming(true);
     try {
       const res = await fetch("/api/lists", {
         method: "PATCH",
         headers: {
-          "x-telegram-init-data": initData!,
+          Authorization: `Bearer ${jwt}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ id: renameTargetRef.current, name: renameValue.trim() }),
@@ -133,10 +163,11 @@ function HomeContent() {
     } finally {
       setRenaming(false);
     }
-  }, [renameValue, initData]);
+  }, [renameValue, jwtRef]);
 
   const handleDeleteList = useCallback((listToDelete: ListData) => {
-    if (!initData) return;
+    const jwt = jwtRef.current;
+    if (!jwt) return;
     const tg = (window as any).Telegram?.WebApp;
 
     const doDelete = () => {
@@ -161,10 +192,11 @@ function HomeContent() {
           // Restore optimistically
           setLists((prev) => [...prev, listToDelete]);
           // Restore on server
+          const currentJwt = jwtRef.current;
           fetch("/api/lists", {
             method: "PATCH",
             headers: {
-              "x-telegram-init-data": initData!,
+              Authorization: `Bearer ${currentJwt}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ id: listToDelete.id, restore: true }),
@@ -176,7 +208,7 @@ function HomeContent() {
       // Server delete
       fetch(`/api/lists?id=${listToDelete.id}`, {
         method: "DELETE",
-        headers: { "x-telegram-init-data": initData! },
+        headers: { Authorization: `Bearer ${jwt}` },
       });
     };
 
@@ -190,7 +222,7 @@ function HomeContent() {
         doDelete();
       }
     }
-  }, [initData, t]);
+  }, [jwtRef, t]);
 
   if (loading) {
     return (
@@ -201,6 +233,21 @@ function HomeContent() {
             className="h-16 bg-tg-secondary-bg rounded-xl animate-pulse"
           />
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
+        <button
+          onClick={fetchLists}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
+        >
+          <RefreshCw className="w-4 h-4" />
+          {t('common.retry')}
+        </button>
       </div>
     );
   }
@@ -251,6 +298,39 @@ function HomeContent() {
           <Globe className="w-5 h-5" />
         </button>
       </header>
+
+      <OfflineIndicator />
+
+      {/* Home screen shortcut banner */}
+      {homeScreenDismissed === false &&
+        homeScreenStatus !== null &&
+        homeScreenStatus !== "added" &&
+        homeScreenStatus !== "unsupported" && (
+          <div className="mx-4 mt-2 flex items-center gap-3 rounded-xl bg-tg-secondary-bg px-4 py-3">
+            <Smartphone className="w-5 h-5 text-tg-button shrink-0" />
+            <span className="flex-1 text-sm text-tg-text">
+              {t('lists.addToHomeScreen')}
+            </span>
+            <button
+              onClick={addToHomeScreen}
+              className="px-3 py-1.5 rounded-lg bg-tg-button text-tg-button-text text-sm font-medium shrink-0"
+            >
+              {t('lists.addToHomeScreenAction')}
+            </button>
+            <button
+              onClick={() => {
+                setHomeScreenDismissed(true);
+                try {
+                  localStorage.setItem("homescreen_banner_dismissed", "true");
+                } catch {}
+              }}
+              aria-label={t('common.close')}
+              className="p-1 text-tg-hint shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
       <div className="flex-1 p-4 pt-2 space-y-2">
         {lists.map((list) => (

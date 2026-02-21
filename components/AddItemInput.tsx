@@ -16,7 +16,7 @@ interface AddItemInputProps {
 }
 
 export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
-  const { initData } = useTelegram();
+  const { jwtRef } = useTelegram();
   const t = useTranslations();
   const [value, setValue] = useState("");
   const [suggestions, setSuggestions] = useState<RecyclableItem[]>([]);
@@ -27,7 +27,8 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
 
   const searchItems = useCallback(
     async (query: string) => {
-      if (!query.trim() || !initData) {
+      const jwt = jwtRef.current;
+      if (!query.trim() || !jwt) {
         setSuggestions([]);
         setIsSearching(false);
         return;
@@ -37,7 +38,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
       try {
         const res = await fetch(
           `/api/lists/${listId}/items/search?q=${encodeURIComponent(query.trim())}`,
-          { headers: { "x-telegram-init-data": initData } }
+          { headers: { Authorization: `Bearer ${jwt}` } }
         );
         if (res.ok) {
           const { items } = await res.json();
@@ -50,7 +51,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
         setIsSearching(false);
       }
     },
-    [listId, initData]
+    [listId, jwtRef]
   );
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -15,7 +15,9 @@
     "syncing": "Syncing...",
     "create": "Create",
     "creating": "Creating...",
-    "goHome": "Go home"
+    "goHome": "Go home",
+    "sessionExpired": "Session expired. Please reopen the app.",
+    "connectionProblems": "Connection problems. Tap to retry."
   },
   "lists": {
     "title": "My Lists",
@@ -32,7 +34,10 @@
     "newList": "New list",
     "maxLists": "You've reached the 50-list limit. Delete a list to create more.",
     "share": "Share",
-    "shared": "Shared"
+    "shared": "Shared",
+    "loadError": "Couldn't load your lists",
+    "addToHomeScreen": "Add to Home Screen for quick access",
+    "addToHomeScreenAction": "Add"
   },
   "items": {
     "addPlaceholder": "Add item...",

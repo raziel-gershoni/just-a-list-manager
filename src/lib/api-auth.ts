@@ -5,9 +5,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { Ratelimit } from "@upstash/ratelimit";
-import { validateInitData, TelegramUser } from "./telegram-auth";
+import { jwtVerify } from "jose";
+import { validateInitData } from "./telegram-auth";
 import { checkRateLimit, getRateLimitHeaders } from "./rate-limit";
 import { createServerClient } from "./supabase";
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.SUPABASE_JWT_SECRET!
+);
 
 export interface DbUser {
   id: string; // UUID
@@ -18,20 +23,64 @@ export interface DbUser {
 }
 
 export type AuthResult =
-  | { success: true; userId: string; telegramUser: TelegramUser; user: DbUser }
+  | { success: true; userId: string; telegramUserId: number; user?: DbUser }
   | { success: false; response: NextResponse };
 
 /**
  * Verify user authentication and check rate limits.
- * Extracts initData from Authorization header or query param,
- * validates Telegram auth, checks rate limit, looks up DB user.
+ * Dual-path auth: JWT Bearer preferred, initData fallback.
+ * JWT path skips DB lookup (userId from token claims).
+ * initData path does full DB lookup for backward compatibility.
  */
 export async function verifyUserAuth(
   request: NextRequest,
   rateLimiter: Ratelimit,
   endpointName: string
 ): Promise<AuthResult> {
-  // Extract initData from header only (never from query params — avoids credential leakage via logs/referrers)
+  // Path 1: JWT Bearer token (preferred — 1h expiry vs initData's 5min)
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    try {
+      const { payload } = await jwtVerify(token, JWT_SECRET);
+      const userId = payload.sub as string;
+      const telegramUserId = payload.telegram_user_id as number;
+
+      if (!userId || !telegramUserId) {
+        return {
+          success: false,
+          response: NextResponse.json(
+            { error: "Invalid token claims" },
+            { status: 401 }
+          ),
+        };
+      }
+
+      // Rate limit by telegram user ID (consistent with initData path)
+      const rateLimitResult = await checkRateLimit(rateLimiter, telegramUserId);
+      if (!rateLimitResult.success) {
+        return {
+          success: false,
+          response: NextResponse.json(
+            { error: "Too many requests. Please wait a minute." },
+            { status: 429, headers: getRateLimitHeaders(rateLimitResult) }
+          ),
+        };
+      }
+
+      return { success: true, userId, telegramUserId };
+    } catch {
+      return {
+        success: false,
+        response: NextResponse.json(
+          { error: "Invalid or expired token" },
+          { status: 401 }
+        ),
+      };
+    }
+  }
+
+  // Path 2: initData fallback (header only — avoids credential leakage via logs/referrers)
   const initData = request.headers.get("x-telegram-init-data");
 
   if (!initData) {
@@ -94,7 +143,7 @@ export async function verifyUserAuth(
   return {
     success: true,
     userId: user.id,
-    telegramUser,
+    telegramUserId: telegramUser.id,
     user: user as DbUser,
   };
 }

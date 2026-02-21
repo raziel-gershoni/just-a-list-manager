@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 
 interface RealtimeChange {
@@ -10,53 +10,24 @@ interface RealtimeChange {
   old: any;
 }
 
-type ConnectionStatus = "connected" | "connecting" | "offline";
-
-const MIN_RETRY_MS = 1000;
-const MAX_RETRY_MS = 30000;
+const RESUBSCRIBE_TIMEOUT_MS = 10000;
 
 export function useRealtimeList(
   supabaseClient: SupabaseClient | null,
+  supabaseClientRef: React.RefObject<SupabaseClient | null>,
   listId: string,
-  onChange: (change: RealtimeChange) => void,
-  options?: { onReconnect?: () => void }
+  onChange: (change: RealtimeChange) => void
 ) {
-  const [connectionStatus, setConnectionStatus] =
-    useState<ConnectionStatus>("connected");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const onReconnectRef = useRef(options?.onReconnect);
-  onReconnectRef.current = options?.onReconnect;
+  const subscribeCountRef = useRef(0);
+  // Flag to prevent the effect from re-creating a channel that resubscribe() just set up
+  const resubscribedRef = useRef(false);
 
-  useEffect(() => {
-    if (!supabaseClient || !listId) return;
-
-    let active = true;
-    let retryCount = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let hadSuccessfulConnection = false;
-    let subscribeCount = 0;
-
-    function subscribe() {
-      if (!active || !supabaseClient) return;
-
-      // Clean up any existing channel before creating a new one
-      if (channelRef.current) {
-        supabaseClient.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-
-      // Only show "connecting" if we previously had a successful connection
-      // (i.e., we're recovering from a failure, not on first attempt)
-      if (hadSuccessfulConnection) {
-        setConnectionStatus("connecting");
-      }
-
-      // Use unique channel name to avoid stale channel conflicts on retry
-      subscribeCount++;
-      const channelName = `list:${listId}:${subscribeCount}`;
-      const channel = supabaseClient
+  const createChannel = useCallback(
+    (client: SupabaseClient, channelName: string): RealtimeChannel => {
+      return client
         .channel(channelName)
         .on(
           "postgres_changes",
@@ -108,87 +79,93 @@ export function useRealtimeList(
               old: payload.old,
             });
           }
-        )
-        .subscribe((status) => {
-          if (!active) return;
+        );
+    },
+    [listId]
+  );
 
-          if (status === "SUBSCRIBED") {
-            const wasReconnecting = hadSuccessfulConnection && retryCount > 0;
-            retryCount = 0;
-            hadSuccessfulConnection = true;
-            setConnectionStatus("connected");
+  // Resubscribe function for orchestrator step 3
+  const resubscribe = useCallback((): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      // Use the ref to get the latest client (may have been recreated)
+      const client = supabaseClientRef.current;
+      if (!client) {
+        resolve(); // No client — no-op
+        return;
+      }
 
-            // Fire onReconnect if this was a recovery from a failure
-            if (wasReconnecting) {
-              onReconnectRef.current?.();
-            }
-          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            scheduleRetry();
-          }
-        });
+      // Old channel was on the previous client (already cleaned up by recreateSupabaseClient).
+      // Just clear the ref — don't try to remove from the new client.
+      channelRef.current = null;
 
-      channelRef.current = channel;
-    }
+      subscribeCountRef.current++;
+      const channelName = `list:${listId}:${subscribeCountRef.current}`;
+      const channel = createChannel(client, channelName);
 
-    function scheduleRetry() {
-      if (!active) return;
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        // Clean up the failed channel to prevent orphaned subscriptions
+        client.removeChannel(channel);
+        reject(new Error("Resubscribe timed out"));
+      }, RESUBSCRIBE_TIMEOUT_MS);
 
-      // Remove the failed channel
-      if (channelRef.current && supabaseClient) {
+      channel.subscribe((status) => {
+        if (settled) return;
+        if (status === "SUBSCRIBED") {
+          settled = true;
+          clearTimeout(timeout);
+          channelRef.current = channel;
+          resubscribedRef.current = true;
+          resolve();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          settled = true;
+          clearTimeout(timeout);
+          client.removeChannel(channel);
+          reject(new Error(`Channel subscribe failed: ${status}`));
+        }
+      });
+    });
+  }, [listId, supabaseClientRef, createChannel]);
+
+  // Initial subscribe on mount or client change
+  useEffect(() => {
+    if (!supabaseClient || !listId) return;
+
+    // If resubscribe() already created a channel on this client, skip creation
+    // but still return cleanup so the channel is removed on unmount
+    if (resubscribedRef.current) {
+      resubscribedRef.current = false;
+    } else {
+      // Clean up any existing channel
+      if (channelRef.current) {
         supabaseClient.removeChannel(channelRef.current);
         channelRef.current = null;
       }
 
-      // Only show "connecting" if we previously had a successful connection
-      if (hadSuccessfulConnection) {
-        setConnectionStatus("connecting");
-      }
+      subscribeCountRef.current++;
+      const channelName = `list:${listId}:${subscribeCountRef.current}`;
+      const channel = createChannel(supabaseClient, channelName);
 
-      const delay = Math.min(MIN_RETRY_MS * Math.pow(2, retryCount), MAX_RETRY_MS);
-      retryCount++;
-
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        subscribe();
-      }, delay);
+      channel.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          channelRef.current = channel;
+        }
+      });
     }
-
-    // Browser connectivity events
-    const goOffline = () => {
-      if (!active) return;
-      setConnectionStatus("offline");
-    };
-
-    const goOnline = () => {
-      if (!active) return;
-      retryCount = 0;
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      subscribe();
-    };
-
-    window.addEventListener("offline", goOffline);
-    window.addEventListener("online", goOnline);
-
-    // Initial subscribe
-    subscribe();
 
     return () => {
-      active = false;
-      window.removeEventListener("offline", goOffline);
-      window.removeEventListener("online", goOnline);
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      if (channelRef.current && supabaseClient) {
-        supabaseClient.removeChannel(channelRef.current);
+      if (channelRef.current) {
+        // Use the ref client since supabaseClient from closure may be stale
+        const client = supabaseClientRef.current;
+        if (client) {
+          client.removeChannel(channelRef.current);
+        }
         channelRef.current = null;
       }
     };
-  }, [supabaseClient, listId]);
+  }, [supabaseClient, supabaseClientRef, listId, createChannel]);
 
-  return { connectionStatus };
+  return { resubscribe };
 }

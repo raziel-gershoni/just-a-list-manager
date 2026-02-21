@@ -15,7 +15,9 @@
     "syncing": "מסנכרן...",
     "create": "צור",
     "creating": "יוצר...",
-    "goHome": "חזרה הביתה"
+    "goHome": "חזרה הביתה",
+    "sessionExpired": "פג תוקף החיבור. אנא פתח מחדש את האפליקציה.",
+    "connectionProblems": "בעיות חיבור. הקש לניסיון חוזר."
   },
   "lists": {
     "title": "הרשימות שלי",
@@ -32,7 +34,10 @@
     "newList": "רשימה חדשה",
     "maxLists": "הגעת למגבלת 50 הרשימות. מחק רשימה כדי ליצור חדשה.",
     "share": "שיתוף",
-    "shared": "משותפת"
+    "shared": "משותפת",
+    "loadError": "לא ניתן לטעון את הרשימות",
+    "addToHomeScreen": "הוסף למסך הבית לגישה מהירה",
+    "addToHomeScreenAction": "הוסף"
   },
   "items": {
     "addPlaceholder": "הוסף פריט...",

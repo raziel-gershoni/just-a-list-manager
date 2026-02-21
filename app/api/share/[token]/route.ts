@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateInitData } from "@/src/lib/telegram-auth";
+import { verifyUserAuth } from "@/src/lib/api-auth";
 import { createServerClient } from "@/src/lib/supabase";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { checkRateLimit, getRateLimitHeaders } from "@/src/lib/rate-limit";
@@ -10,10 +11,8 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  // Auth check
-  const initData =
-    request.headers.get("x-telegram-init-data") ||
-    new URL(request.url).searchParams.get("initData");
+  // Auth check (header only — avoids credential leakage via logs/referrers)
+  const initData = request.headers.get("x-telegram-init-data");
 
   if (!initData) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -224,15 +223,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
-  const initData = request.headers.get("x-telegram-init-data");
-  if (!initData) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const telegramUser = validateInitData(initData);
-  if (!telegramUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await verifyUserAuth(request, apiRateLimiter, "share-cancel");
+  if (!auth.success) return auth.response;
 
   const { searchParams } = new URL(request.url);
   const collaboratorId = searchParams.get("collaboratorId");
@@ -246,22 +238,11 @@ export async function DELETE(
 
   const supabase = createServerClient();
 
-  // Verify the collaborator belongs to this user
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", telegramUser.id)
-    .single();
-
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
-
   await supabase
     .from("collaborators")
     .delete()
     .eq("id", collaboratorId)
-    .eq("user_id", user.id)
+    .eq("user_id", auth.userId)
     .eq("status", "pending");
 
   return NextResponse.json({ success: true });

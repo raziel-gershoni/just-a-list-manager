@@ -1,34 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateInitData } from "@/src/lib/telegram-auth";
+import { verifyUserAuth } from "@/src/lib/api-auth";
 import { createServerClient } from "@/src/lib/supabase";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { checkRateLimit, getRateLimitHeaders } from "@/src/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
-  const initData = request.headers.get("x-telegram-init-data");
-
-  if (!initData) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const telegramUser = validateInitData(initData);
-  if (!telegramUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const rateLimitResult = await checkRateLimit(apiRateLimiter, telegramUser.id);
-  if (!rateLimitResult.success) {
-    return NextResponse.json(
-      { error: "Too many requests" },
-      { status: 429, headers: getRateLimitHeaders(rateLimitResult) }
-    );
-  }
+  const auth = await verifyUserAuth(request, apiRateLimiter, "user-get");
+  if (!auth.success) return auth.response;
 
   const supabase = createServerClient();
   const { data: user, error } = await supabase
     .from("users")
     .select("*")
-    .eq("telegram_id", telegramUser.id)
+    .eq("id", auth.userId)
     .single();
 
   if (error || !user) {
@@ -120,16 +105,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const initData = request.headers.get("x-telegram-init-data");
-
-  if (!initData) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const telegramUser = validateInitData(initData);
-  if (!telegramUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await verifyUserAuth(request, apiRateLimiter, "user-update");
+  if (!auth.success) return auth.response;
 
   const body = await request.json();
   const updates: Record<string, any> = {};
@@ -146,7 +123,7 @@ export async function PATCH(request: NextRequest) {
   const { data: user, error } = await supabase
     .from("users")
     .update(updates)
-    .eq("telegram_id", telegramUser.id)
+    .eq("id", auth.userId)
     .select()
     .single();
 
