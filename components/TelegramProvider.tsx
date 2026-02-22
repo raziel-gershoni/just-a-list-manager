@@ -233,29 +233,44 @@ export default function TelegramProvider({
 
     setOrchestratorState("reconnecting");
 
-    // Step 1: Refresh JWT (try existing JWT first)
-    let newToken = await fetchToken(null);
-    if (!newToken) {
-      // Clear expired JWT so initData path is used
-      jwtRef.current = null;
-      setJwt(null);
-      // Fallback: re-read Telegram.WebApp.initData
-      const tg = (window as any).Telegram?.WebApp;
-      const freshInitData = tg?.initData;
-      if (freshInitData) {
-        newToken = await fetchToken(freshInitData);
-      }
-    }
-
-    if (!newToken) {
-      setOrchestratorState("auth_failed");
-      return;
-    }
-
-    // Recreate Supabase client with fresh token
-    recreateSupabaseClient(newToken);
-
     try {
+      // Step 1: Refresh JWT (try existing JWT first)
+      let newToken = await fetchToken(null);
+      if (!newToken) {
+        // Clear expired JWT so initData path is used
+        jwtRef.current = null;
+        setJwt(null);
+        // Fallback: re-read Telegram.WebApp.initData
+        const tg = (window as any).Telegram?.WebApp;
+        const freshInitData = tg?.initData;
+        if (freshInitData) {
+          newToken = await fetchToken(freshInitData);
+        }
+      }
+
+      if (!newToken) {
+        // Token failure is retriable (could be network error, not just auth failure).
+        // Only go terminal after exhausting retries.
+        retryCountRef.current++;
+        setRetryCount(retryCountRef.current);
+
+        if (retryCountRef.current >= MAX_RETRIES) {
+          setOrchestratorState("auth_failed");
+          return;
+        }
+
+        setOrchestratorState("needs_retry");
+        if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = setTimeout(() => {
+          orchestratorStateRef.current = "idle";
+          runReconnectRef.current();
+        }, RETRY_DELAY_MS);
+        return;
+      }
+
+      // Recreate Supabase client with fresh token
+      recreateSupabaseClient(newToken);
+
       // Step 2: Flush mutations (no-op if no list page mounted)
       if (onFlushNeeded.current) {
         await onFlushNeeded.current();
