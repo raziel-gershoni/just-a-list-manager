@@ -4,6 +4,9 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { findRecyclableItems, recycleItem } from "@/src/services/item-recycler";
 
+// Upper bound for position values. Requires BIGINT column (migration 010).
+const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -120,7 +123,7 @@ export async function POST(
 
     // Use client-provided position if available (avoids concurrent position collisions),
     // otherwise fall back to max+1
-    let position = typeof body.position === "number" && Number.isFinite(body.position) && body.position > 0
+    let position = typeof body.position === "number" && Number.isFinite(body.position) && body.position > 0 && body.position <= MAX_SAFE_POSITION
       ? body.position
       : null;
     if (position === null) {
@@ -294,7 +297,7 @@ export async function PATCH(
     patchData.edited_by = auth.userId;
   }
 
-  if (typeof updates.position === "number" && Number.isFinite(updates.position) && updates.position > 0) {
+  if (typeof updates.position === "number" && Number.isFinite(updates.position) && updates.position > 0 && updates.position <= MAX_SAFE_POSITION) {
     patchData.position = updates.position;
   }
 

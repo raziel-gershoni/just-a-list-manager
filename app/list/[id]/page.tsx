@@ -245,7 +245,27 @@ function ListContent() {
       setItems((prev) => {
         const pendingItems = prev.filter((i) => i._pending);
         const serverIds = new Set(mapped.map((i: ItemData) => i.id));
-        const unresolvedPending = pendingItems.filter((i) => !serverIds.has(i.id));
+
+        // Count server items by text for count-aware dedup
+        // (handles duplicate-text items correctly — only consume one match per server item)
+        const serverTextCounts = new Map<string, number>();
+        for (const item of mapped) {
+          const key = item.text.toLowerCase();
+          serverTextCounts.set(key, (serverTextCounts.get(key) || 0) + 1);
+        }
+
+        const unresolvedPending: ItemData[] = [];
+        for (const pending of pendingItems) {
+          if (serverIds.has(pending.id)) continue;
+          const key = pending.text.toLowerCase();
+          const serverCount = serverTextCounts.get(key) || 0;
+          if (serverCount > 0) {
+            serverTextCounts.set(key, serverCount - 1);
+          } else {
+            unresolvedPending.push(pending);
+          }
+        }
+
         return [...unresolvedPending, ...mapped];
       });
     } catch (e) {

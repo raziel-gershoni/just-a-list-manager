@@ -62,6 +62,7 @@ function mapToConnectionStatus(state: OrchestratorState): ConnectionStatus {
 const MAX_RETRIES = 5;
 const COOLDOWN_MS = 5000;
 const RETRY_DELAY_MS = 2000;
+const RECONNECT_THROTTLE_MS = 5000; // Min interval between reconnect() calls from browser events
 const PROACTIVE_REFRESH_MS = 45 * 60 * 1000; // 45 minutes
 
 // --- Context ---
@@ -148,6 +149,10 @@ export default function TelegramProvider({
 
   // Stable heartbeat callback ref (avoids stale closures on client recreation)
   const runReconnectRef = useRef<() => void>(() => {});
+  // Ref for reconnect() (resets retryCount + forces idle) — used by browser event handlers
+  const reconnectRef = useRef<() => void>(() => {});
+  // Debounce: prevent retry storms on flapping networks
+  const lastReconnectAttemptRef = useRef<number>(0);
 
   const setOrchestratorState = useCallback(
     (state: OrchestratorState) => {
@@ -301,7 +306,7 @@ export default function TelegramProvider({
     }
   }, [fetchToken, recreateSupabaseClient, setOrchestratorState]);
 
-  // Keep ref in sync for stable callbacks
+  // Keep refs in sync for stable callbacks
   runReconnectRef.current = runReconnect;
 
   // Manual reconnect (works even when retryCount >= MAX_RETRIES)
@@ -324,6 +329,18 @@ export default function TelegramProvider({
     orchestratorStateRef.current = "idle";
     runReconnect();
   }, [runReconnect]);
+
+  // Keep reconnect ref in sync
+  reconnectRef.current = reconnect;
+
+  // Throttled reconnect for browser event handlers (online, visibilitychange).
+  // Prevents retry storms when network flaps rapidly.
+  const debouncedReconnect = useCallback(() => {
+    const now = Date.now();
+    if (now - lastReconnectAttemptRef.current < RECONNECT_THROTTLE_MS) return;
+    lastReconnectAttemptRef.current = now;
+    reconnectRef.current();
+  }, []);
 
   const setLanguage = useCallback(
     async (lang: SupportedLocale) => {
@@ -480,12 +497,12 @@ export default function TelegramProvider({
   // === Entry Points Effect ===
   useEffect(() => {
     const handleOnline = () => {
-      runReconnectRef.current();
+      debouncedReconnect();
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        runReconnectRef.current();
+        debouncedReconnect();
       }
     };
 

@@ -38,26 +38,33 @@ export function useMutationQueue(
         pendingExecutors.current.delete(id);
         return result;
       } catch (error: any) {
-        // If offline, keep in queue
+        const message = error?.message || "";
+
+        // If offline, keep in queue for later
         if (
-          error?.message?.includes("fetch") ||
-          error?.message?.includes("network") ||
+          message.includes("fetch") ||
+          message.includes("network") ||
+          message.includes("Failed to fetch") ||
           !navigator.onLine
         ) {
           console.log("[MutationQueue] Offline — queued for later:", id);
           return;
         }
 
-        // If 404/410, silently drop (entity deleted by another user)
-        if (error?.status === 404 || error?.status === 410) {
-          console.log("[MutationQueue] Entity gone — dropping:", id);
+        // Extract HTTP status from error message (e.g. "Create failed: 404")
+        const statusMatch = message.match(/:\s*(\d{3})$/);
+        const httpStatus = statusMatch ? parseInt(statusMatch[1], 10) : null;
+
+        // 4xx client errors (except 408 timeout / 429 rate limit) won't succeed on retry — dequeue
+        if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 408 && httpStatus !== 429) {
+          console.log("[MutationQueue] Client error — dropping:", id, httpStatus);
           queueRef.current.dequeue(id);
           pendingExecutors.current.delete(id);
           return;
         }
 
-        // Other errors — keep in queue
-        console.error("[MutationQueue] Error:", error);
+        // 5xx server errors, 408, 429, or unknown — keep in queue for retry
+        console.error("[MutationQueue] Error (will retry):", id, message);
       }
     },
     []
