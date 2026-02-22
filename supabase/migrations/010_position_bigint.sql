@@ -13,12 +13,20 @@
 ALTER TABLE items ALTER COLUMN position TYPE BIGINT;
 
 -- ============================================================
--- 2. Re-create find_fuzzy_items overloads with BIGINT return type
+-- 2. Drop existing find_fuzzy_items overloads (return type change
+--    requires DROP + CREATE, not CREATE OR REPLACE)
+-- ============================================================
+
+DROP FUNCTION IF EXISTS find_fuzzy_items(UUID, TEXT, TIMESTAMPTZ, FLOAT);
+DROP FUNCTION IF EXISTS find_fuzzy_items(UUID, TEXT, FLOAT);
+
+-- ============================================================
+-- 3. Re-create find_fuzzy_items overloads with BIGINT return type
 --    (Supersedes versions from migrations 001, 004, and 008)
 -- ============================================================
 
 -- find_fuzzy_items (4-param overload with p_since)
-CREATE OR REPLACE FUNCTION find_fuzzy_items(
+CREATE FUNCTION find_fuzzy_items(
   p_list_id UUID,
   p_search_text TEXT,
   p_since TIMESTAMPTZ,
@@ -45,7 +53,7 @@ RETURNS TABLE (
 $$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public, extensions;
 
 -- find_fuzzy_items (3-param overload)
-CREATE OR REPLACE FUNCTION find_fuzzy_items(
+CREATE FUNCTION find_fuzzy_items(
   p_list_id UUID,
   p_search_text TEXT,
   p_threshold FLOAT DEFAULT 0.3
