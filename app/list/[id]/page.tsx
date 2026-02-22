@@ -405,8 +405,8 @@ function ListContent() {
 
   const handleAddItem = useCallback(
     async (text: string, recycleId?: string) => {
-      const jwt = jwtRef.current;
-      if (!jwt) return;
+      // No JWT guard here — items are added optimistically and queued.
+      // The executor reads jwtRef.current at execution time (after reconnect).
 
       // Check for duplicate
       const existing = items.find(
