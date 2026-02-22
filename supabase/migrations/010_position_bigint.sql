@@ -6,8 +6,6 @@
 --   ALTER TABLE items ALTER COLUMN position TYPE INTEGER;
 --   Then re-create both find_fuzzy_items overloads with "position" INTEGER.
 
-BEGIN;
-
 -- ============================================================
 -- 1. Widen position column to BIGINT
 -- ============================================================
@@ -69,5 +67,3 @@ RETURNS TABLE (
   ORDER BY similarity(i.text, p_search_text) DESC
   LIMIT 10;
 $$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public, extensions;
-
-COMMIT;
