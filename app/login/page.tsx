@@ -70,7 +70,6 @@ function LoginContent() {
     script.setAttribute("data-size", "large");
     script.setAttribute("data-radius", "8");
     script.setAttribute("data-onauth", "__onTelegramAuth(user)");
-    script.setAttribute("data-request-access", "write");
 
     widgetRef.current.innerHTML = "";
     widgetRef.current.appendChild(script);
