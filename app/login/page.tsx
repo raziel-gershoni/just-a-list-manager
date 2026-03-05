@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { NextIntlClientProvider, useTranslations } from "next-intl";
 import { resolveLocale, type SupportedLocale } from "@/src/lib/i18n";
@@ -17,7 +17,6 @@ const allMessages: Record<SupportedLocale, typeof enMessages> = {
 function LoginContent() {
   const t = useTranslations();
   const router = useRouter();
-  const widgetRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState(false);
 
   // If user already has a valid token, redirect to home
@@ -35,26 +34,6 @@ function LoginContent() {
     }
   }, [router]);
 
-  // Mount Telegram Login Widget with redirect flow
-  useEffect(() => {
-    const botUsername = process.env.NEXT_PUBLIC_BOT_USERNAME;
-    if (!botUsername || !widgetRef.current) return;
-
-    const script = document.createElement("script");
-    script.src = "https://telegram.org/js/telegram-widget.js?22";
-    script.async = true;
-    script.setAttribute("data-telegram-login", botUsername);
-    script.setAttribute("data-size", "large");
-    script.setAttribute("data-radius", "8");
-    script.setAttribute(
-      "data-auth-url",
-      `${window.location.origin}/api/auth/telegram-login-callback`
-    );
-
-    widgetRef.current.innerHTML = "";
-    widgetRef.current.appendChild(script);
-  }, []);
-
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-6">
       <div className="text-center max-w-sm">
@@ -63,7 +42,21 @@ function LoginContent() {
         </h1>
         <p className="text-muted-foreground mb-8">{t("login.subtitle")}</p>
 
-        <div ref={widgetRef} className="flex justify-center mb-4" />
+        <a
+          href="/api/auth/telegram-redirect"
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-medium text-base no-underline"
+          style={{ backgroundColor: "#54a9eb" }}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            className="w-5 h-5"
+          >
+            <path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z" />
+          </svg>
+          {t("login.button")}
+        </a>
 
         {error && (
           <p className="text-sm text-destructive mt-2">{t("login.error")}</p>
