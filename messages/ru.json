@@ -22,9 +22,8 @@
   },
   "login": {
     "title": "Просто список",
-    "subtitle": "Совместные списки на базе Telegram",
-    "button": "Войти через Telegram",
-    "loading": "Вход...",
+    "subtitle": "Откройте бота в Telegram, чтобы начать",
+    "button": "Открыть в Telegram",
     "error": "Ошибка входа. Попробуйте ещё раз."
   },
   "lists": {

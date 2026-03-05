@@ -22,9 +22,8 @@
   },
   "login": {
     "title": "Just a List",
-    "subtitle": "Collaborative checklists, powered by Telegram",
-    "button": "Log in with Telegram",
-    "loading": "Logging in...",
+    "subtitle": "Open the bot in Telegram to get started",
+    "button": "Open in Telegram",
     "error": "Login failed. Please try again."
   },
   "lists": {
