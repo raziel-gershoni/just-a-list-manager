@@ -1,32 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SignJWT, jwtVerify } from "jose";
+import { jwtVerify } from "jose";
 import { validateInitData } from "@/src/lib/telegram-auth";
 import { createServerClient } from "@/src/lib/supabase";
+import { JWT_SECRET, signToken } from "@/src/lib/jwt";
 import {
   authIpRateLimiter,
   authUserRateLimiter,
   checkRateLimit,
   getRateLimitHeaders,
 } from "@/src/lib/rate-limit";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.SUPABASE_JWT_SECRET!
-);
-const JWT_EXPIRY = "1h";
-
-async function signToken(userId: string, telegramId: number): Promise<string> {
-  return new SignJWT({
-    sub: userId,
-    aud: "authenticated",
-    role: "authenticated",
-    iss: "supabase",
-    telegram_user_id: telegramId,
-  })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuedAt()
-    .setExpirationTime(JWT_EXPIRY)
-    .sign(JWT_SECRET);
-}
 
 export async function GET(request: NextRequest) {
   // Tier 1: IP-based rate limit (before any validation)

@@ -17,7 +17,14 @@
     "creating": "Creating...",
     "goHome": "Go home",
     "sessionExpired": "Session expired. Please reopen the app.",
-    "connectionProblems": "Connection problems. Tap to retry."
+    "connectionProblems": "Connection problems. Tap to retry.",
+    "logout": "Log out"
+  },
+  "login": {
+    "title": "Just a List",
+    "subtitle": "Collaborative checklists, powered by Telegram",
+    "button": "Log in with Telegram",
+    "error": "Login failed. Please try again."
   },
   "lists": {
     "title": "My Lists",

@@ -236,11 +236,11 @@ export default function TelegramProvider({
     try {
       // Step 1: Refresh JWT (try existing JWT first)
       let newToken = await fetchToken(null);
-      if (!newToken) {
+      if (!newToken && !isWebAppRef.current) {
         // Clear expired JWT so initData path is used
         jwtRef.current = null;
         setJwt(null);
-        // Fallback: re-read Telegram.WebApp.initData
+        // Fallback: re-read Telegram.WebApp.initData (only in Mini App mode)
         const tg = (window as any).Telegram?.WebApp;
         const freshInitData = tg?.initData;
         if (freshInitData) {
@@ -249,12 +249,23 @@ export default function TelegramProvider({
       }
 
       if (!newToken) {
+        // Web app: if token refresh fails after retries, redirect to login
+        if (isWebAppRef.current) {
+          localStorage.removeItem("web_auth_token");
+          jwtRef.current = null;
+          setJwt(null);
+        }
         // Token failure is retriable (could be network error, not just auth failure).
         // Only go terminal after exhausting retries.
         retryCountRef.current++;
         setRetryCount(retryCountRef.current);
 
         if (retryCountRef.current >= MAX_RETRIES) {
+          if (isWebAppRef.current) {
+            localStorage.removeItem("web_auth_token");
+            router.push("/login");
+            return;
+          }
           setOrchestratorState("auth_failed");
           return;
         }
@@ -266,6 +277,11 @@ export default function TelegramProvider({
           runReconnectRef.current();
         }, RETRY_DELAY_MS);
         return;
+      }
+
+      // Persist refreshed token for web users
+      if (isWebAppRef.current) {
+        localStorage.setItem("web_auth_token", newToken);
       }
 
       // Recreate Supabase client with fresh token
@@ -385,12 +401,76 @@ export default function TelegramProvider({
     }
   }, []);
 
+  // Track whether we're running as a web app (no Telegram WebApp)
+  const isWebAppRef = useRef(false);
+
   // === Bootstrap Effect ===
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
-    if (!tg) {
-      setIsReady(true);
-      setOrchestratorState("idle");
+    // In a regular browser, Telegram.WebApp exists (script loaded) but initData is empty
+    const isTelegramMiniApp = tg && tg.initData;
+    if (!isTelegramMiniApp) {
+      isWebAppRef.current = true;
+
+      // Web app flow: check for stored JWT
+      const storedToken = localStorage.getItem("web_auth_token");
+      if (!storedToken) {
+        router.push("/login");
+        return;
+      }
+
+      // Try to refresh the stored JWT
+      jwtRef.current = storedToken;
+      (async () => {
+        const token = await fetchToken(null); // Bearer refresh path
+        if (!token) {
+          // Stored token invalid/expired — redirect to login
+          localStorage.removeItem("web_auth_token");
+          jwtRef.current = null;
+          router.push("/login");
+          return;
+        }
+
+        // Persist refreshed token
+        localStorage.setItem("web_auth_token", token);
+        recreateSupabaseClient(token);
+
+        // Fetch user info via JWT (user was already upserted during login)
+        try {
+          const userRes = await fetch("/api/user", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            if (userData?.id) setUserId(userData.id);
+            if (userData?.language) {
+              const serverLocale = resolveLocale(userData.language);
+              applyLocale(serverLocale);
+            }
+            if (userData?.first_name) {
+              setUser({
+                id: userData.telegram_id,
+                first_name: userData.first_name,
+                last_name: userData.last_name,
+                username: userData.username,
+              });
+            }
+          }
+        } catch (e) {
+          console.error("[TelegramProvider] Web user registration error:", e);
+        }
+
+        // Apply locale from localStorage
+        try {
+          const cached = localStorage.getItem("app_locale");
+          if (cached && ["en", "he", "ru"].includes(cached)) {
+            applyLocale(cached as SupportedLocale);
+          }
+        } catch {}
+
+        setIsReady(true);
+        setOrchestratorState("idle");
+      })();
       return;
     }
 

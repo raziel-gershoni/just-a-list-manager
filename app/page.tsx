@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Plus, Globe, Check, RefreshCw, X, Smartphone } from "lucide-react";
+import { Plus, Globe, Check, RefreshCw, X, Smartphone, LogOut } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import ListCard from "@/components/ListCard";
 import EmptyState from "@/components/EmptyState";
@@ -42,6 +42,7 @@ function HomeContent() {
 
   const [showLanguage, setShowLanguage] = useState(false);
   const [homeScreenDismissed, setHomeScreenDismissed] = useState<boolean | null>(null);
+  const [isWebApp, setIsWebApp] = useState(false);
 
   // Read localStorage in effect to avoid SSR hydration mismatch
   useEffect(() => {
@@ -50,7 +51,15 @@ function HomeContent() {
     } catch {
       setHomeScreenDismissed(false);
     }
+    // Detect web app mode (no Telegram Mini App — script exists but initData is empty)
+    const tg = (window as any).Telegram?.WebApp;
+    setIsWebApp(!tg || !tg.initData);
   }, []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("web_auth_token");
+    router.push("/login");
+  }, [router]);
 
   // Track the rename target ID separately so it persists through sheet open
   const renameTargetRef = useRef<string>("");
@@ -255,13 +264,22 @@ function HomeContent() {
   if (lists.length === 0) {
     return (
       <>
-        <div className="absolute top-4 end-4 z-10">
+        <div className="absolute top-4 end-4 z-10 flex items-center gap-1">
           <button
             onClick={() => setShowLanguage(true)}
             className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
           >
             <Globe className="w-5 h-5" />
           </button>
+          {isWebApp && (
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+              title={t("common.logout")}
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <EmptyState onCreateList={() => setShowCreate(true)} />
         {showCreate && (
@@ -291,12 +309,23 @@ function HomeContent() {
     <div className="flex flex-col min-h-screen">
       <header className="p-4 pb-2 flex items-center justify-between">
         <h1 className="text-xl font-bold text-tg-text">{t('lists.title')}</h1>
-        <button
-          onClick={() => setShowLanguage(true)}
-          className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
-        >
-          <Globe className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowLanguage(true)}
+            className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+          >
+            <Globe className="w-5 h-5" />
+          </button>
+          {isWebApp && (
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+              title={t("common.logout")}
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </header>
 
       <OfflineIndicator />
