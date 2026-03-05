@@ -43,6 +43,55 @@ function lookupUserName(items: ItemData[], targetUserId: string | null): string 
   return null;
 }
 
+type CompletedGroup = { label: string; items: ItemData[] };
+
+function groupByCompletionTime(
+  items: ItemData[],
+  t: ReturnType<typeof useTranslations>
+): CompletedGroup[] {
+  const now = Date.now();
+  const hour = 3600_000;
+  const day = 24 * hour;
+
+  const buckets: { key: string; maxAge: number }[] = [
+    { key: "longAgo", maxAge: Infinity },
+    { key: "monthsAgo", maxAge: 180 * day },
+    { key: "monthAgo", maxAge: 60 * day },
+    { key: "weeksAgo", maxAge: 30 * day },
+    { key: "weekAgo", maxAge: 14 * day },
+    { key: "daysAgo", maxAge: 7 * day },
+    { key: "yesterday", maxAge: 2 * day },
+    { key: "today", maxAge: 1 * day },
+  ];
+
+  const grouped = new Map<string, ItemData[]>();
+  for (const b of buckets) grouped.set(b.key, []);
+
+  for (const item of items) {
+    const age = item.completed_at
+      ? now - new Date(item.completed_at).getTime()
+      : Infinity;
+    // Find first bucket where age >= maxAge (oldest-first order)
+    let placed = false;
+    for (const b of buckets) {
+      if (age >= b.maxAge) {
+        grouped.get(b.key)!.push(item);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) grouped.get("today")!.push(item);
+  }
+
+  // Return non-empty groups in oldest-first order (matches buckets array order)
+  return buckets
+    .filter((b) => grouped.get(b.key)!.length > 0)
+    .map((b) => ({
+      label: t(`items.completedTime.${b.key}`),
+      items: grouped.get(b.key)!,
+    }));
+}
+
 function ListContent() {
   const {
     isReady,
@@ -739,8 +788,10 @@ function ListContent() {
     .sort((a, b) => {
       const aTime = a.completed_at ? new Date(a.completed_at).getTime() : 0;
       const bTime = b.completed_at ? new Date(b.completed_at).getTime() : 0;
-      return bTime - aTime;
+      return aTime - bTime;
     });
+
+  const completedGroups = groupByCompletionTime(completedItems, t);
 
   // Compute duplicate text set for active items
   const duplicateTexts = new Set<string>();
@@ -860,20 +911,27 @@ function ListContent() {
               </button>
             </button>
             {showCompleted &&
-              completedItems.map((item) => (
-                <ItemRow
-                  key={item.id}
-                  id={item.id}
-                  text={item.text}
-                  completed={true}
-                  creatorName={isShared ? item.creator_name : null}
-                  isOwnItem={item.created_by === userId}
-                  editorName={isShared ? item.editor_name : null}
-                  isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-                  onToggle={handleToggle}
-                  onDelete={handleDelete}
-                  onEdit={handleEditItem}
-                />
+              completedGroups.map((group) => (
+                <div key={group.label}>
+                  <div className="px-4 pt-3 pb-1 text-xs text-tg-hint font-medium">
+                    {group.label}
+                  </div>
+                  {group.items.map((item) => (
+                    <ItemRow
+                      key={item.id}
+                      id={item.id}
+                      text={item.text}
+                      completed={true}
+                      creatorName={isShared ? item.creator_name : null}
+                      isOwnItem={item.created_by === userId}
+                      editorName={isShared ? item.editor_name : null}
+                      isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+                      onToggle={handleToggle}
+                      onDelete={handleDelete}
+                      onEdit={handleEditItem}
+                    />
+                  ))}
+                </div>
               ))}
           </>
         )}

@@ -61,7 +61,17 @@
     "dragHandle": "גרור לשינוי סדר",
     "duplicateWarning": "פריט זה כבר קיים ברשימה",
     "editedBy": "נערך ע\"י {name}",
-    "reminderSent": "תזכורת נשלחה!"
+    "reminderSent": "תזכורת נשלחה!",
+    "completedTime": {
+      "today": "היום",
+      "yesterday": "אתמול",
+      "daysAgo": "לפני כמה ימים",
+      "weekAgo": "לפני כשבוע",
+      "weeksAgo": "לפני כמה שבועות",
+      "monthAgo": "לפני כחודש",
+      "monthsAgo": "לפני כמה חודשים",
+      "longAgo": "לפני זמן רב"
+    }
   },
   "voice": {
     "added": "נוסף ל{listName}:",

@@ -61,7 +61,17 @@
     "dragHandle": "Drag to reorder",
     "duplicateWarning": "This item already exists in the list",
     "editedBy": "edited by {name}",
-    "reminderSent": "Reminder sent!"
+    "reminderSent": "Reminder sent!",
+    "completedTime": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "daysAgo": "A few days ago",
+      "weekAgo": "About a week ago",
+      "weeksAgo": "A few weeks ago",
+      "monthAgo": "About a month ago",
+      "monthsAgo": "A few months ago",
+      "longAgo": "A long time ago"
+    }
   },
   "voice": {
     "added": "Added to {listName}:",

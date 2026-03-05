@@ -61,7 +61,17 @@
     "dragHandle": "Перетащите для сортировки",
     "duplicateWarning": "Этот элемент уже есть в списке",
     "editedBy": "изменено {name}",
-    "reminderSent": "Напоминание отправлено!"
+    "reminderSent": "Напоминание отправлено!",
+    "completedTime": {
+      "today": "Сегодня",
+      "yesterday": "Вчера",
+      "daysAgo": "Несколько дней назад",
+      "weekAgo": "Около недели назад",
+      "weeksAgo": "Несколько недель назад",
+      "monthAgo": "Около месяца назад",
+      "monthsAgo": "Несколько месяцев назад",
+      "longAgo": "Давно"
+    }
   },
   "voice": {
     "added": "Добавлено в {listName}:",
