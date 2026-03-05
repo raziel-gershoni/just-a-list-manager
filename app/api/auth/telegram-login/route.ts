@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateLoginWidget } from "@/src/lib/telegram-auth";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { createServerClient } from "@/src/lib/supabase";
 import { signToken } from "@/src/lib/jwt";
 import {
@@ -8,6 +8,10 @@ import {
   checkRateLimit,
   getRateLimitHeaders,
 } from "@/src/lib/rate-limit";
+
+const JWKS = createRemoteJWKSet(
+  new URL("https://oauth.telegram.org/.well-known/jwks.json")
+);
 
 export async function POST(request: NextRequest) {
   // Tier 1: IP-based rate limit
@@ -21,31 +25,53 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: Record<string, string>;
+  let body: { id_token?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const telegramUser = validateLoginWidget(body);
-  if (!telegramUser) {
+  if (!body.id_token) {
+    return NextResponse.json({ error: "Missing id_token" }, { status: 400 });
+  }
+
+  // Validate id_token JWT from Telegram
+  const botId = process.env.TELEGRAM_BOT_TOKEN?.split(":")[0];
+  if (!botId) {
+    console.error("[Auth] TELEGRAM_BOT_TOKEN not configured");
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  let payload;
+  try {
+    const result = await jwtVerify(body.id_token, JWKS, {
+      issuer: "https://oauth.telegram.org",
+      audience: botId,
+    });
+    payload = result.payload;
+  } catch (err) {
+    console.warn("[Auth] JWT verification failed:", err);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const telegramId = Number(payload.sub);
+  if (!telegramId) {
+    return NextResponse.json({ error: "Invalid token payload" }, { status: 401 });
+  }
+
+  const name = (payload.name as string) || "";
+  const username = (payload.preferred_username as string) || null;
+
   // Upsert user to ensure they exist
   const supabase = createServerClient();
-  const name = [telegramUser.first_name, telegramUser.last_name]
-    .filter(Boolean)
-    .join(" ");
-
   const { data: user, error } = await supabase
     .from("users")
     .upsert(
       {
-        telegram_id: telegramUser.id,
+        telegram_id: telegramId,
         name,
-        username: telegramUser.username || null,
+        username,
       },
       { onConflict: "telegram_id" }
     )
