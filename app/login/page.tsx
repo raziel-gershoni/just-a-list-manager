@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { NextIntlClientProvider, useTranslations } from "next-intl";
 import { resolveLocale, type SupportedLocale } from "@/src/lib/i18n";
@@ -8,18 +8,8 @@ import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
 import ruMessages from "@/messages/ru.json";
 
-declare global {
-  interface Window {
-    Telegram?: {
-      Login: {
-        auth: (
-          options: { client_id: string },
-          callback: (result: false | { id_token: string }) => void
-        ) => void;
-      };
-    };
-  }
-}
+const OIDC_ORIGIN = "https://oauth.telegram.org";
+const BOT_ID = process.env.NEXT_PUBLIC_BOT_ID!;
 
 const allMessages: Record<SupportedLocale, typeof enMessages> = {
   en: enMessages,
@@ -32,69 +22,108 @@ function LoginContent() {
   const router = useRouter();
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [sdkReady, setSdkReady] = useState(false);
+  const popupRef = useRef<Window | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("web_auth_token");
     if (token) {
       router.replace("/");
-      return;
     }
-
-    // Load Telegram Login SDK
-    const script = document.createElement("script");
-    script.src = "https://oauth.telegram.org/js/telegram-login.js";
-    script.async = true;
-    script.onload = () => setSdkReady(true);
-    script.onerror = () => setError(true);
-    document.head.appendChild(script);
-
-    return () => {
-      document.head.removeChild(script);
-    };
   }, [router]);
 
-  const handleLogin = useCallback(() => {
-    if (!window.Telegram?.Login) {
-      setError(true);
-      return;
-    }
+  const handleResult = useCallback(
+    async (idToken: string) => {
+      try {
+        const res = await fetch("/api/auth/telegram-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id_token: idToken }),
+        });
 
-    setError(false);
-    setLoading(true);
-
-    window.Telegram.Login.auth(
-      { client_id: process.env.NEXT_PUBLIC_BOT_ID! },
-      async (result) => {
-        if (!result) {
+        if (!res.ok) {
+          setError(true);
           setLoading(false);
-          // User cancelled — not an error
           return;
         }
 
-        try {
-          const res = await fetch("/api/auth/telegram-login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id_token: result.id_token }),
-          });
-
-          if (!res.ok) {
-            setError(true);
-            setLoading(false);
-            return;
-          }
-
-          const { token } = await res.json();
-          localStorage.setItem("web_auth_token", token);
-          router.replace("/");
-        } catch {
-          setError(true);
-          setLoading(false);
-        }
+        const { token } = await res.json();
+        localStorage.setItem("web_auth_token", token);
+        router.replace("/");
+      } catch {
+        setError(true);
+        setLoading(false);
       }
-    );
-  }, [router]);
+    },
+    [router]
+  );
+
+  const handleLogin = useCallback(() => {
+    setError(false);
+    setLoading(true);
+
+    const redirectUri = location.origin + location.pathname;
+    const authUrl =
+      OIDC_ORIGIN +
+      "/auth?response_type=post_message" +
+      "&client_id=" + encodeURIComponent(BOT_ID) +
+      "&redirect_uri=" + encodeURIComponent(redirectUri) +
+      "&origin=" + encodeURIComponent(location.origin) +
+      "&scope=" + encodeURIComponent("openid profile");
+
+    const width = 550;
+    const height = 650;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s = screen as any;
+    const left = Math.max(0, (screen.width - width) / 2) + (s.availLeft || 0);
+    const top = Math.max(0, (screen.height - height) / 2) + (s.availTop || 0);
+    const features = `width=${width},height=${height},left=${left},top=${top},status=0,location=0,menubar=0,toolbar=0`;
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== OIDC_ORIGIN) return;
+      if (popupRef.current && event.source !== popupRef.current) return;
+
+      let data;
+      try {
+        data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+
+      if (data?.event !== "auth_result") return;
+
+      window.removeEventListener("message", onMessage);
+
+      if (data.error || !data.result || typeof data.result !== "string") {
+        setError(true);
+        setLoading(false);
+        return;
+      }
+
+      handleResult(data.result);
+    };
+
+    window.addEventListener("message", onMessage);
+
+    popupRef.current = window.open(authUrl, "telegram_oidc_login", features);
+
+    if (popupRef.current) {
+      popupRef.current.focus();
+
+      const checkClose = () => {
+        if (!popupRef.current || popupRef.current.closed) {
+          window.removeEventListener("message", onMessage);
+          setLoading(false);
+          return;
+        }
+        setTimeout(checkClose, 200);
+      };
+      checkClose();
+    } else {
+      window.removeEventListener("message", onMessage);
+      setError(true);
+      setLoading(false);
+    }
+  }, [handleResult]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-6">
@@ -106,7 +135,7 @@ function LoginContent() {
 
         <button
           onClick={handleLogin}
-          disabled={!sdkReady || loading}
+          disabled={loading}
           className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-medium text-base disabled:opacity-50"
           style={{ backgroundColor: "#54a9eb" }}
         >
