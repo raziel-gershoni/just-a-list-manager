@@ -913,7 +913,7 @@ function ListContent() {
             {showCompleted &&
               completedGroups.map((group) => (
                 <div key={group.label}>
-                  <div className="px-4 pt-3 pb-1 text-xs text-tg-hint font-medium">
+                  <div className="sticky top-0 z-10 px-4 pt-3 pb-1 text-xs text-tg-hint font-medium bg-tg-secondary-bg">
                     {group.label}
                   </div>
                   {group.items.map((item) => (
