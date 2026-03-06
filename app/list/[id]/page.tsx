@@ -890,6 +890,12 @@ function ListContent() {
         {completedItems.length > 0 && (
           <>
             <button
+              ref={(el) => {
+                if (el) {
+                  const container = el.parentElement?.parentElement;
+                  if (container) container.style.setProperty('--done-header-h', `${el.offsetHeight}px`);
+                }
+              }}
               onClick={() => setShowCompleted((p) => !p)}
               className="sticky top-0 z-20 flex items-center gap-2 w-full px-4 py-3 text-sm text-tg-hint bg-tg-secondary-bg border-t border-tg-hint/20"
             >
@@ -913,7 +919,7 @@ function ListContent() {
             {showCompleted &&
               completedGroups.map((group) => (
                 <div key={group.label}>
-                  <div className="sticky top-[44px] z-10 px-4 pt-3 pb-1 text-xs text-tg-hint font-medium bg-tg-secondary-bg">
+                  <div className="sticky z-10 px-4 pt-3 pb-1 text-xs text-tg-hint font-medium bg-tg-secondary-bg" style={{ top: 'var(--done-header-h, 44px)' }}>
                     {group.label}
                   </div>
                   {group.items.map((item) => (
