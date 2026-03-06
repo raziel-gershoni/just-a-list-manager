@@ -891,7 +891,7 @@ function ListContent() {
           <>
             <button
               onClick={() => setShowCompleted((p) => !p)}
-              className="flex items-center gap-2 w-full px-4 py-3 text-sm text-tg-hint"
+              className="sticky top-0 z-20 flex items-center gap-2 w-full px-4 py-3 text-sm text-tg-hint bg-tg-secondary-bg border-t border-tg-hint/20"
             >
               {showCompleted ? (
                 <ChevronDown className="w-4 h-4" />
