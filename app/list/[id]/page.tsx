@@ -113,8 +113,16 @@ function ListContent() {
   const [items, setItems] = useState<ItemData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [showCompleted, setShowCompleted] = useState(true);
-  const [showSkipped, setShowSkipped] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const v = localStorage.getItem("panel_completed");
+    return v === null ? true : v === "true";
+  });
+  const [showSkipped, setShowSkipped] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const v = localStorage.getItem("panel_skipped");
+    return v === null ? false : v === "true";
+  });
   const [showShare, setShowShare] = useState(false);
   const [isShared, setIsShared] = useState(false);
   const [undoAction, setUndoAction] = useState<{
@@ -968,7 +976,7 @@ function ListContent() {
         {skippedItems.length > 0 && (
           <>
             <button
-              onClick={() => setShowSkipped((p) => !p)}
+              onClick={() => setShowSkipped((p) => { localStorage.setItem("panel_skipped", String(!p)); return !p; })}
               className="flex items-center gap-2 w-full px-4 py-3 text-sm text-tg-hint bg-tg-secondary-bg border-t border-tg-hint/20"
             >
               {showSkipped ? (
@@ -1011,7 +1019,7 @@ function ListContent() {
                   if (container) container.style.setProperty('--done-header-h', `${el.offsetHeight}px`);
                 }
               }}
-              onClick={() => setShowCompleted((p) => !p)}
+              onClick={() => setShowCompleted((p) => { localStorage.setItem("panel_completed", String(!p)); return !p; })}
               className="sticky top-0 z-20 flex items-center gap-2 w-full px-4 py-3 text-sm text-tg-hint bg-tg-secondary-bg border-t border-tg-hint/20"
             >
               {showCompleted ? (
