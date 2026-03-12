@@ -339,7 +339,7 @@ async function processAddItem(
 
     if (similarity > 0.6) {
       // High confidence — auto-recycle
-      await recycleItem(match.id);
+      await recycleItem(match.id, userId);
       receipt.added.push(`${match.text} ${getMsg(lang, "voice.recycledLabel")}`);
       return;
     }
@@ -352,7 +352,7 @@ async function processAddItem(
       voiceItem.text.toLowerCase()
     );
     if (similarity > 0.6) {
-      await recycleItem(bestMatch.id);
+      await recycleItem(bestMatch.id, userId);
       receipt.added.push(`${bestMatch.text} ${getMsg(lang, "voice.recycledLabel")}`);
       return;
     }

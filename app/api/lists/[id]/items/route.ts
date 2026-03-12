@@ -224,7 +224,7 @@ export async function POST(
 
     if (exactMatch && body.recycleId) {
       // Explicit recycle request from UI autocomplete
-      const recycled = await recycleItem(body.recycleId);
+      const recycled = await recycleItem(body.recycleId, auth.userId);
       if (recycled) {
         results.push({ ...recycled, recycled: true });
         continue;

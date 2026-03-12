@@ -119,7 +119,7 @@ export default function ItemRow({
               >
                 {text}
               </span>
-              {isDuplicate && !completed && (
+              {isDuplicate && (
                 <Copy className="w-3 h-3 text-amber-500/70 shrink-0" />
               )}
             </div>

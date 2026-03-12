@@ -473,7 +473,7 @@ function ListContent() {
         setItems((prev) =>
           prev.map((i) =>
             i.id === recycleId
-              ? { ...i, completed: false, completed_at: null, deleted_at: null }
+              ? { ...i, completed: false, completed_at: null, deleted_at: null, created_by: userId, creator_name: null }
               : i
           )
         );
@@ -509,7 +509,7 @@ function ListContent() {
         }
       }
     },
-    [jwtRef, listId, addMutation, addSingleItem, items, t]
+    [jwtRef, listId, addMutation, addSingleItem, items, t, userId]
   );
 
   const handleToggle = useCallback(
@@ -793,10 +793,10 @@ function ListContent() {
 
   const completedGroups = groupByCompletionTime(completedItems, t);
 
-  // Compute duplicate text set for active items
+  // Compute duplicate text set for all visible items
   const duplicateTexts = new Set<string>();
   const seenTexts = new Map<string, number>();
-  for (const item of activeItems) {
+  for (const item of items.filter((i) => !i.deleted_at)) {
     const key = item.text.toLowerCase();
     seenTexts.set(key, (seenTexts.get(key) || 0) + 1);
   }
@@ -928,6 +928,7 @@ function ListContent() {
                       id={item.id}
                       text={item.text}
                       completed={true}
+                      isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
                       creatorName={isShared ? item.creator_name : null}
                       isOwnItem={item.created_by === userId}
                       editorName={isShared ? item.editor_name : null}

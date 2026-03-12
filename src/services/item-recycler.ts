@@ -50,7 +50,8 @@ export async function findRecyclableItems(
  * and position to MAX(position)+1 (top of list).
  */
 export async function recycleItem(
-  itemId: string
+  itemId: string,
+  userId: string
 ): Promise<RecyclableItem | null> {
   const supabase = createServerClient();
 
@@ -80,6 +81,7 @@ export async function recycleItem(
       completed_at: null,
       deleted_at: null,
       position: nextPosition,
+      created_by: userId,
     })
     .eq("id", itemId)
     .select("id, text, completed, completed_at, deleted_at, position")
