@@ -23,6 +23,7 @@ interface SortableItemProps {
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
   onEdit?: (id: string, newText: string) => void;
+  onSkip?: (id: string, skipped: boolean) => void;
 }
 
 export default function SortableItem({
@@ -38,6 +39,7 @@ export default function SortableItem({
   onToggle,
   onDelete,
   onEdit,
+  onSkip,
 }: SortableItemProps) {
   const { ref, isDragSource } = useSortable({
     id,
@@ -63,6 +65,7 @@ export default function SortableItem({
         onToggle={onToggle}
         onDelete={onDelete}
         onEdit={onEdit}
+        onSkip={onSkip}
       />
     </div>
   );

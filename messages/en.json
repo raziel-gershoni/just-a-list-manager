@@ -62,6 +62,7 @@
     "duplicateWarning": "This item already exists in the list",
     "editedBy": "edited by {name}",
     "reminderSent": "Reminder sent!",
+    "skippedSection": "Not available ({count})",
     "completedTime": {
       "today": "Today",
       "yesterday": "Yesterday",

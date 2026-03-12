@@ -30,7 +30,7 @@ export async function GET(
 
   let query = supabase
     .from("items")
-    .select("id, text, completed, completed_at, deleted_at, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
+    .select("id, text, completed, completed_at, deleted_at, skipped_at, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
     .eq("list_id", listId)
     .is("deleted_at", null)
     .order("position", { ascending: false })
@@ -299,6 +299,10 @@ export async function PATCH(
 
   if (typeof updates.position === "number" && Number.isFinite(updates.position) && updates.position > 0 && updates.position <= MAX_SAFE_POSITION) {
     patchData.position = updates.position;
+  }
+
+  if (typeof updates.skipped === "boolean") {
+    patchData.skipped_at = updates.skipped ? new Date().toISOString() : null;
   }
 
   // Allow restoring soft-deleted items (undo support)

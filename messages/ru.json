@@ -62,6 +62,7 @@
     "duplicateWarning": "Этот элемент уже есть в списке",
     "editedBy": "изменено {name}",
     "reminderSent": "Напоминание отправлено!",
+    "skippedSection": "Нет в наличии ({count})",
     "completedTime": {
       "today": "Сегодня",
       "yesterday": "Вчера",

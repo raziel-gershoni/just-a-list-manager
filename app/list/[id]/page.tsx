@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Send, Share2, ChevronDown, ChevronRight, Trash2, Users, RefreshCw } from "lucide-react";
+import { ArrowLeft, Send, Share2, ChevronDown, ChevronRight, Trash2, Users, RefreshCw, EyeOff } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
 import ItemRow from "@/components/ItemRow";
@@ -22,6 +22,7 @@ interface ItemData {
   completed: boolean;
   completed_at: string | null;
   deleted_at: string | null;
+  skipped_at: string | null;
   position: number;
   created_by: string | null;
   creator_name: string | null;
@@ -113,6 +114,7 @@ function ListContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
+  const [showSkipped, setShowSkipped] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [isShared, setIsShared] = useState(false);
   const [undoAction, setUndoAction] = useState<{
@@ -209,6 +211,20 @@ function ListContent() {
             });
             if (!res.ok) throw new Error(`Reorder failed: ${res.status}`);
           };
+        case "skip":
+          return async () => {
+            const jwt = getJwtParam();
+            const res = await fetch(`/api/lists/${payload.listId}/items`, {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${jwt}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ itemId: payload.itemId, skipped: payload.skipped }),
+              keepalive: true,
+            });
+            if (!res.ok) throw new Error(`Skip failed: ${res.status}`);
+          };
         case "recycle":
           return async () => {
             const jwt = getJwtParam();
@@ -256,13 +272,32 @@ function ListContent() {
       });
       if (res.ok) {
         const { items: fetchedItems } = await res.json();
-        const mapped = (fetchedItems || []).map((item: any) => ({
-          ...item,
-          creator_name: item.users?.name ?? null,
-          editor_name: item.editor?.name ?? null,
-          users: undefined,
-          editor: undefined,
-        }));
+        const FOUR_HOURS = 4 * 60 * 60 * 1000;
+        const now = Date.now();
+        const mapped = (fetchedItems || []).map((item: any) => {
+          const base = {
+            ...item,
+            creator_name: item.users?.name ?? null,
+            editor_name: item.editor?.name ?? null,
+            users: undefined,
+            editor: undefined,
+          };
+          // Auto-unskip items older than 4 hours
+          if (base.skipped_at && now - new Date(base.skipped_at).getTime() > FOUR_HOURS) {
+            // Fire background PATCH to persist unskip
+            const currentJwt = jwtRef.current;
+            fetch(`/api/lists/${listId}/items`, {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${currentJwt}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ itemId: base.id, skipped: false }),
+            }).catch(() => {});
+            return { ...base, skipped_at: null };
+          }
+          return base;
+        });
         setItems(mapped);
       } else {
         setError(true);
@@ -410,6 +445,7 @@ function ListContent() {
         completed: false,
         completed_at: null,
         deleted_at: null,
+        skipped_at: null,
         position,
         created_by: userId,
         creator_name: null,
@@ -459,7 +495,7 @@ function ListContent() {
 
       // Check for duplicate
       const existing = items.find(
-        (i) => !i.completed && !i.deleted_at && i.text.toLowerCase() === text.toLowerCase()
+        (i) => !i.completed && !i.deleted_at && !i.skipped_at && i.text.toLowerCase() === text.toLowerCase()
       );
       if (existing) {
         const tg = (window as any).Telegram?.WebApp;
@@ -473,7 +509,7 @@ function ListContent() {
         setItems((prev) =>
           prev.map((i) =>
             i.id === recycleId
-              ? { ...i, completed: false, completed_at: null, deleted_at: null, created_by: userId, creator_name: null }
+              ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, created_by: userId, creator_name: null }
               : i
           )
         );
@@ -638,6 +674,43 @@ function ListContent() {
     [jwtRef, listId, addMutation, userId]
   );
 
+  const handleSkip = useCallback(
+    (itemId: string, skipped: boolean) => {
+      const tg = (window as any).Telegram?.WebApp;
+      tg?.HapticFeedback?.impactOccurred("light");
+
+      // Optimistic update
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId
+            ? { ...i, skipped_at: skipped ? new Date().toISOString() : null }
+            : i
+        )
+      );
+
+      const mutId = genMutId();
+      addMutation({
+        id: mutId,
+        type: "skip",
+        payload: { listId, itemId, skipped },
+        execute: async () => {
+          const jwt = jwtRef.current;
+          const res = await fetch(`/api/lists/${listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId, skipped }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Skip failed: ${res.status}`);
+        },
+      });
+    },
+    [jwtRef, listId, addMutation]
+  );
+
   const handleClearCompleted = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
@@ -720,7 +793,7 @@ function ListContent() {
 
       // Compute new order from current active items
       const currentActive = items
-        .filter((i) => !i.completed && !i.deleted_at)
+        .filter((i) => !i.completed && !i.deleted_at && !i.skipped_at)
         .sort((a, b) => b.position - a.position);
 
       const originalIndex = currentActive.findIndex((i) => i.id === sourceId);
@@ -780,7 +853,11 @@ function ListContent() {
   );
 
   const activeItems = items
-    .filter((i) => !i.completed && !i.deleted_at)
+    .filter((i) => !i.completed && !i.deleted_at && !i.skipped_at)
+    .sort((a, b) => b.position - a.position);
+
+  const skippedItems = items
+    .filter((i) => !i.completed && !i.deleted_at && !!i.skipped_at)
     .sort((a, b) => b.position - a.position);
 
   const completedItems = items
@@ -882,9 +959,47 @@ function ListContent() {
               onToggle={handleToggle}
               onDelete={handleDelete}
               onEdit={handleEditItem}
+              onSkip={handleSkip}
             />
           ))}
         </DragDropProvider>
+
+        {/* Not available (skipped) section */}
+        {skippedItems.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowSkipped((p) => !p)}
+              className="flex items-center gap-2 w-full px-4 py-3 text-sm text-tg-hint bg-tg-secondary-bg border-t border-tg-hint/20"
+            >
+              {showSkipped ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
+              )}
+              <EyeOff className="w-3.5 h-3.5" />
+              {t('items.skippedSection', { count: skippedItems.length })}
+            </button>
+            {showSkipped &&
+              skippedItems.map((item) => (
+                <ItemRow
+                  key={item.id}
+                  id={item.id}
+                  text={item.text}
+                  completed={false}
+                  skipped={true}
+                  isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+                  creatorName={isShared ? item.creator_name : null}
+                  isOwnItem={item.created_by === userId}
+                  editorName={isShared ? item.editor_name : null}
+                  isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                  onEdit={handleEditItem}
+                  onSkip={handleSkip}
+                />
+              ))}
+          </>
+        )}
 
         {/* Completed section */}
         {completedItems.length > 0 && (
@@ -943,7 +1058,7 @@ function ListContent() {
           </>
         )}
 
-        {activeItems.length === 0 && completedItems.length === 0 && (
+        {activeItems.length === 0 && skippedItems.length === 0 && completedItems.length === 0 && (
           <div className="text-center text-tg-hint py-16">
             <p className="text-lg mb-1">{t('items.emptyTitle')}</p>
             <p className="text-sm">{t('items.emptyDescription')}</p>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Check, Clock, Copy, Pencil, X } from "lucide-react";
+import { Check, Clock, Copy, EyeOff, Pencil, RotateCcw, X } from "lucide-react";
 
 interface ItemRowProps {
   id: string;
@@ -16,6 +16,8 @@ interface ItemRowProps {
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
   onEdit?: (id: string, newText: string) => void;
+  skipped?: boolean;
+  onSkip?: (id: string, skipped: boolean) => void;
 }
 
 export default function ItemRow({
@@ -31,6 +33,8 @@ export default function ItemRow({
   onToggle,
   onDelete,
   onEdit,
+  skipped,
+  onSkip,
 }: ItemRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
@@ -89,7 +93,7 @@ export default function ItemRow({
         {completed && <Check className="w-4 h-4 text-tg-button-text" />}
       </button>
 
-      <div className={`flex-1 min-w-0 ${isPending ? "opacity-60" : ""}`}>
+      <div className={`flex-1 min-w-0 ${isPending ? "opacity-60" : ""} ${skipped ? "opacity-50" : ""}`}>
         {isEditing && !completed ? (
           <input
             ref={inputRef}
@@ -141,6 +145,24 @@ export default function ItemRow({
 
       {isPending && (
         <Clock className="w-4 h-4 text-tg-hint shrink-0" />
+      )}
+
+      {onSkip && !completed && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const tg = (window as any).Telegram?.WebApp;
+            tg?.HapticFeedback?.impactOccurred("light");
+            onSkip(id, !skipped);
+          }}
+          className="p-1 shrink-0"
+        >
+          {skipped ? (
+            <RotateCcw className="w-4 h-4 text-tg-link" />
+          ) : (
+            <EyeOff className="w-4 h-4 text-tg-hint" />
+          )}
+        </button>
       )}
 
       <button

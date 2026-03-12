@@ -62,6 +62,7 @@
     "duplicateWarning": "פריט זה כבר קיים ברשימה",
     "editedBy": "נערך ע\"י {name}",
     "reminderSent": "תזכורת נשלחה!",
+    "skippedSection": "לא זמין ({count})",
     "completedTime": {
       "today": "היום",
       "yesterday": "אתמול",
