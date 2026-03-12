@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Check, Clock, Copy, EyeOff, Pencil, RotateCcw, X } from "lucide-react";
+import { Check, CircleOff, Clock, Copy, Pencil, RotateCcw, X } from "lucide-react";
 
 interface ItemRowProps {
   id: string;
@@ -160,7 +160,7 @@ export default function ItemRow({
           {skipped ? (
             <RotateCcw className="w-4 h-4 text-tg-link" />
           ) : (
-            <EyeOff className="w-4 h-4 text-tg-hint" />
+            <CircleOff className="w-4 h-4 text-tg-hint" />
           )}
         </button>
       )}

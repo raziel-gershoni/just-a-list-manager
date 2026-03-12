@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Send, Share2, ChevronDown, ChevronRight, Trash2, Users, RefreshCw, EyeOff } from "lucide-react";
+import { ArrowLeft, Send, Share2, ChevronDown, ChevronRight, Trash2, Users, RefreshCw, CircleOff } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
 import ItemRow from "@/components/ItemRow";
@@ -976,7 +976,7 @@ function ListContent() {
               ) : (
                 <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
               )}
-              <EyeOff className="w-3.5 h-3.5" />
+              <CircleOff className="w-3.5 h-3.5" />
               {t('items.skippedSection', { count: skippedItems.length })}
             </button>
             {showSkipped &&
