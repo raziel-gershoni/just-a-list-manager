@@ -9,9 +9,9 @@ CREATE OR REPLACE FUNCTION insert_item_if_under_limit(
 )
 RETURNS TABLE (
   id UUID,
-  text TEXT,
+  "text" TEXT,
   list_id UUID,
-  position BIGINT,
+  "position" BIGINT,
   completed BOOLEAN,
   completed_at TIMESTAMPTZ,
   deleted_at TIMESTAMPTZ,
@@ -37,9 +37,9 @@ BEGIN
   END IF;
 
   RETURN QUERY
-  INSERT INTO items (list_id, text, position, created_by, idempotency_key)
+  INSERT INTO items (list_id, "text", "position", created_by, idempotency_key)
   VALUES (p_list_id, p_text, p_position, p_created_by, p_idempotency_key)
-  RETURNING items.id, items.text, items.list_id, items.position, items.completed,
+  RETURNING items.id, items."text", items.list_id, items."position", items.completed,
             items.completed_at, items.deleted_at, items.skipped_at,
             items.created_by, items.edited_by, items.idempotency_key, items.created_at;
 END;
