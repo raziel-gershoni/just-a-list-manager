@@ -61,6 +61,7 @@
     "dragHandle": "Drag to reorder",
     "duplicateWarning": "This item already exists in the list",
     "syncError": "Failed to sync change",
+    "removedDuplicates": "Removed {count} duplicates",
     "editedBy": "edited by {name}",
     "reminderSent": "Reminder sent!",
     "skippedSection": "Not available ({count})",

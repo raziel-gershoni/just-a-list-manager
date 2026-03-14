@@ -24,6 +24,7 @@ interface SortableItemProps {
   onDelete: (id: string) => void;
   onEdit?: (id: string, newText: string) => void;
   onSkip?: (id: string, skipped: boolean) => void;
+  onRemoveDuplicates?: (text: string) => void;
 }
 
 export default function SortableItem({
@@ -40,6 +41,7 @@ export default function SortableItem({
   onDelete,
   onEdit,
   onSkip,
+  onRemoveDuplicates,
 }: SortableItemProps) {
   const { ref, isDragSource } = useSortable({
     id,
@@ -66,6 +68,7 @@ export default function SortableItem({
         onDelete={onDelete}
         onEdit={onEdit}
         onSkip={onSkip}
+        onRemoveDuplicates={onRemoveDuplicates}
       />
     </div>
   );

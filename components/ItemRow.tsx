@@ -19,6 +19,7 @@ interface ItemRowProps {
   onEdit?: (id: string, newText: string) => void;
   skipped?: boolean;
   onSkip?: (id: string, skipped: boolean) => void;
+  onRemoveDuplicates?: (text: string) => void;
 }
 
 export default function ItemRow({
@@ -36,6 +37,7 @@ export default function ItemRow({
   onEdit,
   skipped,
   onSkip,
+  onRemoveDuplicates,
 }: ItemRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
@@ -125,7 +127,19 @@ export default function ItemRow({
                 {text}
               </span>
               {isDuplicate && (
-                <Copy className="w-3 h-3 text-amber-500/70 shrink-0" />
+                onRemoveDuplicates ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveDuplicates(text);
+                    }}
+                    className="shrink-0 p-0.5 -m-0.5 rounded active:bg-amber-500/20"
+                  >
+                    <Copy className="w-3 h-3 text-amber-500/70" />
+                  </button>
+                ) : (
+                  <Copy className="w-3 h-3 text-amber-500/70 shrink-0" />
+                )
               )}
             </div>
             {((creatorName && !isOwnItem) || (editorName && !isOwnEdit)) && (

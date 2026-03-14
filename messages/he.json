@@ -61,6 +61,7 @@
     "dragHandle": "גרור לשינוי סדר",
     "duplicateWarning": "פריט זה כבר קיים ברשימה",
     "syncError": "הסנכרון נכשל",
+    "removedDuplicates": "הוסרו {count} כפולים",
     "editedBy": "נערך ע\"י {name}",
     "reminderSent": "תזכורת נשלחה!",
     "skippedSection": "לא זמין ({count})",

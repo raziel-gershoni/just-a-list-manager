@@ -83,7 +83,7 @@ function ListContent() {
     jwtRef,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleClearCompleted, handleRemind } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -190,6 +190,7 @@ function ListContent() {
               onDelete={handleDelete}
               onEdit={handleEditItem}
               onSkip={handleSkip}
+              onRemoveDuplicates={handleRemoveDuplicates}
             />
           ))}
         </DragDropProvider>

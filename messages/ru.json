@@ -61,6 +61,7 @@
     "dragHandle": "Перетащите для сортировки",
     "duplicateWarning": "Этот элемент уже есть в списке",
     "syncError": "Не удалось синхронизировать изменение",
+    "removedDuplicates": "Удалено дубликатов: {count}",
     "editedBy": "изменено {name}",
     "reminderSent": "Напоминание отправлено!",
     "skippedSection": "Нет в наличии ({count})",

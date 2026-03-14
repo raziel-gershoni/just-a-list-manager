@@ -312,6 +312,74 @@ export function useItemHandlers({
     [jwtRef, listId, addMutation, setItems]
   );
 
+  const handleRemoveDuplicates = useCallback(
+    (text: string) => {
+      const tg = getTelegramWebApp();
+      tg?.HapticFeedback?.notificationOccurred("warning");
+
+      // Find all non-deleted items matching text (case-insensitive)
+      const matches = items
+        .filter((i) => !i.deleted_at && i.text.toLowerCase() === text.toLowerCase())
+        .sort((a, b) => b.position - a.position);
+
+      if (matches.length <= 1) return;
+
+      // Keep the first (highest position = most recent), remove the rest
+      const duplicatesToRemove = matches.slice(1);
+      const removeIds = new Set(duplicatesToRemove.map((i) => i.id));
+
+      // Optimistic removal
+      setItems((prev) => prev.filter((i) => !removeIds.has(i.id)));
+
+      // Show undo toast
+      const timeout = setTimeout(() => setUndoAction(null), 4000);
+      setUndoAction({
+        message: t("items.removedDuplicates", { count: duplicatesToRemove.length }),
+        undo: () => {
+          clearTimeout(timeout);
+          setUndoAction(null);
+          setItems((prev) => [...prev, ...duplicatesToRemove]);
+          // Restore on server
+          const currentJwt = jwtRef.current;
+          for (const item of duplicatesToRemove) {
+            fetch(`/api/lists/${listId}/items`, {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${currentJwt}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ itemId: item.id, deleted_at: null }),
+            });
+          }
+        },
+        timeout,
+      });
+
+      // Queue delete mutations
+      for (const item of duplicatesToRemove) {
+        const mutId = genMutId();
+        addMutation({
+          id: mutId,
+          type: "delete",
+          payload: { listId, itemId: item.id },
+          execute: async () => {
+            const jwt = jwtRef.current;
+            const res = await fetch(
+              `/api/lists/${listId}/items?itemId=${item.id}`,
+              {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${jwt}` },
+                keepalive: true,
+              }
+            );
+            if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+          },
+        });
+      }
+    },
+    [jwtRef, listId, items, addMutation, t, setItems, setUndoAction]
+  );
+
   const handleClearCompleted = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
@@ -368,5 +436,5 @@ export function useItemHandlers({
     }
   }, [jwtRef, listId, t, setReminderToast]);
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleClearCompleted, handleRemind };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind };
 }
