@@ -219,10 +219,7 @@ export async function POST(
   });
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ token: string }> }
-) {
+export async function DELETE(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "share-cancel");
   if (!auth.success) return auth.response;
 
@@ -249,7 +246,7 @@ export async function DELETE(
 }
 
 async function sendApprovalNotification(
-  supabase: any,
+  supabase: ReturnType<typeof createServerClient>,
   ownerId: string,
   requesterId: string,
   requesterName: string,

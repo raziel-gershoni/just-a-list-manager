@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Check, CircleOff, Clock, Copy, Pencil, RotateCcw, X } from "lucide-react";
+import { getTelegramWebApp } from "@/src/types/telegram";
 
 interface ItemRowProps {
   id: string;
@@ -48,7 +49,7 @@ export default function ItemRow({
   }, [isEditing]);
 
   const handleToggle = () => {
-    const tg = (window as any).Telegram?.WebApp;
+    const tg = getTelegramWebApp();
     tg?.HapticFeedback?.impactOccurred("light");
     onToggle(id, !completed);
   };
@@ -151,7 +152,7 @@ export default function ItemRow({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            const tg = (window as any).Telegram?.WebApp;
+            const tg = getTelegramWebApp();
             tg?.HapticFeedback?.impactOccurred("light");
             onSkip(id, !skipped);
           }}

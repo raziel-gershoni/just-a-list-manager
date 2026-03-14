@@ -6,7 +6,7 @@ import { MutationQueue, QueuedMutation } from "@/src/utils/mutation-queue";
 interface Mutation {
   id: string;
   type: string;
-  payload: any;
+  payload: Record<string, unknown>;
   execute: () => Promise<string | void>;
 }
 
@@ -17,10 +17,19 @@ export type ExecutorFactory = (
 
 const MUTATION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+export type MutationErrorInfo = {
+  mutationId: string;
+  type: string;
+  httpStatus: number | null;
+  message: string;
+  dropped: boolean; // true if dequeued (non-retriable), false if kept for retry
+};
+
 export function useMutationQueue(
   listId: string,
   getJwt: () => string | null,
-  executorFactory?: ExecutorFactory
+  executorFactory?: ExecutorFactory,
+  onMutationError?: (info: MutationErrorInfo) => void
 ) {
   const queueRef = useRef(new MutationQueue(listId));
   const isFlushingRef = useRef(false);
@@ -28,17 +37,23 @@ export function useMutationQueue(
     new Map()
   );
   const executorFactoryRef = useRef(executorFactory);
-  executorFactoryRef.current = executorFactory;
+  useEffect(() => {
+    executorFactoryRef.current = executorFactory;
+  }, [executorFactory]);
+  const onMutationErrorRef = useRef(onMutationError);
+  useEffect(() => {
+    onMutationErrorRef.current = onMutationError;
+  }, [onMutationError]);
 
   const executeMutation = useCallback(
-    async (id: string, execute: () => Promise<string | void>): Promise<string | void> => {
+    async (id: string, type: string, execute: () => Promise<string | void>): Promise<string | void> => {
       try {
         const result = await execute();
         queueRef.current.dequeue(id);
         pendingExecutors.current.delete(id);
         return result;
-      } catch (error: any) {
-        const message = error?.message || "";
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "";
 
         // If offline, keep in queue for later
         if (
@@ -60,11 +75,13 @@ export function useMutationQueue(
           console.log("[MutationQueue] Client error — dropping:", id, httpStatus);
           queueRef.current.dequeue(id);
           pendingExecutors.current.delete(id);
+          onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: true });
           return;
         }
 
         // 5xx server errors, 408, 429, or unknown — keep in queue for retry
         console.error("[MutationQueue] Error (will retry):", id, message);
+        onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: false });
       }
     },
     []
@@ -89,14 +106,15 @@ export function useMutationQueue(
       }
 
       // Skip mutations that depend on a failed create (temp ID never resolved)
-      if (mutation.payload?.itemId && failedTempIds.has(mutation.payload.itemId)) {
+      const payloadItemId = typeof mutation.payload?.itemId === "string" ? mutation.payload.itemId : undefined;
+      if (payloadItemId && failedTempIds.has(payloadItemId)) {
         console.log("[MutationQueue] Skipping mutation (parent create failed):", mutation.id, mutation.type);
         continue;
       }
 
       // Resolve temp IDs in payload for chained mutations (use a clone to avoid mutating persisted queue)
-      const resolvedMutation = (mutation.payload?.itemId && tempToRealId.has(mutation.payload.itemId))
-        ? { ...mutation, payload: { ...mutation.payload, itemId: tempToRealId.get(mutation.payload.itemId)! } }
+      const resolvedMutation = (payloadItemId && tempToRealId.has(payloadItemId))
+        ? { ...mutation, payload: { ...mutation.payload, itemId: tempToRealId.get(payloadItemId)! } }
         : mutation;
 
       let executor = pendingExecutors.current.get(mutation.id);
@@ -117,16 +135,17 @@ export function useMutationQueue(
       }
 
       if (executor) {
-        const result = await executeMutation(mutation.id, executor);
+        const result = await executeMutation(mutation.id, resolvedMutation.type, executor);
+        const payloadTempId = typeof resolvedMutation.payload?.tempId === "string" ? resolvedMutation.payload.tempId : undefined;
         // If create mutation returned a server-assigned ID, track for temp→real resolution
-        if (typeof result === "string" && resolvedMutation.type === "create" && resolvedMutation.payload?.tempId) {
-          tempToRealId.set(resolvedMutation.payload.tempId, result);
+        if (typeof result === "string" && resolvedMutation.type === "create" && payloadTempId) {
+          tempToRealId.set(payloadTempId, result);
         }
         // If create mutation failed (still in queue — no dequeue happened), mark temp ID as failed
-        if (result === undefined && resolvedMutation.type === "create" && resolvedMutation.payload?.tempId) {
+        if (result === undefined && resolvedMutation.type === "create" && payloadTempId) {
           const stillInQueue = queueRef.current.getQueue().some((m) => m.id === mutation.id);
           if (stillInQueue) {
-            failedTempIds.add(resolvedMutation.payload.tempId);
+            failedTempIds.add(payloadTempId);
           }
         }
       } else {
@@ -153,7 +172,7 @@ export function useMutationQueue(
       if (isFlushingRef.current) return;
 
       // Try to execute immediately
-      executeMutation(mutation.id, mutation.execute);
+      executeMutation(mutation.id, mutation.type, mutation.execute);
     },
     [executeMutation]
   );

@@ -58,8 +58,10 @@ export async function POST(
   // Collect all recipients (excluding sender)
   const recipients: { telegramId: number; language: string }[] = [];
 
+  type JoinedUser = { id: string; telegram_id: number | null; language: string | null };
+
   // Add owner if not the sender
-  const owner = (listWithOwner as any)?.users;
+  const owner = (listWithOwner as { owner_id: string; users: JoinedUser | null } | null)?.users;
   if (owner && owner.id !== auth.userId && owner.telegram_id) {
     recipients.push({
       telegramId: owner.telegram_id,
@@ -70,7 +72,8 @@ export async function POST(
   // Add collaborators (excluding sender)
   if (collaborators) {
     for (const collab of collaborators) {
-      const user = (collab as any).users;
+      const joined = (collab as unknown as { user_id: string; users: JoinedUser[] | null }).users;
+      const user = joined?.[0] ?? null;
       if (user && user.id !== auth.userId && user.telegram_id) {
         recipients.push({
           telegramId: user.telegram_id,

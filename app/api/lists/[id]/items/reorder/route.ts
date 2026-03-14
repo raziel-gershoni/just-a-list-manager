@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
+import { reorderItemsSchema } from "@/src/schemas/items";
+import { parseBody } from "@/src/lib/api-validation";
 
 export async function POST(
   request: NextRequest,
@@ -20,14 +22,10 @@ export async function POST(
   }
 
   const body = await request.json();
-  const orderedIds: string[] = body.orderedIds;
+  const parsed = parseBody(reorderItemsSchema, body);
+  if (!parsed.success) return parsed.response;
 
-  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
-    return NextResponse.json(
-      { error: "orderedIds must be a non-empty array" },
-      { status: 400 }
-    );
-  }
+  const orderedIds: string[] = parsed.data.orderedIds;
 
   // Filter out temp IDs (optimistic items not yet persisted)
   const realIds = orderedIds.filter((id) => !id.startsWith("temp-"));

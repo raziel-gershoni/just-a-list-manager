@@ -4,6 +4,8 @@ import { verifyUserAuth } from "@/src/lib/api-auth";
 import { createServerClient } from "@/src/lib/supabase";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { checkRateLimit, getRateLimitHeaders } from "@/src/lib/rate-limit";
+import { updateUserSchema } from "@/src/schemas/user";
+import { parseBody } from "@/src/lib/api-validation";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "user-get");
@@ -109,15 +111,12 @@ export async function PATCH(request: NextRequest) {
   if (!auth.success) return auth.response;
 
   const body = await request.json();
-  const updates: Record<string, any> = {};
+  const parsed = parseBody(updateUserSchema, body);
+  if (!parsed.success) return parsed.response;
 
-  if (body.language && ["en", "he", "ru"].includes(body.language)) {
-    updates.language = body.language;
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
-  }
+  const updates: Record<string, string> = {
+    language: parsed.data.language,
+  };
 
   const supabase = createServerClient();
   const { data: user, error } = await supabase

@@ -3,11 +3,18 @@
  */
 
 import { Redis } from "@upstash/redis";
+import { serverEnv } from "@/src/lib/env";
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
+let _redis: Redis | null = null;
+function getRedis(): Redis {
+  if (!_redis) {
+    _redis = new Redis({
+      url: serverEnv().UPSTASH_REDIS_REST_URL,
+      token: serverEnv().UPSTASH_REDIS_REST_TOKEN,
+    });
+  }
+  return _redis;
+}
 
 const VOICE_LOCK_KEY_PREFIX = "voice:lock:";
 const VOICE_LOCK_TTL_SECONDS = 60;
@@ -22,7 +29,7 @@ export async function acquireVoiceLock(
   const lockKey = `${VOICE_LOCK_KEY_PREFIX}${fileUniqueId}`;
 
   try {
-    const result = await redis.set(lockKey, Date.now(), {
+    const result = await getRedis().set(lockKey, Date.now(), {
       nx: true,
       ex: VOICE_LOCK_TTL_SECONDS,
     });
@@ -50,7 +57,7 @@ export async function releaseVoiceLock(fileUniqueId: string): Promise<void> {
   const lockKey = `${VOICE_LOCK_KEY_PREFIX}${fileUniqueId}`;
 
   try {
-    await redis.del(lockKey);
+    await getRedis().del(lockKey);
     console.log(`[Voice Lock] Released for file ${fileUniqueId}`);
   } catch (error) {
     console.error("[Voice Lock] Error releasing lock:", error);

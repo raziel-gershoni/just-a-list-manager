@@ -6,6 +6,7 @@
 
 import TelegramBot from "node-telegram-bot-api";
 import { createServerClient } from "@/src/lib/supabase";
+import { serverEnv } from "@/src/lib/env";
 import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
 import ruMessages from "@/messages/ru.json";
@@ -19,114 +20,132 @@ const allMessages: Record<string, typeof enMessages> = {
 export function getMsg(lang: string | undefined, path: string): string {
   const msgs = allMessages[lang || "en"] || allMessages.en;
   const keys = path.split(".");
-  let val: any = msgs;
+  let val: unknown = msgs;
   for (const k of keys) {
-    val = val?.[k];
+    val = (val as Record<string, unknown>)?.[k];
   }
   return (val as string) || "";
 }
 
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN!, {
-  polling: false,
+let _bot: TelegramBot | null = null;
+function getBot(): TelegramBot {
+  if (!_bot) {
+    _bot = new TelegramBot(serverEnv().TELEGRAM_BOT_TOKEN, {
+      polling: false,
+    });
+    // Register command handlers on first init
+    registerBotHandlers(_bot);
+  }
+  return _bot;
+}
+
+// Expose as default export via proxy so consumers don't need to change calling code
+const bot = new Proxy({} as TelegramBot, {
+  get(_, prop) {
+    return Reflect.get(getBot(), prop);
+  },
 });
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL!;
-const BOT_USERNAME = process.env.NEXT_PUBLIC_BOT_USERNAME!;
+function getAppUrl(): string {
+  return serverEnv().NEXT_PUBLIC_APP_URL;
+}
 
-// Register /start command handler
-bot.onText(/\/start(.*)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const telegramId = msg.from!.id;
-  const firstName = msg.from!.first_name;
-  const lastName = msg.from?.last_name;
-  const username = msg.from?.username;
-  const languageCode = msg.from?.language_code;
+function registerBotHandlers(botInstance: TelegramBot) {
+  // Register /start command handler
+  botInstance.onText(/\/start(.*)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const telegramId = msg.from!.id;
+    const firstName = msg.from!.first_name;
+    const lastName = msg.from?.last_name;
+    const username = msg.from?.username;
+    const languageCode = msg.from?.language_code;
 
-  const supabase = createServerClient();
+    const supabase = createServerClient();
 
-  // Upsert user
-  const name = [firstName, lastName].filter(Boolean).join(" ");
-  const language = ["en", "he", "ru"].includes(languageCode || "")
-    ? languageCode
-    : "en";
+    // Upsert user
+    const name = [firstName, lastName].filter(Boolean).join(" ");
+    const language = ["en", "he", "ru"].includes(languageCode || "")
+      ? languageCode
+      : "en";
 
-  await supabase.from("users").upsert(
-    {
-      telegram_id: telegramId,
-      name,
-      username: username || null,
-      language,
-    },
-    { onConflict: "telegram_id" }
-  );
+    await supabase.from("users").upsert(
+      {
+        telegram_id: telegramId,
+        name,
+        username: username || null,
+        language,
+      },
+      { onConflict: "telegram_id" }
+    );
 
-  // Check for deep link start param (invite flow)
-  const startParam = match?.[1]?.trim();
-  if (startParam?.startsWith("invite_")) {
-    const token = startParam.replace("invite_", "");
-    await bot.sendMessage(
+    // Check for deep link start param (invite flow)
+    const startParam = match?.[1]?.trim();
+    if (startParam?.startsWith("invite_")) {
+      const token = startParam.replace("invite_", "");
+      await botInstance.sendMessage(
+        chatId,
+        `Open the app to accept the invitation:`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: "Open App",
+                  web_app: { url: `${getAppUrl()}/invite/${token}` },
+                },
+              ],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    await botInstance.sendMessage(
       chatId,
-      `Open the app to accept the invitation:`,
+      getMsg(language, "bot.welcome"),
       {
         reply_markup: {
           inline_keyboard: [
-            [
-              {
-                text: "Open App",
-                web_app: { url: `${APP_URL}/invite/${token}` },
-              },
-            ],
+            [{ text: "Open App", web_app: { url: getAppUrl() } }],
           ],
         },
       }
     );
-    return;
-  }
 
-  await bot.sendMessage(
-    chatId,
-    getMsg(language, "bot.welcome"),
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Open App", web_app: { url: APP_URL } }],
-        ],
-      },
+    // Set menu button for this chat
+    try {
+      await botInstance.setChatMenuButton({
+        chat_id: chatId,
+        menu_button: {
+          type: "web_app",
+          text: "Open App",
+          web_app: { url: getAppUrl() },
+        },
+      });
+    } catch (e) {
+      console.error("[Bot] Failed to set menu button:", e);
     }
-  );
+  });
 
-  // Set menu button for this chat
-  try {
-    await bot.setChatMenuButton({
-      chat_id: chatId,
-      menu_button: {
-        type: "web_app",
-        text: "Open App",
-        web_app: { url: APP_URL },
-      },
-    });
-  } catch (e) {
-    console.error("[Bot] Failed to set menu button:", e);
-  }
-});
+  // /help command
+  botInstance.onText(/\/help/, async (msg) => {
+    const chatId = msg.chat.id;
+    const lang = msg.from?.language_code;
 
-// /help command
-bot.onText(/\/help/, async (msg) => {
-  const chatId = msg.chat.id;
-  const lang = msg.from?.language_code;
-
-  await bot.sendMessage(
-    chatId,
-    getMsg(lang, "bot.help"),
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Open App", web_app: { url: APP_URL } }],
-        ],
-      },
-    }
-  );
-});
+    await botInstance.sendMessage(
+      chatId,
+      getMsg(lang, "bot.help"),
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Open App", web_app: { url: getAppUrl() } }],
+          ],
+        },
+      }
+    );
+  });
+}
 
 export default bot;
 
@@ -186,7 +205,7 @@ export async function sendListReminder(
             [
               {
                 text: getMsg(language, "bot.openList"),
-                web_app: { url: `${APP_URL}/list/${listId}` },
+                web_app: { url: `${getAppUrl()}/list/${listId}` },
               },
             ],
           ],
@@ -224,8 +243,14 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       return;
     }
 
+    // Cast the joined query result to access nested relations
+    const collabData = collab as typeof collab & {
+      users?: { telegram_id?: number; name?: string; language?: string };
+      lists?: { name?: string; users?: { telegram_id?: number; language?: string } };
+    };
+
     // Verify the callback sender is the list owner
-    const ownerTelegramId = (collab as any).lists?.users?.telegram_id;
+    const ownerTelegramId = collabData.lists?.users?.telegram_id;
     if (!query.from?.id || query.from.id !== ownerTelegramId) {
       await bot.answerCallbackQuery(query.id, {
         text: "Only the list owner can approve or decline.",
@@ -240,11 +265,11 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .update({ status: newStatus })
       .eq("id", collaboratorId);
 
-    const requesterTgId = (collab as any).users?.telegram_id;
-    const requesterName = (collab as any).users?.name || "Someone";
-    const listName = (collab as any).lists?.name || "a list";
-    const requesterLang = (collab as any).users?.language || "en";
-    const ownerLang = (collab as any).lists?.users?.language || "en";
+    const requesterTgId = collabData.users?.telegram_id;
+    const requesterName = collabData.users?.name || "Someone";
+    const listName = collabData.lists?.name || "a list";
+    const requesterLang = collabData.users?.language || "en";
+    const ownerLang = collabData.lists?.users?.language || "en";
 
     // Notify requester
     if (requesterTgId) {
@@ -256,7 +281,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
             {
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: "Open List", web_app: { url: APP_URL } }],
+                  [{ text: "Open List", web_app: { url: getAppUrl() } }],
                 ],
               },
             }

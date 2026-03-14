@@ -3,6 +3,8 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { findRecyclableItems, recycleItem } from "@/src/services/item-recycler";
+import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
+import { parseBody } from "@/src/lib/api-validation";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
@@ -75,16 +77,11 @@ export async function POST(
 
   // Idempotent single-item create (from mutation queue replay)
   if (body.idempotencyKey && typeof body.text === "string") {
-    // Validate idempotency key (must fit VARCHAR(64) column)
-    if (typeof body.idempotencyKey !== "string" || body.idempotencyKey.length > 64) {
-      return NextResponse.json(
-        { error: "Invalid idempotency key" },
-        { status: 400 }
-      );
-    }
+    const parsed = parseBody(createItemIdempotentSchema, body);
+    if (!parsed.success) return parsed.response;
 
-    const text = body.text.trim();
-    if (!text || text.length > 500) {
+    const text = parsed.data.text.trim();
+    if (!text) {
       return NextResponse.json(
         { error: "Item text is required (max 500 chars)" },
         { status: 400 }
@@ -96,7 +93,7 @@ export async function POST(
       .from("items")
       .select()
       .eq("list_id", listId)
-      .eq("idempotency_key", body.idempotencyKey)
+      .eq("idempotency_key", parsed.data.idempotencyKey)
       .single();
 
     if (existing) {
@@ -107,24 +104,10 @@ export async function POST(
       );
     }
 
-    // Check item count limit
-    const { count: currentCount } = await supabase
-      .from("items")
-      .select("id", { count: "exact", head: true })
-      .eq("list_id", listId)
-      .is("deleted_at", null);
-
-    if ((currentCount || 0) >= 500) {
-      return NextResponse.json(
-        { error: "This list has reached the 500-item limit." },
-        { status: 400 }
-      );
-    }
-
     // Use client-provided position if available (avoids concurrent position collisions),
     // otherwise fall back to max+1
-    let position = typeof body.position === "number" && Number.isFinite(body.position) && body.position > 0 && body.position <= MAX_SAFE_POSITION
-      ? body.position
+    let position = typeof parsed.data.position === "number" && Number.isFinite(parsed.data.position) && parsed.data.position > 0 && parsed.data.position <= MAX_SAFE_POSITION
+      ? parsed.data.position
       : null;
     if (position === null) {
       const { data: maxPosResult } = await supabase
@@ -136,19 +119,31 @@ export async function POST(
       position = (maxPosResult?.[0]?.position || 0) + 1;
     }
 
-    const { data: item, error } = await supabase
-      .from("items")
-      .insert({
-        list_id: listId,
-        text,
-        position,
-        created_by: auth.userId,
-        idempotency_key: body.idempotencyKey,
-      })
-      .select()
-      .single();
+    // Atomic count check + insert to prevent race condition on 500-item limit
+    const { data: rpcRows, error } = await supabase.rpc("insert_item_if_under_limit", {
+      p_list_id: listId,
+      p_text: text,
+      p_position: position,
+      p_created_by: auth.userId,
+      p_idempotency_key: parsed.data.idempotencyKey,
+    });
 
-    if (error || !item) {
+    if (error) {
+      if (error.message?.includes("ITEM_LIMIT_REACHED")) {
+        return NextResponse.json(
+          { error: "This list has reached the 500-item limit." },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json(
+        { error: "Failed to create item" },
+        { status: 500 }
+      );
+    }
+
+    const item = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+
+    if (!item) {
       return NextResponse.json(
         { error: "Failed to create item" },
         { status: 500 }
@@ -173,15 +168,18 @@ export async function POST(
   }
 
   // Non-idempotent path: support single item or comma-separated group
+  const parsedCreate = parseBody(createItemSchema, body);
+  if (!parsedCreate.success) return parsedCreate.response;
+
   let itemTexts: string[] = [];
-  if (body.text) {
-    itemTexts = body.text
+  if (parsedCreate.data.text) {
+    itemTexts = parsedCreate.data.text
       .split(",")
       .map((t: string) => t.trim())
       .filter((t: string) => t.length > 0 && t.length <= 500);
-  } else if (Array.isArray(body.items)) {
-    itemTexts = body.items
-      .map((t: string) => t.trim())
+  } else if (Array.isArray(parsedCreate.data.items)) {
+    itemTexts = parsedCreate.data.items
+      .map((item) => item.text.trim())
       .filter((t: string) => t.length > 0 && t.length <= 500);
   }
 
@@ -191,17 +189,6 @@ export async function POST(
       { status: 400 }
     );
   }
-
-  // Check item count limit (500 per list)
-  const { count: currentCount } = await supabase
-    .from("items")
-    .select("id", { count: "exact", head: true })
-    .eq("list_id", listId)
-    .is("deleted_at", null);
-
-  const available = 500 - (currentCount || 0);
-  const toProcess = itemTexts.slice(0, Math.max(0, available));
-  const skipped = itemTexts.length - toProcess.length;
 
   // Get current max position
   const { data: maxPosResult } = await supabase
@@ -213,44 +200,58 @@ export async function POST(
 
   let nextPosition = (maxPosResult?.[0]?.position || 0) + 1;
 
-  const results: any[] = [];
+  const results: Record<string, unknown>[] = [];
+  let skipped = 0;
+  let limitReached = false;
 
-  for (const text of toProcess) {
+  for (const text of itemTexts) {
+    if (limitReached) {
+      skipped++;
+      continue;
+    }
+
     // Check for recyclable items
     const recyclable = await findRecyclableItems(listId, text);
     const exactMatch = recyclable.find(
       (r) => r.text.toLowerCase() === text.toLowerCase()
     );
 
-    if (exactMatch && body.recycleId) {
+    if (exactMatch && parsedCreate.data.recycleId) {
       // Explicit recycle request from UI autocomplete
-      const recycled = await recycleItem(body.recycleId, auth.userId);
+      const recycled = await recycleItem(parsedCreate.data.recycleId, auth.userId);
       if (recycled) {
         results.push({ ...recycled, recycled: true });
         continue;
       }
     }
 
-    // Create new item
-    const { data: item, error } = await supabase
-      .from("items")
-      .insert({
-        list_id: listId,
-        text,
-        position: nextPosition++,
-        created_by: auth.userId,
-      })
-      .select()
-      .single();
+    // Atomic count check + insert to prevent race condition on 500-item limit
+    const { data: rpcRows, error } = await supabase.rpc("insert_item_if_under_limit", {
+      p_list_id: listId,
+      p_text: text,
+      p_position: nextPosition++,
+      p_created_by: auth.userId,
+    });
 
+    if (error) {
+      if (error.message?.includes("ITEM_LIMIT_REACHED")) {
+        limitReached = true;
+        skipped++;
+        continue;
+      }
+      // Other errors — skip this item but continue
+      continue;
+    }
+
+    const item = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
     if (item) {
       results.push({ ...item, recycled: false });
     }
   }
 
-  const response: any = { items: results };
+  const response: { items: Record<string, unknown>[]; warning?: string } = { items: results };
   if (skipped > 0) {
-    response.warning = `Added ${toProcess.length} items. ${skipped} items skipped — this list has a 500-item limit.`;
+    response.warning = `Added ${results.length} items. ${skipped} items skipped — this list has a 500-item limit.`;
   }
 
   return NextResponse.json(response, { status: 201 });
@@ -273,17 +274,13 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { itemId, ...updates } = body;
+  const parsed = parseBody(updateItemSchema, body);
+  if (!parsed.success) return parsed.response;
 
-  if (!itemId) {
-    return NextResponse.json(
-      { error: "Missing itemId" },
-      { status: 400 }
-    );
-  }
+  const { itemId, ...updates } = parsed.data;
 
   const supabase = createServerClient();
-  const patchData: Record<string, any> = {};
+  const patchData: Record<string, unknown> = {};
 
   if (typeof updates.completed === "boolean") {
     patchData.completed = updates.completed;

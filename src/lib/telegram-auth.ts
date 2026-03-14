@@ -6,6 +6,7 @@
  */
 
 import crypto from "crypto";
+import { serverEnv } from "@/src/lib/env";
 
 export interface TelegramUser {
   id: number;
@@ -35,12 +36,7 @@ function parseInitData(initData: string): Record<string, string> {
  * Returns the user if valid, null if invalid.
  */
 export function validateInitData(initData: string): TelegramUser | null {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-
-  if (!botToken) {
-    console.error("[TelegramAuth] BOT_TOKEN not configured");
-    return null;
-  }
+  const botToken = serverEnv().TELEGRAM_BOT_TOKEN;
 
   try {
     const params = parseInitData(initData);

@@ -3,8 +3,7 @@ import { nanoid } from "nanoid";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
-
-const BOT_USERNAME = process.env.NEXT_PUBLIC_BOT_USERNAME!;
+import { serverEnv } from "@/src/lib/env";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "share-get");
@@ -45,7 +44,7 @@ export async function GET(request: NextRequest) {
     .limit(1);
 
   const activeLink = activeLinks?.[0]
-    ? `https://t.me/${BOT_USERNAME}?start=invite_${activeLinks[0].token}`
+    ? `https://t.me/${serverEnv().NEXT_PUBLIC_BOT_USERNAME}?start=invite_${activeLinks[0].token}`
     : null;
 
   return NextResponse.json({
@@ -96,6 +95,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const link = `https://t.me/${BOT_USERNAME}?start=invite_${token}`;
+  const link = `https://t.me/${serverEnv().NEXT_PUBLIC_BOT_USERNAME}?start=invite_${token}`;
   return NextResponse.json({ token, link, expiresAt }, { status: 201 });
 }

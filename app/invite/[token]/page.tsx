@@ -18,6 +18,7 @@ function InviteContent() {
   >("loading");
   const [listName, setListName] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- setListId is used, value consumed by future navigation
   const [listId, setListId] = useState("");
   const [collaboratorId, setCollaboratorId] = useState("");
 
@@ -64,7 +65,8 @@ function InviteContent() {
 
   useEffect(() => {
     if (!isReady || !initData) return;
-    acceptInvite();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async invite flow sets state after await
+    void acceptInvite();
   }, [isReady, initData, acceptInvite]);
 
   const cancelRequest = async () => {

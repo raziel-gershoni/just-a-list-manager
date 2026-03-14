@@ -3,7 +3,35 @@
  * Current implementation: Gemini 3 Flash Preview multimodal (audio → JSON).
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  GoogleGenerativeAI,
+  SchemaType,
+  type ResponseSchema,
+} from "@google/generative-ai";
+import { serverEnv } from "@/src/lib/env";
+
+const voiceResultSchema: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    items: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          text: { type: SchemaType.STRING },
+          action: {
+            type: SchemaType.STRING,
+            format: "enum",
+            enum: ["add", "remove"],
+          },
+          targetList: { type: SchemaType.STRING, nullable: true },
+        },
+        required: ["text", "action"],
+      },
+    },
+  },
+  required: ["items"],
+};
 
 export interface VoiceItem {
   text: string;
@@ -23,12 +51,16 @@ export class GeminiVoiceProcessor implements VoiceProcessor {
   private genAI: GoogleGenerativeAI;
 
   constructor() {
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    this.genAI = new GoogleGenerativeAI(serverEnv().GEMINI_API_KEY);
   }
 
   async process(audio: Buffer, listNames: string[]): Promise<VoiceResult> {
     const model = this.genAI.getGenerativeModel({
       model: "gemini-3-flash-preview",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: voiceResultSchema,
+      },
     });
 
     const audioBase64 = audio.toString("base64");
@@ -38,24 +70,12 @@ export class GeminiVoiceProcessor implements VoiceProcessor {
 
 Listen to the audio and extract items the user wants to add or remove from their lists.
 
-Return ONLY valid JSON matching this schema:
-{
-  "items": [
-    {
-      "text": "item name",
-      "action": "add" or "remove",
-      "targetList": "list name or null"
-    }
-  ]
-}
-
 Rules:
 - If the user names a list, use that exact name from the available lists
 - If the user doesn't name a list, assign the most contextually appropriate list based on item type and list names
 - If only one list exists, assign all items to it
 - Handle mixed languages naturally (Hebrew, English, Russian in one message)
-- Each item should be a separate entry
-- Return JSON only, no explanation or markdown`;
+- Each item should be a separate entry`;
 
     try {
       const result = await model.generateContent([
@@ -68,56 +88,11 @@ Rules:
         },
       ]);
 
-      const responseText = result.response.text();
-      return this.parseResponse(responseText);
+      return JSON.parse(result.response.text()) as VoiceResult;
     } catch (error) {
       console.error("[VoiceProcessor] Gemini error:", error);
-
-      // Retry once with stricter prompt
-      try {
-        const retryResult = await model.generateContent([
-          {
-            text: `${prompt}\n\nIMPORTANT: You MUST return raw JSON only. No markdown, no code fences, no explanation.`,
-          },
-          {
-            inlineData: {
-              mimeType: "audio/ogg",
-              data: audioBase64,
-            },
-          },
-        ]);
-
-        const retryText = retryResult.response.text();
-        return this.parseResponse(retryText);
-      } catch {
-        return { items: [] };
-      }
+      return { items: [] };
     }
-  }
-
-  private parseResponse(text: string): VoiceResult {
-    // Try direct parse
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed.items && Array.isArray(parsed.items)) {
-        return parsed as VoiceResult;
-      }
-    } catch {
-      // Try stripping markdown code fences
-    }
-
-    try {
-      const stripped = text.replace(/```json?\n?([\s\S]*?)```/g, "$1").trim();
-      const parsed = JSON.parse(stripped);
-      if (parsed.items && Array.isArray(parsed.items)) {
-        return parsed as VoiceResult;
-      }
-    } catch {
-      // Give up
-    }
-
-    console.error("[VoiceProcessor] Failed to parse response:", text);
-    return { items: [] };
   }
 }
 

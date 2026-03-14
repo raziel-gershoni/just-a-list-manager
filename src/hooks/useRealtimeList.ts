@@ -2,13 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
-
-interface RealtimeChange {
-  table: string;
-  eventType: "INSERT" | "UPDATE" | "DELETE";
-  new: any;
-  old: any;
-}
+import type { RealtimeChange } from "@/src/types";
 
 const RESUBSCRIBE_TIMEOUT_MS = 10000;
 
@@ -20,7 +14,9 @@ export function useRealtimeList(
 ) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
   const subscribeCountRef = useRef(0);
   // Flag to prevent the effect from re-creating a channel that resubscribe() just set up
   const resubscribedRef = useRef(false);
@@ -40,7 +36,7 @@ export function useRealtimeList(
           (payload) => {
             onChangeRef.current({
               table: "items",
-              eventType: payload.eventType as any,
+              eventType: payload.eventType as RealtimeChange["eventType"],
               new: payload.new,
               old: payload.old,
             });
@@ -57,7 +53,7 @@ export function useRealtimeList(
           (payload) => {
             onChangeRef.current({
               table: "lists",
-              eventType: payload.eventType as any,
+              eventType: payload.eventType as RealtimeChange["eventType"],
               new: payload.new,
               old: payload.old,
             });
@@ -74,7 +70,7 @@ export function useRealtimeList(
           (payload) => {
             onChangeRef.current({
               table: "collaborators",
-              eventType: payload.eventType as any,
+              eventType: payload.eventType as RealtimeChange["eventType"],
               new: payload.new,
               old: payload.old,
             });
@@ -155,10 +151,13 @@ export function useRealtimeList(
       });
     }
 
+    // Copy ref value into local variable for use in cleanup function
+    const clientRefForCleanup = supabaseClientRef;
+
     return () => {
       if (channelRef.current) {
         // Use the ref client since supabaseClient from closure may be stale
-        const client = supabaseClientRef.current;
+        const client = clientRefForCleanup.current;
         if (client) {
           client.removeChannel(channelRef.current);
         }

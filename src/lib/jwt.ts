@@ -1,8 +1,15 @@
 import { SignJWT } from "jose";
+import { serverEnv } from "@/src/lib/env";
 
-export const JWT_SECRET = new TextEncoder().encode(
-  process.env.SUPABASE_JWT_SECRET!
-);
+let _jwtSecret: Uint8Array | null = null;
+
+export function getJwtSecret(): Uint8Array {
+  if (!_jwtSecret) {
+    _jwtSecret = new TextEncoder().encode(serverEnv().SUPABASE_JWT_SECRET);
+  }
+  return _jwtSecret;
+}
+
 export const JWT_EXPIRY = "1h";
 
 export async function signToken(
@@ -19,5 +26,5 @@ export async function signToken(
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt()
     .setExpirationTime(JWT_EXPIRY)
-    .sign(JWT_SECRET);
+    .sign(getJwtSecret());
 }

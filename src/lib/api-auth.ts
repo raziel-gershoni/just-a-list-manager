@@ -9,10 +9,7 @@ import { jwtVerify } from "jose";
 import { validateInitData } from "./telegram-auth";
 import { checkRateLimit, getRateLimitHeaders } from "./rate-limit";
 import { createServerClient } from "./supabase";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.SUPABASE_JWT_SECRET!
-);
+import { getJwtSecret } from "./jwt";
 
 export interface DbUser {
   id: string; // UUID
@@ -42,7 +39,7 @@ export async function verifyUserAuth(
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
     try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
+      const { payload } = await jwtVerify(token, getJwtSecret());
       const userId = payload.sub as string;
       const telegramUserId = payload.telegram_user_id as number;
 

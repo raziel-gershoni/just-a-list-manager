@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { X, Copy, Check, Link2, Trash2 } from "lucide-react";
+import { X, Copy, Check, Link2 } from "lucide-react";
+import { getTelegramWebApp } from "@/src/types/telegram";
 import { useTelegram } from "./TelegramProvider";
 
 interface Collaborator {
@@ -91,7 +92,7 @@ export default function ShareDialog({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Fallback for TG WebView
-      const tg = (window as any).Telegram?.WebApp;
+      const tg = getTelegramWebApp();
       if (tg?.openLink) {
         // On some TG clients, clipboard API isn't available
       }

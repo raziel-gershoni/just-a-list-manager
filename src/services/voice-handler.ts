@@ -4,7 +4,9 @@
  */
 
 import TelegramBot from "node-telegram-bot-api";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@/src/lib/supabase";
+import { serverEnv } from "@/src/lib/env";
 import { acquireVoiceLock, releaseVoiceLock } from "@/src/utils/redis-lock";
 import { voiceRateLimiter } from "@/src/lib/rate-limit";
 import { checkRateLimit } from "@/src/lib/rate-limit";
@@ -18,14 +20,14 @@ function escapeIlike(input: string): string {
 
 const MAX_VOICE_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
-interface TgVoice {
+export interface TgVoice {
   file_id: string;
   file_unique_id: string;
   duration: number;
   file_size?: number;
 }
 
-interface TgUser {
+export interface TgFrom {
   id: number;
   first_name: string;
   last_name?: string;
@@ -36,7 +38,7 @@ export async function handleVoiceMessage(
   chatId: number,
   telegramUserId: number,
   voice: TgVoice,
-  from: TgUser
+  from: TgFrom
 ) {
   const { default: bot, getMsg } = await import("./bot");
 
@@ -85,7 +87,7 @@ export async function handleVoiceMessage(
                 [
                   {
                     text: "Open App",
-                    web_app: { url: process.env.NEXT_PUBLIC_APP_URL! },
+                    web_app: { url: serverEnv().NEXT_PUBLIC_APP_URL },
                   },
                 ],
               ],
@@ -111,7 +113,7 @@ export async function handleVoiceMessage(
       .eq("user_id", user.id)
       .eq("status", "approved");
 
-    let collabLists: any[] = [];
+    let collabLists: { id: string; name: string }[] = [];
     const collabListIds = (collabRecords || [])
       .filter((c) => c.permission === "edit")
       .map((c) => c.list_id);
@@ -141,7 +143,7 @@ export async function handleVoiceMessage(
                 [
                   {
                     text: "Open App",
-                    web_app: { url: process.env.NEXT_PUBLIC_APP_URL! },
+                    web_app: { url: serverEnv().NEXT_PUBLIC_APP_URL },
                   },
                 ],
               ],
@@ -316,7 +318,7 @@ export async function handleVoiceMessage(
 }
 
 async function processAddItem(
-  supabase: any,
+  supabase: SupabaseClient,
   bot: TelegramBot,
   chatId: number,
   listId: string,
@@ -380,7 +382,7 @@ async function processAddItem(
 }
 
 async function processRemoveItem(
-  supabase: any,
+  supabase: SupabaseClient,
   bot: TelegramBot,
   chatId: number,
   listId: string,
@@ -422,15 +424,15 @@ async function processRemoveItem(
 
   if (fuzzyActive) {
     const scored = fuzzyActive
-      .map((item: any) => ({
+      .map((item: { id: string; text: string }) => ({
         ...item,
         score: textSimilarity(
           item.text.toLowerCase(),
           voiceItem.text.toLowerCase()
         ),
       }))
-      .filter((item: any) => item.score > 0.3)
-      .sort((a: any, b: any) => b.score - a.score);
+      .filter((item) => item.score > 0.3)
+      .sort((a, b) => b.score - a.score);
 
     if (scored.length > 0 && scored[0].score > 0.6) {
       await supabase

@@ -6,7 +6,7 @@
 export interface QueuedMutation {
   id: string;
   type: string;
-  payload: any;
+  payload: Record<string, unknown>;
   timestamp: number;
 }
 

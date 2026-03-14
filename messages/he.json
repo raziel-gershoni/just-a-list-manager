@@ -60,6 +60,7 @@
     "partialAdd": "נוספו {added} פריטים. {skipped} פריטים דולגו — רשימה זו מוגבלת ל-500 פריטים.",
     "dragHandle": "גרור לשינוי סדר",
     "duplicateWarning": "פריט זה כבר קיים ברשימה",
+    "syncError": "הסנכרון נכשל",
     "editedBy": "נערך ע\"י {name}",
     "reminderSent": "תזכורת נשלחה!",
     "skippedSection": "לא זמין ({count})",

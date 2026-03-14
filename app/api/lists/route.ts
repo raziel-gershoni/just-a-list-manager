@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUserAuth } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
+import { createListSchema, updateListSchema } from "@/src/schemas/lists";
+import { parseBody } from "@/src/lib/api-validation";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "lists-get");
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
     .eq("status", "approved");
 
   const collabListIds = (collabRecords || []).map((c) => c.list_id);
-  let collabLists: any[] = [];
+  let collabLists: { id: string; name: string; owner_id: string; created_at: string; updated_at: string }[] = [];
 
   if (collabListIds.length > 0) {
     const { data } = await supabase
@@ -98,9 +100,12 @@ export async function POST(request: NextRequest) {
   if (!auth.success) return auth.response;
 
   const body = await request.json();
-  const name = body.name?.trim();
+  const parsed = parseBody(createListSchema, body);
+  if (!parsed.success) return parsed.response;
 
-  if (!name || name.length > 100) {
+  const name = parsed.data.name.trim();
+
+  if (!name) {
     return NextResponse.json(
       { error: "List name is required (max 100 characters)" },
       { status: 400 }
@@ -148,14 +153,10 @@ export async function PATCH(request: NextRequest) {
   if (!auth.success) return auth.response;
 
   const body = await request.json();
-  const { id, restore } = body;
+  const parsed = parseBody(updateListSchema, body);
+  if (!parsed.success) return parsed.response;
 
-  if (!id) {
-    return NextResponse.json(
-      { error: "List ID is required" },
-      { status: 400 }
-    );
-  }
+  const { id, restore } = parsed.data;
 
   const supabase = createServerClient();
 
@@ -190,7 +191,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   // Rename flow
-  const { name } = body;
+  const { name } = parsed.data;
 
   if (!name?.trim() || name.trim().length > 100) {
     return NextResponse.json(

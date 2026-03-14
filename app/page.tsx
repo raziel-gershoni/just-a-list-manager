@@ -8,6 +8,7 @@ import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import ListCard from "@/components/ListCard";
 import EmptyState from "@/components/EmptyState";
 import OfflineIndicator from "@/components/OfflineIndicator";
+import { getTelegramWebApp } from "@/src/types/telegram";
 import type { SupportedLocale } from "@/src/lib/i18n";
 
 interface ListData {
@@ -20,7 +21,7 @@ interface ListData {
 }
 
 function HomeContent() {
-  const { isReady, locale, setLanguage, jwtRef, onRefreshNeeded, homeScreenStatus, addToHomeScreen } = useTelegram();
+  const { isReady, locale, setLanguage, jwtRef, onRefreshNeededRef, homeScreenStatus, addToHomeScreen } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
   const [lists, setLists] = useState<ListData[]>([]);
@@ -52,7 +53,7 @@ function HomeContent() {
       setHomeScreenDismissed(false);
     }
     // Detect web app mode (no Telegram Mini App — script exists but initData is empty)
-    const tg = (window as any).Telegram?.WebApp;
+    const tg = getTelegramWebApp();
     setIsWebApp(!tg || !tg.initData);
   }, []);
 
@@ -105,11 +106,11 @@ function HomeContent() {
 
   // Register with orchestrator for reconnect refresh
   useEffect(() => {
-    onRefreshNeeded.current = fetchLists;
+    onRefreshNeededRef.current = fetchLists;
     return () => {
-      onRefreshNeeded.current = null;
+      onRefreshNeededRef.current = null;
     };
-  }, [fetchLists, onRefreshNeeded]);
+  }, [fetchLists, onRefreshNeededRef]);
 
   const createList = async () => {
     const jwt = jwtRef.current;
@@ -177,7 +178,7 @@ function HomeContent() {
   const handleDeleteList = useCallback((listToDelete: ListData) => {
     const jwt = jwtRef.current;
     if (!jwt) return;
-    const tg = (window as any).Telegram?.WebApp;
+    const tg = getTelegramWebApp();
 
     const doDelete = () => {
       tg?.HapticFeedback?.notificationOccurred("warning");

@@ -59,16 +59,19 @@ export default function LoginPage() {
   const [locale, setLocale] = useState<SupportedLocale>("en");
 
   useEffect(() => {
+    let resolved: SupportedLocale | null = null;
     try {
       const cached = localStorage.getItem("app_locale");
       if (cached && (["en", "he", "ru"] as string[]).includes(cached)) {
-        setLocale(cached as SupportedLocale);
+        resolved = cached as SupportedLocale;
       } else {
-        setLocale(resolveLocale(navigator.language));
+        resolved = resolveLocale(navigator.language);
       }
     } catch {
       // ignore
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing locale from localStorage on mount
+    if (resolved) setLocale(resolved);
   }, []);
 
   return (

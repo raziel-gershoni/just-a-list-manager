@@ -11,11 +11,24 @@ import React, {
 import { useRouter } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { createBrowserClient } from "@/src/lib/supabase";
-import { isRtl, resolveLocale, type SupportedLocale } from "@/src/lib/i18n";
+import { resolveLocale, type SupportedLocale } from "@/src/lib/i18n";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
 import ruMessages from "@/messages/ru.json";
+
+import { useJWTRefresh } from "@/src/hooks/useJWTRefresh";
+import { useLocaleSync } from "@/src/hooks/useLocaleSync";
+import { useHomeScreen } from "@/src/hooks/useHomeScreen";
+import { useReconnectOrchestrator } from "@/src/hooks/useReconnectOrchestrator";
+
+// Re-export types for backward compatibility
+export type { ConnectionStatus } from "@/src/hooks/useReconnectOrchestrator";
+export type { HomeScreenStatus } from "@/src/hooks/useHomeScreen";
+
+// Import types for use in this file
+import type { ConnectionStatus } from "@/src/hooks/useReconnectOrchestrator";
+import type { HomeScreenStatus } from "@/src/hooks/useHomeScreen";
 
 const allMessages: Record<SupportedLocale, typeof enMessages> = {
   en: enMessages,
@@ -30,40 +43,6 @@ interface TelegramUser {
   username?: string;
   language_code?: string;
 }
-
-// --- Orchestrator types ---
-
-type OrchestratorState =
-  | "initializing"
-  | "idle"
-  | "reconnecting"
-  | "needs_retry"
-  | "cooldown"
-  | "auth_failed";
-
-export type ConnectionStatus = "connecting" | "connected" | "auth_failed";
-
-export type HomeScreenStatus = "unsupported" | "unknown" | "added" | "missed" | null;
-
-function mapToConnectionStatus(state: OrchestratorState): ConnectionStatus {
-  switch (state) {
-    case "initializing":
-    case "reconnecting":
-    case "needs_retry":
-      return "connecting";
-    case "idle":
-    case "cooldown":
-      return "connected";
-    case "auth_failed":
-      return "auth_failed";
-  }
-}
-
-const MAX_RETRIES = 5;
-const COOLDOWN_MS = 5000;
-const RETRY_DELAY_MS = 2000;
-const RECONNECT_THROTTLE_MS = 5000; // Min interval between reconnect() calls from browser events
-const PROACTIVE_REFRESH_MS = 45 * 60 * 1000; // 45 minutes
 
 // --- Context ---
 
@@ -83,9 +62,9 @@ interface TelegramContextType {
   retryCount: number;
   homeScreenStatus: HomeScreenStatus;
   addToHomeScreen: () => void;
-  onFlushNeeded: React.MutableRefObject<(() => Promise<void>) | null>;
-  onResubscribeNeeded: React.MutableRefObject<(() => Promise<void>) | null>;
-  onRefreshNeeded: React.MutableRefObject<(() => Promise<void>) | null>;
+  onFlushNeededRef: React.MutableRefObject<(() => Promise<void>) | null>;
+  onResubscribeNeededRef: React.MutableRefObject<(() => Promise<void>) | null>;
+  onRefreshNeededRef: React.MutableRefObject<(() => Promise<void>) | null>;
 }
 
 const TelegramContext = createContext<TelegramContextType>({
@@ -104,9 +83,9 @@ const TelegramContext = createContext<TelegramContextType>({
   retryCount: 0,
   homeScreenStatus: null,
   addToHomeScreen: () => {},
-  onFlushNeeded: { current: null },
-  onResubscribeNeeded: { current: null },
-  onRefreshNeeded: { current: null },
+  onFlushNeededRef: { current: null },
+  onResubscribeNeededRef: { current: null },
+  onRefreshNeededRef: { current: null },
 });
 
 export function useTelegram() {
@@ -123,85 +102,33 @@ export default function TelegramProvider({
   const [user, setUser] = useState<TelegramUser | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [initData, setInitData] = useState<string | null>(null);
-  const [jwt, setJwt] = useState<string | null>(null);
-  const [locale, setLocale] = useState<SupportedLocale>("en");
   const [supabaseClient, setSupabaseClient] =
     useState<SupabaseClient | null>(null);
   const [isReady, setIsReady] = useState(false);
-  const [connectionStatus, setConnectionStatus] =
-    useState<ConnectionStatus>("connecting");
-  const [retryCount, setRetryCount] = useState(0);
-  const [homeScreenStatus, setHomeScreenStatus] =
-    useState<HomeScreenStatus>(null);
 
   const router = useRouter();
-  const jwtRef = useRef<string | null>(null);
   const supabaseClientRef = useRef<SupabaseClient | null>(null);
-  const orchestratorStateRef = useRef<OrchestratorState>("initializing");
-  const retryCountRef = useRef(0);
-  const cooldownTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Callback refs for page registration
-  const onFlushNeeded = useRef<(() => Promise<void>) | null>(null);
-  const onResubscribeNeeded = useRef<(() => Promise<void>) | null>(null);
-  const onRefreshNeeded = useRef<(() => Promise<void>) | null>(null);
+  const onFlushNeededRef = useRef<(() => Promise<void>) | null>(null);
+  const onResubscribeNeededRef = useRef<(() => Promise<void>) | null>(null);
+  const onRefreshNeededRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Track whether we're running as a web app (no Telegram WebApp)
+  const isWebAppRef = useRef(false);
+
+  // --- Extracted hooks ---
+  const { jwt, jwtRef, fetchToken, clearJwt } = useJWTRefresh();
+  const { locale, applyLocale, setLanguage } = useLocaleSync(jwtRef);
+  const { homeScreenStatus, setHomeScreenStatus, addToHomeScreen } =
+    useHomeScreen();
 
   // Stable heartbeat callback ref (avoids stale closures on client recreation)
-  const runReconnectRef = useRef<() => void>(() => {});
-  // Ref for reconnect() (resets retryCount + forces idle) — used by browser event handlers
-  const reconnectRef = useRef<() => void>(() => {});
-  // Debounce: prevent retry storms on flapping networks
-  const lastReconnectAttemptRef = useRef<number>(0);
-
-  const setOrchestratorState = useCallback(
-    (state: OrchestratorState) => {
-      orchestratorStateRef.current = state;
-      setConnectionStatus(mapToConnectionStatus(state));
-    },
-    []
-  );
-
-  const applyLocale = useCallback((lang: SupportedLocale) => {
-    setLocale(lang);
-    document.documentElement.dir = isRtl(lang) ? "rtl" : "ltr";
-    document.documentElement.lang = lang;
-    try {
-      localStorage.setItem("app_locale", lang);
-    } catch {}
-  }, []);
-
-  const fetchToken = useCallback(
-    async (initDataStr: string | null): Promise<string | null> => {
-      try {
-        const headers: Record<string, string> = {};
-        if (jwtRef.current) {
-          headers["Authorization"] = `Bearer ${jwtRef.current}`;
-        } else if (initDataStr) {
-          headers["x-telegram-init-data"] = initDataStr;
-        } else {
-          return null;
-        }
-
-        const res = await fetch("/api/auth/token", { headers });
-        if (!res.ok) return null;
-        const { token } = await res.json();
-        jwtRef.current = token;
-        setJwt(token);
-        return token;
-      } catch (e) {
-        console.error("[TelegramProvider] Token fetch error:", e);
-        return null;
-      }
-    },
-    []
-  );
-
-  // Stable heartbeat callback passed to createBrowserClient
+  const runReconnectRef_local = useRef<() => void>(() => {});
   const stableHeartbeatCallback = useCallback(
-    (status: string, _latency?: number) => {
+    (status: string) => {
       if (status === "timeout" || status === "disconnected") {
-        runReconnectRef.current();
+        runReconnectRef_local.current();
       }
     },
     []
@@ -221,192 +148,35 @@ export default function TelegramProvider({
     [stableHeartbeatCallback]
   );
 
-  // === Reconnect Orchestrator ===
-  const reconnectLockRef = useRef(false);
+  const {
+    connectionStatus,
+    retryCount,
+    reconnect,
+    runReconnectRef,
+    setOrchestratorState,
+  } = useReconnectOrchestrator({
+    fetchToken,
+    clearJwt,
+    jwtRef,
+    recreateSupabaseClient,
+    isWebAppRef,
+    onFlushNeededRef,
+    onResubscribeNeededRef,
+    onRefreshNeededRef,
+    router,
+  });
 
-  const runReconnect = useCallback(async () => {
-    // Only proceed from idle state
-    if (orchestratorStateRef.current !== "idle") return;
-    // Mutex: prevent concurrent reconnect calls
-    if (reconnectLockRef.current) return;
-    reconnectLockRef.current = true;
-
-    setOrchestratorState("reconnecting");
-
-    try {
-      // Step 1: Refresh JWT (try existing JWT first)
-      let newToken = await fetchToken(null);
-      if (!newToken && !isWebAppRef.current) {
-        // Clear expired JWT so initData path is used
-        jwtRef.current = null;
-        setJwt(null);
-        // Fallback: re-read Telegram.WebApp.initData (only in Mini App mode)
-        const tg = (window as any).Telegram?.WebApp;
-        const freshInitData = tg?.initData;
-        if (freshInitData) {
-          newToken = await fetchToken(freshInitData);
-        }
-      }
-
-      if (!newToken) {
-        // Web app: if token refresh fails after retries, redirect to login
-        if (isWebAppRef.current) {
-          localStorage.removeItem("web_auth_token");
-          jwtRef.current = null;
-          setJwt(null);
-        }
-        // Token failure is retriable (could be network error, not just auth failure).
-        // Only go terminal after exhausting retries.
-        retryCountRef.current++;
-        setRetryCount(retryCountRef.current);
-
-        if (retryCountRef.current >= MAX_RETRIES) {
-          if (isWebAppRef.current) {
-            localStorage.removeItem("web_auth_token");
-            router.push("/login");
-            return;
-          }
-          setOrchestratorState("auth_failed");
-          return;
-        }
-
-        setOrchestratorState("needs_retry");
-        if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = setTimeout(() => {
-          orchestratorStateRef.current = "idle";
-          runReconnectRef.current();
-        }, RETRY_DELAY_MS);
-        return;
-      }
-
-      // Persist refreshed token for web users
-      if (isWebAppRef.current) {
-        localStorage.setItem("web_auth_token", newToken);
-      }
-
-      // Recreate Supabase client with fresh token
-      recreateSupabaseClient(newToken);
-
-      // Step 2: Flush mutations (no-op if no list page mounted)
-      if (onFlushNeeded.current) {
-        await onFlushNeeded.current();
-      }
-
-      // Step 3: Resubscribe realtime (no-op if no list page mounted)
-      if (onResubscribeNeeded.current) {
-        await onResubscribeNeeded.current();
-      }
-
-      // Step 4: Refresh server state (home page or list page)
-      if (onRefreshNeeded.current) {
-        await onRefreshNeeded.current();
-      }
-
-      // Success — enter cooldown
-      retryCountRef.current = 0;
-      setRetryCount(0);
-      setOrchestratorState("cooldown");
-      cooldownTimeoutRef.current = setTimeout(() => {
-        if (orchestratorStateRef.current === "cooldown") {
-          setOrchestratorState("idle");
-        }
-      }, COOLDOWN_MS);
-    } catch (error) {
-      console.error("[Orchestrator] Partial failure:", error);
-      retryCountRef.current++;
-      setRetryCount(retryCountRef.current);
-
-      if (retryCountRef.current >= MAX_RETRIES) {
-        // Stop auto-retrying — UI will show manual retry banner
-        setOrchestratorState("needs_retry");
-        return;
-      }
-
-      setOrchestratorState("needs_retry");
-      // Clear previous retry timeout to prevent orphaned timers
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-      }
-      retryTimeoutRef.current = setTimeout(() => {
-        // Reset to idle so runReconnect can proceed
-        orchestratorStateRef.current = "idle";
-        runReconnectRef.current();
-      }, RETRY_DELAY_MS);
-    } finally {
-      reconnectLockRef.current = false;
-    }
-  }, [fetchToken, recreateSupabaseClient, setOrchestratorState]);
-
-  // Keep refs in sync for stable callbacks
-  runReconnectRef.current = runReconnect;
-
-  // Manual reconnect (works even when retryCount >= MAX_RETRIES)
-  const reconnect = useCallback(() => {
-    // If a reconnect is already in flight, don't interfere
-    if (reconnectLockRef.current) return;
-    // Clear any pending timers
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
-    }
-    if (cooldownTimeoutRef.current) {
-      clearTimeout(cooldownTimeoutRef.current);
-      cooldownTimeoutRef.current = null;
-    }
-    // Reset retry count
-    retryCountRef.current = 0;
-    setRetryCount(0);
-    // Force state to idle so runReconnect proceeds
-    orchestratorStateRef.current = "idle";
-    runReconnect();
-  }, [runReconnect]);
-
-  // Keep reconnect ref in sync
-  reconnectRef.current = reconnect;
-
-  // Throttled reconnect for browser event handlers (online, visibilitychange).
-  // Prevents retry storms when network flaps rapidly.
-  const debouncedReconnect = useCallback(() => {
-    const now = Date.now();
-    if (now - lastReconnectAttemptRef.current < RECONNECT_THROTTLE_MS) return;
-    lastReconnectAttemptRef.current = now;
-    reconnectRef.current();
-  }, []);
-
-  const setLanguage = useCallback(
-    async (lang: SupportedLocale) => {
-      applyLocale(lang);
-      const token = jwtRef.current;
-      if (!token) return;
-      try {
-        await fetch("/api/user", {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ language: lang }),
-        });
-      } catch (e) {
-        console.error("[TelegramProvider] Language update error:", e);
-      }
-    },
-    [applyLocale]
-  );
-
-  const addToHomeScreen = useCallback(() => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg?.addToHomeScreen) {
-      tg.addToHomeScreen();
-    }
-  }, []);
-
-  // Track whether we're running as a web app (no Telegram WebApp)
-  const isWebAppRef = useRef(false);
+  // Keep heartbeat ref in sync with orchestrator's runReconnectRef
+  runReconnectRef_local.current = runReconnectRef.current;
+  // Also keep them pointing to the same function going forward
+  useEffect(() => {
+    runReconnectRef_local.current = runReconnectRef.current;
+  });
 
   // === Bootstrap Effect ===
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tg = (window as unknown as Record<string, any>).Telegram?.WebApp;
     // In a regular browser, Telegram.WebApp exists (script loaded) but initData is empty
     const isTelegramMiniApp = tg && tg.initData;
     if (!isTelegramMiniApp) {
@@ -486,7 +256,7 @@ export default function TelegramProvider({
       try {
         const cached = localStorage.getItem("app_locale");
         if (cached && ["en", "he", "ru"].includes(cached)) {
-          setLocale(cached as SupportedLocale);
+          applyLocale(cached as SupportedLocale);
         } else {
           const resolved = resolveLocale(userData.language_code);
           applyLocale(resolved);
@@ -589,35 +359,6 @@ export default function TelegramProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // === Entry Points Effect ===
-  useEffect(() => {
-    const handleOnline = () => {
-      debouncedReconnect();
-    };
-
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        debouncedReconnect();
-      }
-    };
-
-    window.addEventListener("online", handleOnline);
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    // 45-minute proactive timer (ensures JWT never expires during stable use)
-    const proactiveTimer = setInterval(() => {
-      runReconnectRef.current();
-    }, PROACTIVE_REFRESH_MS);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      clearInterval(proactiveTimer);
-      if (cooldownTimeoutRef.current) clearTimeout(cooldownTimeoutRef.current);
-      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    };
-  }, []);
-
   return (
     <TelegramContext.Provider
       value={{
@@ -636,9 +377,9 @@ export default function TelegramProvider({
         retryCount,
         homeScreenStatus,
         addToHomeScreen,
-        onFlushNeeded,
-        onResubscribeNeeded,
-        onRefreshNeeded,
+        onFlushNeededRef,
+        onResubscribeNeededRef,
+        onRefreshNeededRef,
       }}
     >
       <NextIntlClientProvider locale={locale} messages={allMessages[locale]}>

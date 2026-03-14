@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Plus, Loader2 } from "lucide-react";
 import { useTelegram } from "./TelegramProvider";
+import { getTelegramWebApp } from "@/src/types/telegram";
 
 interface RecyclableItem {
   id: string;
@@ -75,7 +76,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
   const handleSubmit = () => {
     if (!value.trim()) return;
 
-    const tg = (window as any).Telegram?.WebApp;
+    const tg = getTelegramWebApp();
     tg?.HapticFeedback?.notificationOccurred("success");
 
     onAddItem(value.trim());
@@ -86,7 +87,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
   };
 
   const handleSuggestionClick = (item: RecyclableItem) => {
-    const tg = (window as any).Telegram?.WebApp;
+    const tg = getTelegramWebApp();
     tg?.HapticFeedback?.notificationOccurred("success");
 
     // If comma-separated, replace only the current segment
