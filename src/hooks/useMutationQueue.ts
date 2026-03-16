@@ -91,71 +91,73 @@ export function useMutationQueue(
     if (isFlushingRef.current) return;
     isFlushingRef.current = true;
 
-    const queue = queueRef.current.getQueue();
-    const tempToRealId = new Map<string, string>();
-    // Track temp IDs whose create mutation failed — skip dependent mutations
-    const failedTempIds = new Set<string>();
+    try {
+      const queue = queueRef.current.getQueue();
+      const tempToRealId = new Map<string, string>();
+      // Track temp IDs whose create mutation failed — skip dependent mutations
+      const failedTempIds = new Set<string>();
 
-    for (const mutation of queue) {
-      // Drop mutations older than 24 hours
-      if (Date.now() - mutation.timestamp > MUTATION_MAX_AGE_MS) {
-        console.log("[MutationQueue] Dropping stale mutation (>24h):", mutation.id, mutation.type);
-        queueRef.current.dequeue(mutation.id);
-        pendingExecutors.current.delete(mutation.id);
-        continue;
-      }
+      for (const mutation of queue) {
+        // Drop mutations older than 24 hours
+        if (Date.now() - mutation.timestamp > MUTATION_MAX_AGE_MS) {
+          console.log("[MutationQueue] Dropping stale mutation (>24h):", mutation.id, mutation.type);
+          queueRef.current.dequeue(mutation.id);
+          pendingExecutors.current.delete(mutation.id);
+          continue;
+        }
 
-      // Skip mutations that depend on a failed create (temp ID never resolved)
-      const payloadItemId = typeof mutation.payload?.itemId === "string" ? mutation.payload.itemId : undefined;
-      if (payloadItemId && failedTempIds.has(payloadItemId)) {
-        console.log("[MutationQueue] Skipping mutation (parent create failed):", mutation.id, mutation.type);
-        continue;
-      }
+        // Skip mutations that depend on a failed create (temp ID never resolved)
+        const payloadItemId = typeof mutation.payload?.itemId === "string" ? mutation.payload.itemId : undefined;
+        if (payloadItemId && failedTempIds.has(payloadItemId)) {
+          console.log("[MutationQueue] Skipping mutation (parent create failed):", mutation.id, mutation.type);
+          continue;
+        }
 
-      // Resolve temp IDs in payload for chained mutations (use a clone to avoid mutating persisted queue)
-      const resolvedMutation = (payloadItemId && tempToRealId.has(payloadItemId))
-        ? { ...mutation, payload: { ...mutation.payload, itemId: tempToRealId.get(payloadItemId)! } }
-        : mutation;
+        // Resolve temp IDs in payload for chained mutations (use a clone to avoid mutating persisted queue)
+        const resolvedMutation = (payloadItemId && tempToRealId.has(payloadItemId))
+          ? { ...mutation, payload: { ...mutation.payload, itemId: tempToRealId.get(payloadItemId)! } }
+          : mutation;
 
-      let executor = pendingExecutors.current.get(mutation.id);
-      // If payload was resolved (temp→real ID swap), discard the stored executor
-      // so the factory creates a fresh one with the resolved ID in its closure
-      if (resolvedMutation !== mutation && executor) {
-        pendingExecutors.current.delete(mutation.id);
-        executor = undefined;
-      }
-      if (!executor && executorFactoryRef.current) {
-        const jwt = getJwt();
-        if (jwt) {
-          executor = executorFactoryRef.current(resolvedMutation, () => getJwt()!) ?? undefined;
-          if (executor) {
-            pendingExecutors.current.set(mutation.id, executor);
+        let executor = pendingExecutors.current.get(mutation.id);
+        // If payload was resolved (temp→real ID swap), discard the stored executor
+        // so the factory creates a fresh one with the resolved ID in its closure
+        if (resolvedMutation !== mutation && executor) {
+          pendingExecutors.current.delete(mutation.id);
+          executor = undefined;
+        }
+        if (!executor && executorFactoryRef.current) {
+          const jwt = getJwt();
+          if (jwt) {
+            executor = executorFactoryRef.current(resolvedMutation, () => getJwt()!) ?? undefined;
+            if (executor) {
+              pendingExecutors.current.set(mutation.id, executor);
+            }
           }
         }
-      }
 
-      if (executor) {
-        const result = await executeMutation(mutation.id, resolvedMutation.type, executor);
-        const payloadTempId = typeof resolvedMutation.payload?.tempId === "string" ? resolvedMutation.payload.tempId : undefined;
-        // If create mutation returned a server-assigned ID, track for temp→real resolution
-        if (typeof result === "string" && resolvedMutation.type === "create" && payloadTempId) {
-          tempToRealId.set(payloadTempId, result);
-        }
-        // If create mutation failed (still in queue — no dequeue happened), mark temp ID as failed
-        if (result === undefined && resolvedMutation.type === "create" && payloadTempId) {
-          const stillInQueue = queueRef.current.getQueue().some((m) => m.id === mutation.id);
-          if (stillInQueue) {
-            failedTempIds.add(payloadTempId);
+        if (executor) {
+          const result = await executeMutation(mutation.id, resolvedMutation.type, executor);
+          const payloadTempId = typeof resolvedMutation.payload?.tempId === "string" ? resolvedMutation.payload.tempId : undefined;
+          // If create mutation returned a server-assigned ID, track for temp→real resolution
+          if (typeof result === "string" && resolvedMutation.type === "create" && payloadTempId) {
+            tempToRealId.set(payloadTempId, result);
           }
+          // If create mutation failed (still in queue — no dequeue happened), mark temp ID as failed
+          if (result === undefined && resolvedMutation.type === "create" && payloadTempId) {
+            const stillInQueue = queueRef.current.getQueue().some((m) => m.id === mutation.id);
+            if (stillInQueue) {
+              failedTempIds.add(payloadTempId);
+            }
+          }
+        } else {
+          // Executor lost and no factory — can't replay, remove
+          console.log("[MutationQueue] No executor for mutation, dropping:", mutation.id, mutation.type);
+          queueRef.current.dequeue(mutation.id);
         }
-      } else {
-        // Executor lost and no factory — can't replay, remove
-        console.log("[MutationQueue] No executor for mutation, dropping:", mutation.id, mutation.type);
-        queueRef.current.dequeue(mutation.id);
       }
+    } finally {
+      isFlushingRef.current = false;
     }
-
-    isFlushingRef.current = false;
   }, [executeMutation, getJwt]);
 
   const addMutation = useCallback(
@@ -168,10 +170,8 @@ export function useMutationQueue(
 
       pendingExecutors.current.set(mutation.id, mutation.execute);
 
-      // Skip immediate execution if flush is in progress
-      if (isFlushingRef.current) return;
-
-      // Try to execute immediately
+      // Always execute immediately — flushQueue operates on its own snapshot,
+      // so there is no double-execution risk for newly added mutations.
       executeMutation(mutation.id, mutation.type, mutation.execute);
     },
     [executeMutation]
