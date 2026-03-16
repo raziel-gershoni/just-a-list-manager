@@ -70,8 +70,12 @@ function ListContent() {
     if (info.dropped) {
       setErrorToast(t('items.syncError'));
       setTimeout(() => setErrorToast(null), 3000);
+      // Remove the optimistic pending item when a create mutation is permanently dropped
+      if (info.type === "create" && typeof info.payload?.tempId === "string") {
+        setItems((prev) => prev.filter((i) => i.id !== info.payload.tempId));
+      }
     }
-  }, [t]);
+  }, [t, setItems]);
 
   const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError);
 

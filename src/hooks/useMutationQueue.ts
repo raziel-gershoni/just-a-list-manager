@@ -23,6 +23,7 @@ export type MutationErrorInfo = {
   httpStatus: number | null;
   message: string;
   dropped: boolean; // true if dequeued (non-retriable), false if kept for retry
+  payload: Record<string, unknown>;
 };
 
 export function useMutationQueue(
@@ -46,7 +47,7 @@ export function useMutationQueue(
   }, [onMutationError]);
 
   const executeMutation = useCallback(
-    async (id: string, type: string, execute: () => Promise<string | void>): Promise<string | void> => {
+    async (id: string, type: string, payload: Record<string, unknown>, execute: () => Promise<string | void>): Promise<string | void> => {
       try {
         const result = await execute();
         queueRef.current.dequeue(id);
@@ -75,13 +76,13 @@ export function useMutationQueue(
           console.log("[MutationQueue] Client error — dropping:", id, httpStatus);
           queueRef.current.dequeue(id);
           pendingExecutors.current.delete(id);
-          onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: true });
+          onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: true, payload });
           return;
         }
 
         // 5xx server errors, 408, 429, or unknown — keep in queue for retry
         console.error("[MutationQueue] Error (will retry):", id, message);
-        onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: false });
+        onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: false, payload });
       }
     },
     []
@@ -136,7 +137,7 @@ export function useMutationQueue(
         }
 
         if (executor) {
-          const result = await executeMutation(mutation.id, resolvedMutation.type, executor);
+          const result = await executeMutation(mutation.id, resolvedMutation.type, resolvedMutation.payload, executor);
           const payloadTempId = typeof resolvedMutation.payload?.tempId === "string" ? resolvedMutation.payload.tempId : undefined;
           // If create mutation returned a server-assigned ID, track for temp→real resolution
           if (typeof result === "string" && resolvedMutation.type === "create" && payloadTempId) {
@@ -172,7 +173,7 @@ export function useMutationQueue(
 
       // Always execute immediately — flushQueue operates on its own snapshot,
       // so there is no double-execution risk for newly added mutations.
-      executeMutation(mutation.id, mutation.type, mutation.execute);
+      executeMutation(mutation.id, mutation.type, mutation.payload, mutation.execute);
     },
     [executeMutation]
   );

@@ -129,6 +129,7 @@ export async function POST(
     });
 
     if (error) {
+      console.error("[items/POST] RPC insert_item_if_under_limit error:", error);
       if (error.message?.includes("ITEM_LIMIT_REACHED")) {
         return NextResponse.json(
           { error: "This list has reached the 500-item limit." },
@@ -144,6 +145,7 @@ export async function POST(
     const item = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
 
     if (!item) {
+      console.error("[items/POST] RPC returned null item for list:", listId);
       return NextResponse.json(
         { error: "Failed to create item" },
         { status: 500 }
@@ -234,6 +236,7 @@ export async function POST(
     });
 
     if (error) {
+      console.error("[items/POST] RPC insert_item_if_under_limit error (batch):", error);
       if (error.message?.includes("ITEM_LIMIT_REACHED")) {
         limitReached = true;
         skipped++;

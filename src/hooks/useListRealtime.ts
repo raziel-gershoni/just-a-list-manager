@@ -41,6 +41,7 @@ export function useListRealtime({
               ...newRec,
               creator_name: lookupUserName(prev, newRec.created_by),
               editor_name: lookupUserName(prev, newRec.edited_by),
+              _pending: false,
             } as ItemData;
             // Replace pending optimistic item if it matches this server item
             const pendingIndex = prev.findIndex(

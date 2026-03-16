@@ -41,6 +41,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
             ...item,
             creator_name: item.users?.name ?? null,
             editor_name: item.editor?.name ?? null,
+            _pending: false,
             users: undefined,
             editor: undefined,
           };
@@ -85,6 +86,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         ...item,
         creator_name: item.users?.name ?? null,
         editor_name: item.editor?.name ?? null,
+        _pending: false,
         users: undefined,
         editor: undefined,
       }));
