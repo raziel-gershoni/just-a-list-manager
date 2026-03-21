@@ -87,9 +87,9 @@ export async function verifyAndExtractUser(
     audience: env.TELEGRAM_OAUTH_CLIENT_ID,
   });
 
-  // Per Telegram docs, the numeric Telegram user ID is in the `id` claim
-  const telegramId = payload.id as number | undefined;
-  if (!telegramId || typeof telegramId !== "number") {
+  // Per Telegram docs, the numeric Telegram user ID is in the `id` claim (as a string)
+  const telegramId = Number(payload.id);
+  if (!telegramId || isNaN(telegramId)) {
     throw new Error(
       `Missing 'id' claim in id_token. Claims: ${JSON.stringify(payload)}`
     );
