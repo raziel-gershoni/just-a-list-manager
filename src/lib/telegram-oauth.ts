@@ -61,24 +61,42 @@ export interface TelegramOAuthUser {
 }
 
 export async function verifyAndExtractUser(
-  idToken: string
+  idToken: string,
+  accessToken: string
 ): Promise<TelegramOAuthUser> {
   const env = serverEnv();
 
-  const { payload } = await jwtVerify(idToken, jwks, {
+  // Verify the id_token signature and claims
+  await jwtVerify(idToken, jwks, {
     issuer: TELEGRAM_ISSUER,
     audience: env.TELEGRAM_OAUTH_CLIENT_ID,
   });
 
-  const telegramId = Number(payload.sub);
-  if (!telegramId || isNaN(telegramId)) {
-    throw new Error("Invalid sub claim in id_token");
+  // Fetch user profile from the userinfo endpoint to get the actual Telegram user ID
+  // (the id_token `sub` is an opaque OIDC identifier, not the numeric Telegram ID)
+  const userinfoRes = await fetch("https://oauth.telegram.org/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!userinfoRes.ok) {
+    const text = await userinfoRes.text();
+    throw new Error(`Userinfo request failed (${userinfoRes.status}): ${text}`);
+  }
+
+  const userinfo = await userinfoRes.json();
+
+  // The numeric Telegram user ID may be in `id` or `telegram_id`
+  const rawId = userinfo.id ?? userinfo.telegram_id;
+  const telegramId = Number(rawId);
+  if (!telegramId || isNaN(telegramId) || telegramId > Number.MAX_SAFE_INTEGER) {
+    console.error("[TelegramOAuth] Could not extract Telegram user ID from userinfo:", JSON.stringify(userinfo));
+    throw new Error("Could not determine Telegram user ID from OAuth profile");
   }
 
   return {
     telegramId,
-    name: (payload.name as string) || "Unknown",
-    username: (payload.preferred_username as string) || null,
-    picture: (payload.picture as string) || null,
+    name: (userinfo.name as string) || "Unknown",
+    username: (userinfo.preferred_username as string) || (userinfo.username as string) || null,
+    picture: (userinfo.picture as string) || (userinfo.photo_url as string) || null,
   };
 }

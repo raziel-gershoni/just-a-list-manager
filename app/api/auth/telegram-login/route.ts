@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   let telegramUser;
   try {
     const tokens = await exchangeCodeForTokens(code, code_verifier);
-    telegramUser = await verifyAndExtractUser(tokens.id_token);
+    telegramUser = await verifyAndExtractUser(tokens.id_token, tokens.access_token);
   } catch (error) {
     console.error("[TelegramOAuth] Token exchange/verification failed:", error);
     return NextResponse.json(
