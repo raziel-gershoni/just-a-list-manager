@@ -24,7 +24,13 @@
     "title": "Just a List",
     "subtitle": "Open the bot in Telegram to get started",
     "button": "Open in Telegram",
-    "error": "Login failed. Please try again."
+    "error": "Login failed. Please try again.",
+    "loginWithTelegram": "Log in with Telegram",
+    "orOpenBot": "Or open the bot directly in Telegram:",
+    "callbackLoading": "Logging you in...",
+    "callbackError": "Login failed. Please try again.",
+    "callbackStateMismatch": "Security check failed. Please try again.",
+    "backToLogin": "Back to login"
   },
   "lists": {
     "title": "My Lists",

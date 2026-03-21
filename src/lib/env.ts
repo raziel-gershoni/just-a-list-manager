@@ -19,11 +19,15 @@ const serverEnvSchema = z.object({
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
   NEXT_PUBLIC_APP_URL: z.string().url(),
   NEXT_PUBLIC_BOT_USERNAME: z.string().min(1),
+  TELEGRAM_OAUTH_CLIENT_ID: z.string().min(1),
+  TELEGRAM_OAUTH_CLIENT_SECRET: z.string().min(1),
 });
 
 const clientEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
+  NEXT_PUBLIC_BOT_ID: z.string().regex(/^\d+$/),
+  NEXT_PUBLIC_APP_URL: z.string().url(),
 });
 
 type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -50,6 +54,8 @@ export function clientEnv(): ClientEnv {
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
         process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+      NEXT_PUBLIC_BOT_ID: process.env.NEXT_PUBLIC_BOT_ID,
+      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     });
   }
   return _clientEnv;

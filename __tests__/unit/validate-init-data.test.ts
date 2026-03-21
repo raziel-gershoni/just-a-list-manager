@@ -16,6 +16,8 @@ const ENV_STUBS: Record<string, string> = {
   UPSTASH_REDIS_REST_TOKEN: "fake-redis-token",
   NEXT_PUBLIC_APP_URL: "https://fake-app.example.com",
   NEXT_PUBLIC_BOT_USERNAME: "fake_bot",
+  TELEGRAM_OAUTH_CLIENT_ID: "fake-oauth-client-id",
+  TELEGRAM_OAUTH_CLIENT_SECRET: "fake-oauth-client-secret",
 };
 
 /**
