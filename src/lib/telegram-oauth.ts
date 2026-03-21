@@ -1,62 +1,21 @@
 /**
  * Telegram OAuth 2.0 (OIDC + PKCE) — server-side helpers
+ *
+ * Per https://core.telegram.org/bots/telegram-login:
+ * - Token endpoint: https://oauth.telegram.org/token
+ * - JWKS: https://oauth.telegram.org/.well-known/jwks.json
+ * - No userinfo endpoint — all user data is in the id_token
+ * - The `id` claim holds the numeric Telegram user ID (not `sub`)
  */
 
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { serverEnv } from "@/src/lib/env";
 
+const TELEGRAM_TOKEN_URL = "https://oauth.telegram.org/token";
+const TELEGRAM_JWKS_URL = "https://oauth.telegram.org/.well-known/jwks.json";
 const TELEGRAM_ISSUER = "https://oauth.telegram.org";
-const DISCOVERY_URL =
-  "https://oauth.telegram.org/.well-known/openid-configuration";
 
-interface OIDCConfig {
-  token_endpoint: string;
-  userinfo_endpoint: string;
-  jwks_uri: string;
-}
-
-let _oidcConfig: OIDCConfig | null = null;
-let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-
-async function getOIDCConfig(): Promise<OIDCConfig> {
-  if (_oidcConfig) return _oidcConfig;
-  const res = await fetch(DISCOVERY_URL);
-  if (!res.ok) {
-    throw new Error(
-      `OIDC discovery failed (${res.status}): ${await res.text().then((t) => t.slice(0, 200))}`
-    );
-  }
-  const data = await res.json();
-  _oidcConfig = {
-    token_endpoint: data.token_endpoint,
-    userinfo_endpoint: data.userinfo_endpoint,
-    jwks_uri: data.jwks_uri,
-  };
-  return _oidcConfig;
-}
-
-async function getJWKS() {
-  if (_jwks) return _jwks;
-  const config = await getOIDCConfig();
-  _jwks = createRemoteJWKSet(new URL(config.jwks_uri));
-  return _jwks;
-}
-
-/** Parse a fetch response as JSON, with a clear error if the body is HTML. */
-async function parseJsonResponse(
-  response: Response,
-  label: string
-): Promise<Record<string, unknown>> {
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("json")) {
-    const body = await response.text();
-    throw new Error(
-      `${label}: expected JSON but got ${contentType || "no content-type"}. ` +
-        `Status ${response.status}. Body: ${body.slice(0, 300)}`
-    );
-  }
-  return response.json();
-}
+const jwks = createRemoteJWKSet(new URL(TELEGRAM_JWKS_URL));
 
 export function getRedirectUri(): string {
   return `${serverEnv().NEXT_PUBLIC_APP_URL}/login/callback`;
@@ -72,7 +31,6 @@ export async function exchangeCodeForTokens(
   codeVerifier: string
 ): Promise<TokenResponse> {
   const env = serverEnv();
-  const config = await getOIDCConfig();
   const credentials = btoa(
     `${env.TELEGRAM_OAUTH_CLIENT_ID}:${env.TELEGRAM_OAUTH_CLIENT_SECRET}`
   );
@@ -80,11 +38,12 @@ export async function exchangeCodeForTokens(
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
+    client_id: env.TELEGRAM_OAUTH_CLIENT_ID,
     redirect_uri: getRedirectUri(),
     code_verifier: codeVerifier,
   });
 
-  const response = await fetch(config.token_endpoint, {
+  const response = await fetch(TELEGRAM_TOKEN_URL, {
     method: "POST",
     headers: {
       Authorization: `Basic ${credentials}`,
@@ -95,11 +54,20 @@ export async function exchangeCodeForTokens(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Token exchange failed (${response.status}): ${text.slice(0, 300)}`);
+    throw new Error(
+      `Token exchange failed (${response.status}): ${text.slice(0, 300)}`
+    );
   }
 
-  const data = await parseJsonResponse(response, "Token exchange");
-  return data as unknown as TokenResponse;
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("json")) {
+    const text = await response.text();
+    throw new Error(
+      `Token exchange: expected JSON but got ${contentType}. Body: ${text.slice(0, 300)}`
+    );
+  }
+
+  return response.json() as Promise<TokenResponse>;
 }
 
 export interface TelegramOAuthUser {
@@ -110,94 +78,27 @@ export interface TelegramOAuthUser {
 }
 
 export async function verifyAndExtractUser(
-  idToken: string,
-  accessToken: string
+  idToken: string
 ): Promise<TelegramOAuthUser> {
   const env = serverEnv();
-  const jwks = await getJWKS();
 
   const { payload } = await jwtVerify(idToken, jwks, {
     issuer: TELEGRAM_ISSUER,
     audience: env.TELEGRAM_OAUTH_CLIENT_ID,
   });
 
-  // Log all id_token claims so we can see what Telegram actually provides
-  console.log(
-    "[TelegramOAuth] id_token claims:",
-    JSON.stringify(payload, null, 2)
-  );
-
-  // Strategy 1: Look for a numeric Telegram user ID in id_token custom claims
-  let telegramId = extractTelegramId(payload);
-
-  // Strategy 2: Try the OIDC userinfo endpoint
-  if (!telegramId) {
-    const config = await getOIDCConfig();
-    try {
-      const userinfoRes = await fetch(config.userinfo_endpoint, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      const contentType = userinfoRes.headers.get("content-type") || "";
-      if (userinfoRes.ok && contentType.includes("json")) {
-        const userinfo = await userinfoRes.json();
-        console.log(
-          "[TelegramOAuth] userinfo response:",
-          JSON.stringify(userinfo, null, 2)
-        );
-        telegramId = extractTelegramId(userinfo);
-      } else {
-        console.warn(
-          `[TelegramOAuth] userinfo returned non-JSON (${userinfoRes.status}, ${contentType})`
-        );
-      }
-    } catch (err) {
-      console.warn("[TelegramOAuth] userinfo fetch failed:", err);
-    }
-  }
-
-  if (!telegramId) {
+  // Per Telegram docs, the numeric Telegram user ID is in the `id` claim
+  const telegramId = payload.id as number | undefined;
+  if (!telegramId || typeof telegramId !== "number") {
     throw new Error(
-      "Could not determine Telegram user ID from OAuth. " +
-        `id_token claims: ${JSON.stringify(payload)}`
+      `Missing 'id' claim in id_token. Claims: ${JSON.stringify(payload)}`
     );
   }
 
   return {
     telegramId,
     name: (payload.name as string) || "Unknown",
-    username:
-      (payload.preferred_username as string) ||
-      (payload.username as string) ||
-      null,
-    picture:
-      (payload.picture as string) || (payload.photo_url as string) || null,
+    username: (payload.preferred_username as string) || null,
+    picture: (payload.picture as string) || null,
   };
-}
-
-/** Try to extract a valid numeric Telegram user ID from a set of claims. */
-function extractTelegramId(
-  claims: Record<string, unknown>
-): number | undefined {
-  // Check known claim names that might hold the numeric Telegram ID
-  for (const key of ["id", "telegram_id", "user_id"]) {
-    const val = claims[key];
-    if (val !== undefined) {
-      const num = Number(val);
-      if (!isNaN(num) && num > 0 && num <= Number.MAX_SAFE_INTEGER) {
-        return num;
-      }
-    }
-  }
-
-  // Fall back to `sub` if it looks like a reasonable Telegram user ID
-  const sub = claims.sub;
-  if (sub !== undefined) {
-    const num = Number(sub);
-    if (!isNaN(num) && num > 0 && num <= Number.MAX_SAFE_INTEGER) {
-      return num;
-    }
-  }
-
-  return undefined;
 }
