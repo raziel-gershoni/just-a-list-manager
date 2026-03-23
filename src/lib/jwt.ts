@@ -10,7 +10,7 @@ export function getJwtSecret(): Uint8Array {
   return _jwtSecret;
 }
 
-export const JWT_EXPIRY = "1h";
+export const JWT_EXPIRY = "7d";
 
 export async function signToken(
   userId: string,

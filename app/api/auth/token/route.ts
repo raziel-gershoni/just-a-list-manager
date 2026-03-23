@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     try {
       // Accept tokens within 10-minute grace period past expiry
       const { payload } = await jwtVerify(existingToken, getJwtSecret(), {
-        clockTolerance: 600, // 10 minutes
+        clockTolerance: 604800, // 7 days
       });
 
       const userId = payload.sub as string;
