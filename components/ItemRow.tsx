@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Check, CircleOff, Clock, Copy, Pencil, RotateCcw, X } from "lucide-react";
+import { Bell, Check, CircleOff, Clock, Copy, Pencil, RotateCcw, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
 interface ItemRowProps {
@@ -20,6 +20,8 @@ interface ItemRowProps {
   skipped?: boolean;
   onSkip?: (id: string, skipped: boolean) => void;
   onRemoveDuplicates?: (text: string) => void;
+  reminderAt?: string | null;
+  onReminderTap?: (id: string) => void;
 }
 
 export default function ItemRow({
@@ -38,6 +40,8 @@ export default function ItemRow({
   skipped,
   onSkip,
   onRemoveDuplicates,
+  reminderAt,
+  onReminderTap,
 }: ItemRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
@@ -177,6 +181,18 @@ export default function ItemRow({
           ) : (
             <CircleOff className="w-4 h-4 text-tg-hint" />
           )}
+        </button>
+      )}
+
+      {onReminderTap && !completed && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onReminderTap(id);
+          }}
+          className="p-1 shrink-0"
+        >
+          <Bell className={`w-4 h-4 ${reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
         </button>
       )}
 

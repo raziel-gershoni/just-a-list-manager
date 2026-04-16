@@ -114,9 +114,9 @@ export async function PATCH(request: NextRequest) {
   const parsed = parseBody(updateUserSchema, body);
   if (!parsed.success) return parsed.response;
 
-  const updates: Record<string, string> = {
-    language: parsed.data.language,
-  };
+  const updates: Record<string, string> = {};
+  if (parsed.data.language) updates.language = parsed.data.language;
+  if (parsed.data.timezone) updates.timezone = parsed.data.timezone;
 
   const supabase = createServerClient();
   const { data: user, error } = await supabase

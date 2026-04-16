@@ -148,6 +148,30 @@
     "approved": "✅ {userName} has been added to \"{listName}\"",
     "declined": "❌ Request from {userName} for \"{listName}\" was declined",
     "listReminder": "{senderName} is reminding you to update \"{listName}\"",
+    "itemReminder": "Reminder: \"{itemText}\" on your list \"{listName}\"",
+    "itemReminderShared": "{senderName} reminds you: \"{itemText}\" on \"{listName}\"",
     "openList": "Open List"
+  },
+  "reminder": {
+    "title": "Set reminder",
+    "in30min": "In 30 min",
+    "in1hour": "In 1 hour",
+    "in3hours": "In 3 hours",
+    "tomorrow9am": "Tomorrow 9am",
+    "customTime": "Pick date & time",
+    "justMe": "Just me",
+    "everyone": "Everyone",
+    "once": "Once",
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "set": "Set",
+    "cancel": "Cancel reminder",
+    "active": "Reminder: {time}",
+    "sent": "Reminder set!",
+    "cancelled": "Reminder cancelled",
+    "snoozed": "Snoozed until {time}",
+    "done": "Done",
+    "snooze": "Snooze"
   }
 }

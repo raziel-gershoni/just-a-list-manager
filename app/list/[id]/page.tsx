@@ -9,6 +9,7 @@ import AddItemInput from "@/components/AddItemInput";
 import SortableItem from "@/components/SortableItem";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import ShareDialog from "@/components/ShareDialog";
+import ReminderSheet from "@/components/ReminderSheet";
 import ListHeader from "@/components/list/ListHeader";
 import SkippedItemsSection from "@/components/list/SkippedItemsSection";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
@@ -54,6 +55,7 @@ function ListContent() {
     return v === null ? false : v === "true";
   });
   const [showShare, setShowShare] = useState(false);
+  const [reminderItem, setReminderItem] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<{
     message: string;
     undo: () => void;
@@ -87,7 +89,7 @@ function ListContent() {
     jwtRef,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleCancelReminder } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -195,6 +197,8 @@ function ListContent() {
               onEdit={handleEditItem}
               onSkip={handleSkip}
               onRemoveDuplicates={handleRemoveDuplicates}
+              reminderAt={item.my_remind_at}
+              onReminderTap={(id) => setReminderItem(id)}
             />
           ))}
         </DragDropProvider>
@@ -247,6 +251,28 @@ function ListContent() {
         isOpen={showShare}
         onClose={() => setShowShare(false)}
       />
+
+      {reminderItem && (() => {
+        const item = items.find((i) => i.id === reminderItem);
+        if (!item) return null;
+        return (
+          <ReminderSheet
+            itemId={item.id}
+            itemText={item.text}
+            listId={listId}
+            isShared={isShared}
+            isOpen={true}
+            onClose={() => setReminderItem(null)}
+            onSetReminder={handleSetReminder}
+            onCancelReminder={handleCancelReminder}
+            existingReminder={
+              item.my_reminder_id
+                ? { id: item.my_reminder_id, remind_at: item.my_remind_at!, is_shared: item.my_reminder_shared ?? false, recurrence: item.my_reminder_recurrence ?? undefined }
+                : null
+            }
+          />
+        );
+      })()}
     </div>
   );
 }

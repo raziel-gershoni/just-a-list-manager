@@ -148,6 +148,30 @@
     "approved": "✅ {userName} добавлен в \"{listName}\"",
     "declined": "❌ Запрос от {userName} для \"{listName}\" отклонён",
     "listReminder": "{senderName} напоминает вам обновить \"{listName}\"",
+    "itemReminder": "Напоминание: \"{itemText}\" в списке \"{listName}\"",
+    "itemReminderShared": "{senderName} напоминает: \"{itemText}\" в \"{listName}\"",
     "openList": "Открыть список"
+  },
+  "reminder": {
+    "title": "Установить напоминание",
+    "in30min": "Через 30 мин",
+    "in1hour": "Через 1 час",
+    "in3hours": "Через 3 часа",
+    "tomorrow9am": "Завтра в 9:00",
+    "customTime": "Выбрать дату и время",
+    "justMe": "Только мне",
+    "everyone": "Всем",
+    "once": "Один раз",
+    "daily": "Ежедневно",
+    "weekly": "Еженедельно",
+    "monthly": "Ежемесячно",
+    "set": "Установить",
+    "cancel": "Отменить напоминание",
+    "active": "Напоминание: {time}",
+    "sent": "Напоминание установлено!",
+    "cancelled": "Напоминание отменено",
+    "snoozed": "Отложено до {time}",
+    "done": "Готово",
+    "snooze": "Отложить"
   }
 }

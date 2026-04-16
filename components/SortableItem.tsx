@@ -25,6 +25,8 @@ interface SortableItemProps {
   onEdit?: (id: string, newText: string) => void;
   onSkip?: (id: string, skipped: boolean) => void;
   onRemoveDuplicates?: (text: string) => void;
+  reminderAt?: string | null;
+  onReminderTap?: (id: string) => void;
 }
 
 export default function SortableItem({
@@ -42,6 +44,8 @@ export default function SortableItem({
   onEdit,
   onSkip,
   onRemoveDuplicates,
+  reminderAt,
+  onReminderTap,
 }: SortableItemProps) {
   const { ref, isDragSource } = useSortable({
     id,
@@ -69,6 +73,8 @@ export default function SortableItem({
         onEdit={onEdit}
         onSkip={onSkip}
         onRemoveDuplicates={onRemoveDuplicates}
+        reminderAt={reminderAt}
+        onReminderTap={onReminderTap}
       />
     </div>
   );

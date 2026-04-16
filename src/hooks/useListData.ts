@@ -36,7 +36,23 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         const { items: fetchedItems } = await res.json();
         const FOUR_HOURS = 4 * 60 * 60 * 1000;
         const now = Date.now();
+        // Fetch active reminders for all items in this list
+        const remindersRes = await fetch(`/api/lists/${listId}/reminders`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+        const remindersByItem = new Map<string, { id: string; remind_at: string; is_shared: boolean; recurrence?: string }>();
+        if (remindersRes.ok) {
+          const { reminders } = await remindersRes.json();
+          for (const r of reminders || []) {
+            // Keep the earliest reminder per item
+            if (!remindersByItem.has(r.item_id) || r.remind_at < remindersByItem.get(r.item_id)!.remind_at) {
+              remindersByItem.set(r.item_id, r);
+            }
+          }
+        }
+
         const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string; skipped_at?: string | null }) => {
+          const reminder = remindersByItem.get(item.id as string);
           const base = {
             ...item,
             creator_name: item.users?.name ?? null,
@@ -44,6 +60,10 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
             _pending: false,
             users: undefined,
             editor: undefined,
+            my_remind_at: reminder?.remind_at ?? null,
+            my_reminder_id: reminder?.id ?? null,
+            my_reminder_shared: reminder?.is_shared ?? false,
+            my_reminder_recurrence: reminder?.recurrence ?? null,
           };
           // Auto-unskip items older than 4 hours
           if (base.skipped_at && now - new Date(base.skipped_at).getTime() > FOUR_HOURS) {

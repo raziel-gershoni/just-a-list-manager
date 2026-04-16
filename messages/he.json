@@ -148,6 +148,30 @@
     "approved": "✅ {userName} נוסף לרשימה \"{listName}\"",
     "declined": "❌ הבקשה של {userName} לרשימה \"{listName}\" נדחתה",
     "listReminder": "{senderName} מזכיר לך לעדכן את \"{listName}\"",
+    "itemReminder": "תזכורת: \"{itemText}\" ברשימה \"{listName}\"",
+    "itemReminderShared": "{senderName} מזכיר לך: \"{itemText}\" ברשימה \"{listName}\"",
     "openList": "פתח רשימה"
+  },
+  "reminder": {
+    "title": "הגדר תזכורת",
+    "in30min": "עוד 30 דק׳",
+    "in1hour": "עוד שעה",
+    "in3hours": "עוד 3 שעות",
+    "tomorrow9am": "מחר ב-9:00",
+    "customTime": "בחר תאריך ושעה",
+    "justMe": "רק לי",
+    "everyone": "לכולם",
+    "once": "פעם אחת",
+    "daily": "יומי",
+    "weekly": "שבועי",
+    "monthly": "חודשי",
+    "set": "הגדר",
+    "cancel": "בטל תזכורת",
+    "active": "תזכורת: {time}",
+    "sent": "תזכורת הוגדרה!",
+    "cancelled": "תזכורת בוטלה",
+    "snoozed": "נדחתה ל-{time}",
+    "done": "בוצע",
+    "snooze": "דחה"
   }
 }

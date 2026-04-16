@@ -218,6 +218,36 @@ export async function sendListReminder(
   }
 }
 
+export async function sendItemReminder(
+  telegramId: number,
+  language: string,
+  itemText: string,
+  listName: string,
+  listId: string,
+  reminderId: string,
+  senderName?: string
+) {
+  const msgKey = senderName ? "bot.itemReminderShared" : "bot.itemReminder";
+  let text = getMsg(language, msgKey)
+    .replace("{itemText}", itemText)
+    .replace("{listName}", listName);
+  if (senderName) text = text.replace("{senderName}", senderName);
+
+  await bot.sendMessage(telegramId, text, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: `\u2705 ${getMsg(language, "reminder.done")}`, callback_data: `reminder_done:${reminderId}` },
+          { text: `\u23F0 ${getMsg(language, "reminder.snooze")}`, callback_data: `reminder_snooze:${reminderId}` },
+        ],
+        [
+          { text: getMsg(language, "bot.openList"), web_app: { url: `${getAppUrl()}/list/${listId}` } },
+        ],
+      ],
+    },
+  });
+}
+
 // Handle approval/decline callbacks (called directly from webhook route)
 export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<void> {
   const data = query.data;
@@ -308,6 +338,149 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         isApprove
           ? getMsg(ownerLang, "bot.approved").replace("{userName}", requesterName).replace("{listName}", listName)
           : getMsg(ownerLang, "bot.declined").replace("{userName}", requesterName).replace("{listName}", listName),
+        {
+          chat_id: query.message!.chat.id,
+          message_id: query.message!.message_id,
+        }
+      );
+    } catch (e) {
+      console.error("[Bot] Failed to edit message:", e);
+    }
+  } else if (data.startsWith("reminder_done:")) {
+    const reminderId = data.replace("reminder_done:", "");
+
+    // Look up the reminder
+    const { data: reminder } = await supabase
+      .from("item_reminders")
+      .select("id, item_id, list_id")
+      .eq("id", reminderId)
+      .single();
+
+    if (!reminder) {
+      await bot.answerCallbackQuery(query.id, { text: "Reminder not found." });
+      return;
+    }
+
+    // Get item text for the confirmation message
+    const { data: item } = await supabase
+      .from("items")
+      .select("text")
+      .eq("id", reminder.item_id)
+      .single();
+
+    const itemText = item?.text || "Item";
+
+    // Mark item as completed
+    await supabase
+      .from("items")
+      .update({ completed: true, completed_at: new Date().toISOString() })
+      .eq("id", reminder.item_id);
+
+    // Cancel the reminder
+    await supabase
+      .from("item_reminders")
+      .update({ cancelled_at: new Date().toISOString() })
+      .eq("id", reminderId);
+
+    await bot.answerCallbackQuery(query.id, { text: "Done!" });
+
+    try {
+      await bot.editMessageText(
+        `\u2705 ${itemText} \u2014 done`,
+        {
+          chat_id: query.message!.chat.id,
+          message_id: query.message!.message_id,
+        }
+      );
+    } catch (e) {
+      console.error("[Bot] Failed to edit message:", e);
+    }
+  } else if (data.match(/^reminder_snooze:[^:]+$/)) {
+    // Show snooze time buttons
+    const reminderId = data.replace("reminder_snooze:", "");
+
+    await bot.answerCallbackQuery(query.id);
+
+    try {
+      await bot.editMessageReplyMarkup(
+        {
+          inline_keyboard: [
+            [
+              { text: "30 min", callback_data: `reminder_snooze:${reminderId}:30m` },
+              { text: "1 hour", callback_data: `reminder_snooze:${reminderId}:1h` },
+            ],
+            [
+              { text: "3 hours", callback_data: `reminder_snooze:${reminderId}:3h` },
+              { text: "Tomorrow", callback_data: `reminder_snooze:${reminderId}:tomorrow` },
+            ],
+          ],
+        },
+        {
+          chat_id: query.message!.chat.id,
+          message_id: query.message!.message_id,
+        }
+      );
+    } catch (e) {
+      console.error("[Bot] Failed to edit message:", e);
+    }
+  } else if (data.match(/^reminder_snooze:[^:]+:(30m|1h|3h|tomorrow)$/)) {
+    const parts = data.split(":");
+    const reminderId = parts[1];
+    const duration = parts[2];
+
+    // Look up the reminder to get the original remind_at
+    const { data: reminder } = await supabase
+      .from("item_reminders")
+      .select("id, remind_at")
+      .eq("id", reminderId)
+      .single();
+
+    if (!reminder) {
+      await bot.answerCallbackQuery(query.id, { text: "Reminder not found." });
+      return;
+    }
+
+    const originalTime = new Date(reminder.remind_at);
+    let newRemindAt: Date;
+
+    switch (duration) {
+      case "30m":
+        newRemindAt = new Date(originalTime.getTime() + 30 * 60 * 1000);
+        break;
+      case "1h":
+        newRemindAt = new Date(originalTime.getTime() + 60 * 60 * 1000);
+        break;
+      case "3h":
+        newRemindAt = new Date(originalTime.getTime() + 3 * 60 * 60 * 1000);
+        break;
+      case "tomorrow":
+        newRemindAt = new Date(originalTime);
+        newRemindAt.setDate(newRemindAt.getDate() + 1);
+        break;
+      default:
+        newRemindAt = new Date(originalTime.getTime() + 30 * 60 * 1000);
+    }
+
+    // Update reminder: new remind_at, clear sent_at
+    await supabase
+      .from("item_reminders")
+      .update({ remind_at: newRemindAt.toISOString(), sent_at: null })
+      .eq("id", reminderId);
+
+    const formattedTime = newRemindAt.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    await bot.answerCallbackQuery(query.id, {
+      text: `Snoozed until ${formattedTime}`,
+    });
+
+    try {
+      await bot.editMessageText(
+        `\u23F0 Snoozed until ${formattedTime}`,
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,

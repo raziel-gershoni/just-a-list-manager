@@ -436,5 +436,63 @@ export function useItemHandlers({
     }
   }, [jwtRef, listId, t, setReminderToast]);
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind };
+  const handleSetReminder = useCallback(
+    async (itemId: string, remindAt: string, isSharedReminder: boolean, recurrence?: string) => {
+      const jwt = jwtRef.current;
+      if (!jwt) return;
+      try {
+        const res = await fetch(`/api/lists/${listId}/items/${itemId}/reminder`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ remind_at: remindAt, is_shared: isSharedReminder, recurrence }),
+        });
+        if (!res.ok) throw new Error(`Set reminder failed: ${res.status}`);
+        const data = await res.json();
+        // Update local state with the reminder info
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === itemId
+              ? { ...i, my_remind_at: data.remind_at, my_reminder_id: data.id, my_reminder_shared: data.is_shared, my_reminder_recurrence: data.recurrence }
+              : i
+          )
+        );
+        setReminderToast(t("reminder.sent"));
+        setTimeout(() => setReminderToast(null), 2500);
+      } catch (e) {
+        console.error("[List] Set reminder error:", e);
+      }
+    },
+    [jwtRef, listId, t, setItems, setReminderToast]
+  );
+
+  const handleCancelReminder = useCallback(
+    async (itemId: string, reminderId: string) => {
+      const jwt = jwtRef.current;
+      if (!jwt) return;
+      try {
+        const res = await fetch(`/api/lists/${listId}/items/${itemId}/reminder/${reminderId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+        if (!res.ok) throw new Error(`Cancel reminder failed: ${res.status}`);
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === itemId
+              ? { ...i, my_remind_at: null, my_reminder_id: null, my_reminder_shared: false, my_reminder_recurrence: null }
+              : i
+          )
+        );
+        setReminderToast(t("reminder.cancelled"));
+        setTimeout(() => setReminderToast(null), 2500);
+      } catch (e) {
+        console.error("[List] Cancel reminder error:", e);
+      }
+    },
+    [jwtRef, listId, t, setItems, setReminderToast]
+  );
+
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleCancelReminder };
 }
