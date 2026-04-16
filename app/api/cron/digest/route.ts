@@ -43,8 +43,8 @@ export async function GET(request: NextRequest) {
       if (localHour === null) continue;
 
       let digestType: "morning" | "evening" | null = null;
-      if (localHour === 8) digestType = "morning";
-      else if (localHour === 21) digestType = "evening";
+      if (localHour === 7) digestType = "morning";
+      else if (localHour === 19) digestType = "evening";
       else continue;
 
       // Get the relevant date range in UTC for the user's local day
