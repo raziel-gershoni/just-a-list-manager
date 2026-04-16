@@ -248,6 +248,29 @@ export async function sendItemReminder(
   });
 }
 
+export async function sendReminderDigest(
+  telegramId: number,
+  language: string,
+  digestType: "morning" | "evening",
+  items: { text: string; listName: string; time: string }[]
+) {
+  const header = getMsg(language, digestType === "morning" ? "bot.digestMorning" : "bot.digestEvening");
+  const lines = items.map((i) => `• ${i.time} — ${i.text} (${i.listName})`);
+  const text = `${header}\n\n${lines.join("\n")}`;
+
+  try {
+    await bot.sendMessage(telegramId, text, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: getMsg(language, "bot.openApp"), web_app: { url: getAppUrl() } }],
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("[Bot] Failed to send reminder digest:", error);
+  }
+}
+
 // Handle approval/decline callbacks (called directly from webhook route)
 export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<void> {
   const data = query.data;

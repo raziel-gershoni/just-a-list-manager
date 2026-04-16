@@ -150,7 +150,10 @@
     "listReminder": "{senderName} is reminding you to update \"{listName}\"",
     "itemReminder": "Reminder: \"{itemText}\" on your list \"{listName}\"",
     "itemReminderShared": "{senderName} reminds you: \"{itemText}\" on \"{listName}\"",
-    "openList": "Open List"
+    "openList": "Open List",
+    "openApp": "Open App",
+    "digestMorning": "Good morning! Here are today's reminders:",
+    "digestEvening": "Heads up — tomorrow's reminders:"
   },
   "reminder": {
     "title": "Set reminder",

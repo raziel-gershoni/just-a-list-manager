@@ -150,7 +150,10 @@
     "listReminder": "{senderName} מזכיר לך לעדכן את \"{listName}\"",
     "itemReminder": "תזכורת: \"{itemText}\" ברשימה \"{listName}\"",
     "itemReminderShared": "{senderName} מזכיר לך: \"{itemText}\" ברשימה \"{listName}\"",
-    "openList": "פתח רשימה"
+    "openList": "פתח רשימה",
+    "openApp": "פתח אפליקציה",
+    "digestMorning": "בוקר טוב! התזכורות שלך להיום:",
+    "digestEvening": "שים לב — התזכורות של מחר:"
   },
   "reminder": {
     "title": "הגדר תזכורת",

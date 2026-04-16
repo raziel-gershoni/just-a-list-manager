@@ -150,7 +150,10 @@
     "listReminder": "{senderName} напоминает вам обновить \"{listName}\"",
     "itemReminder": "Напоминание: \"{itemText}\" в списке \"{listName}\"",
     "itemReminderShared": "{senderName} напоминает: \"{itemText}\" в \"{listName}\"",
-    "openList": "Открыть список"
+    "openList": "Открыть список",
+    "openApp": "Открыть приложение",
+    "digestMorning": "Доброе утро! Напоминания на сегодня:",
+    "digestEvening": "Напоминания на завтра:"
   },
   "reminder": {
     "title": "Установить напоминание",
