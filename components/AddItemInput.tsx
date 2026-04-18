@@ -130,7 +130,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
   }, []);
 
   return (
-    <div className="z-10 bg-tg-bg border-b border-border p-3">
+    <div className="z-10 bg-tg-bg border-b border-separator px-5 py-3.5">
       <div className="relative">
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -144,7 +144,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
                 if (suggestions.length > 0) setShowSuggestions(true);
               }}
               placeholder={t('items.addPlaceholder')}
-              className="w-full px-4 py-2.5 rounded-xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint outline-none text-base"
+              className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-[15px] focus:ring-2 focus:ring-tg-button/20"
             />
             {isSearching && (
               <Loader2 className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tg-hint animate-spin" />
@@ -153,7 +153,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
           <button
             onClick={handleSubmit}
             disabled={!value.trim()}
-            className="px-4 py-2.5 rounded-xl bg-tg-button text-tg-button-text font-medium disabled:opacity-40 active:opacity-80 transition-opacity"
+            className="px-4 py-3 rounded-2xl bg-tg-button text-tg-button-text font-medium disabled:opacity-30 active:scale-95"
           >
             <Plus className="w-5 h-5" />
           </button>
@@ -161,15 +161,15 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
 
         {/* Autocomplete suggestions */}
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute top-full start-0 end-0 mt-1 bg-tg-section-bg rounded-xl shadow-lg border border-border overflow-hidden z-20">
+          <div className="absolute top-full start-0 end-0 mt-2 bg-tg-section-bg rounded-2xl shadow-xl shadow-black/8 dark:shadow-black/25 border border-border/50 overflow-hidden z-20">
             {suggestions.map((item) => (
               <button
                 key={item.id}
                 onClick={() => handleSuggestionClick(item)}
-                className="w-full px-4 py-3 text-start text-tg-text hover:bg-tg-secondary-bg active:bg-tg-secondary-bg transition-colors border-b border-border last:border-b-0"
+                className="w-full px-4 py-3.5 text-start text-tg-text active:bg-tg-secondary-bg transition-colors border-b border-separator last:border-b-0"
               >
                 {item.text}
-                <span className="text-xs text-tg-hint ms-2">{t('items.recycled')}</span>
+                <span className="text-[11px] text-tg-hint/70 ms-2 tracking-wide">{t('items.recycled')}</span>
               </button>
             ))}
           </div>

@@ -38,7 +38,7 @@ export default function SkippedItemsSection({
     <>
       <button
         onClick={() => setShowSkipped((p) => { localStorage.setItem("panel_skipped", String(!p)); return !p; })}
-        className="flex items-center gap-2 w-full px-4 py-3 text-sm text-tg-hint bg-tg-secondary-bg border-t border-tg-hint/20"
+        className="flex items-center gap-2.5 w-full px-5 py-3.5 text-[13px] font-medium tracking-wide text-tg-hint bg-tg-secondary-bg/80 backdrop-blur-md border-t border-separator"
       >
         {showSkipped ? (
           <ChevronDown className="w-4 h-4" />

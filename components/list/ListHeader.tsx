@@ -16,26 +16,26 @@ export default function ListHeader({ listName, isShared, onRemind, onShare }: Li
   const t = useTranslations();
 
   return (
-    <header className="flex items-center gap-3 p-4 pb-0">
-      <button onClick={() => router.push("/")} className="p-1">
+    <header className="flex items-center gap-3 px-5 py-4 pb-2">
+      <button onClick={() => router.push("/")} className="p-2 rounded-full active:bg-tg-secondary-bg">
         <ArrowLeft className="w-5 h-5 text-tg-text rtl:scale-x-[-1]" />
       </button>
       <div className="flex-1 min-w-0">
-        <h1 className="text-lg font-bold text-tg-text truncate">{listName}</h1>
+        <h1 className="text-xl font-bold tracking-tight text-tg-text truncate">{listName}</h1>
         {isShared && (
-          <p className="text-xs text-tg-hint flex items-center gap-1">
+          <p className="text-[11px] tracking-wide text-tg-hint flex items-center gap-1.5">
             <Users className="w-3 h-3" />
             {t('lists.shared')}
           </p>
         )}
       </div>
       {isShared && (
-        <button onClick={onRemind} className="p-1">
-          <Send className="w-5 h-5 text-tg-hint" />
+        <button onClick={onRemind} className="p-2 rounded-full active:bg-tg-secondary-bg">
+          <Send className="w-5 h-5 text-tg-hint/80" />
         </button>
       )}
-      <button onClick={onShare} className="p-1">
-        <Share2 className="w-5 h-5 text-tg-hint" />
+      <button onClick={onShare} className="p-2 rounded-full active:bg-tg-secondary-bg">
+        <Share2 className="w-5 h-5 text-tg-hint/80" />
       </button>
     </header>
   );

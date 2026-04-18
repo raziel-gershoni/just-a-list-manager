@@ -136,12 +136,12 @@ function ListContent() {
 
   if (loading) {
     return (
-      <div className="p-4 space-y-3">
-        <div className="h-12 bg-tg-secondary-bg rounded-xl animate-pulse" />
+      <div className="px-5 pt-3 space-y-3">
+        <div className="h-14 bg-tg-secondary-bg rounded-2xl skeleton-shimmer" />
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="h-12 bg-tg-secondary-bg rounded-xl animate-pulse"
+            className="h-14 bg-tg-secondary-bg rounded-2xl skeleton-shimmer"
           />
         ))}
       </div>

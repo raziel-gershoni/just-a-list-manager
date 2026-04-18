@@ -57,14 +57,14 @@ function LoginContent() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-6">
       <div className="text-center max-w-sm">
-        <h1 className="text-3xl font-bold text-foreground mb-2">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground mb-3">
           {t("login.title")}
         </h1>
-        <p className="text-muted-foreground mb-8">{t("login.subtitle")}</p>
+        <p className="text-muted-foreground/80 mb-10 text-[15px] leading-relaxed">{t("login.subtitle")}</p>
 
         <button
           onClick={handleTelegramLogin}
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-medium text-base cursor-pointer"
+          className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl text-white font-medium text-base cursor-pointer shadow-lg shadow-[#54a9eb]/20 active:scale-[0.97]"
           style={{ backgroundColor: "#54a9eb" }}
         >
           <svg
@@ -78,7 +78,7 @@ function LoginContent() {
           {t("login.loginWithTelegram")}
         </button>
 
-        <p className="text-muted-foreground text-sm mt-6">
+        <p className="text-muted-foreground/70 text-sm mt-8">
           {t("login.orOpenBot")}{" "}
           <a
             href="https://t.me/justalistmanagerbot"

@@ -27,28 +27,28 @@ export default function ToastContainer({
     <>
       {/* Error toast */}
       {errorToast && !undoAction && (
-        <div className="fixed bottom-6 start-4 end-4 bg-tg-destructive text-white rounded-xl py-3 px-4 z-30 shadow-lg">
+        <div className="fixed bottom-8 start-5 end-5 bg-tg-destructive text-white rounded-2xl py-3.5 px-5 z-30 shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <span className="text-sm">{errorToast}</span>
         </div>
       )}
 
       {/* Reminder toast */}
       {reminderToast && !undoAction && !errorToast && (
-        <div className="fixed bottom-6 start-4 end-4 bg-tg-button text-tg-button-text rounded-xl py-3 px-4 z-30 shadow-lg">
+        <div className="fixed bottom-8 start-5 end-5 bg-tg-button text-tg-button-text rounded-2xl py-3.5 px-5 z-30 shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <span className="text-sm">{reminderToast}</span>
         </div>
       )}
 
       {/* Duplicate warning toast */}
       {duplicateWarning && !undoAction && !reminderToast && !errorToast && (
-        <div className="fixed bottom-6 start-4 end-4 bg-amber-500 text-white rounded-xl py-3 px-4 z-30 shadow-lg">
+        <div className="fixed bottom-8 start-5 end-5 bg-amber-500/90 text-white rounded-2xl py-3.5 px-5 z-30 shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <span className="text-sm">{duplicateWarning}</span>
         </div>
       )}
 
       {/* Undo toast */}
       {undoAction && (
-        <div className="fixed bottom-6 start-4 end-4 bg-foreground text-background rounded-xl py-3 px-4 flex items-center justify-between z-30 shadow-lg">
+        <div className="fixed bottom-8 start-5 end-5 bg-foreground/95 text-background rounded-2xl py-3.5 px-5 flex items-center justify-between z-30 shadow-xl shadow-black/10 dark:shadow-black/30 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-300">
           <span className="text-sm">{undoAction.message}</span>
           <button
             onClick={undoAction.undo}

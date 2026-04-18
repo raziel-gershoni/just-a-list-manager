@@ -30,11 +30,11 @@ export default function ListCard({
   return (
     <button
       onClick={onClick}
-      className="w-full bg-tg-section-bg rounded-xl p-4 flex items-center gap-3 active:opacity-80 transition-opacity text-start"
+      className="w-full bg-tg-section-bg rounded-2xl px-5 py-4 flex items-center gap-3 active:scale-[0.98] transition-all duration-150 text-start border border-border/50"
     >
       <div className="flex-1 min-w-0">
-        <h3 className="font-medium text-tg-text truncate">{name}</h3>
-        <p className="text-sm text-tg-hint mt-0.5">
+        <h3 className="font-semibold text-tg-text truncate">{name}</h3>
+        <p className="text-[13px] text-tg-hint mt-1 tracking-wide">
           {completedCount > 0
             ? t('activeCount', { active: activeCount, total })
             : `${activeCount}`}
@@ -45,24 +45,24 @@ export default function ListCard({
           <span
             role="button"
             onClick={(e) => { e.stopPropagation(); onEdit(); }}
-            className="p-1.5 rounded-lg active:bg-tg-secondary-bg transition-colors"
+            className="p-2 rounded-full active:bg-tg-secondary-bg transition-colors"
           >
-            <Pencil className="w-3.5 h-3.5 text-tg-hint" />
+            <Pencil className="w-4 h-4 text-tg-hint" />
           </span>
         )}
         {onDelete && (
           <span
             role="button"
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="p-1.5 rounded-lg active:bg-tg-secondary-bg transition-colors"
+            className="p-2 rounded-full active:bg-tg-secondary-bg transition-colors"
           >
-            <Trash2 className="w-3.5 h-3.5 text-tg-hint" />
+            <Trash2 className="w-4 h-4 text-tg-hint" />
           </span>
         )}
         {isShared && (
           <Users className="w-4 h-4 text-tg-hint" />
         )}
-        <ChevronRight className="w-5 h-5 text-tg-hint rtl:scale-x-[-1]" />
+        <ChevronRight className="w-4 h-4 text-tg-hint opacity-40 rtl:scale-x-[-1]" />
       </div>
     </button>
   );

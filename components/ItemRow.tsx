@@ -85,19 +85,19 @@ export default function ItemRow({
   };
 
   return (
-    <div className="flex items-center gap-3 py-3 px-4 bg-tg-bg">
+    <div className="flex items-center gap-3 py-3.5 px-5 border-b border-separator">
       <button
         onClick={(e) => {
           e.stopPropagation();
           handleToggle();
         }}
-        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+        className={`w-[22px] h-[22px] rounded-full flex items-center justify-center shrink-0 transition-all duration-200 ${
           completed
-            ? "bg-tg-button border-tg-button"
-            : "border-tg-hint"
+            ? "bg-tg-button border-[1.5px] border-tg-button"
+            : "border-[1.5px] border-tg-hint/60"
         }`}
       >
-        {completed && <Check className="w-4 h-4 text-tg-button-text" />}
+        {completed && <Check className="w-3.5 h-3.5 text-tg-button-text" />}
       </button>
 
       <div className={`flex-1 min-w-0 ${isPending ? "opacity-60" : ""} ${skipped ? "opacity-50" : ""}`}>
@@ -110,7 +110,7 @@ export default function ItemRow({
             onBlur={handleSave}
             onKeyDown={handleKeyDown}
             onPointerDown={(e) => e.stopPropagation()}
-            className="w-full bg-transparent text-tg-text outline-none border-b border-tg-button py-0.5"
+            className="w-full bg-transparent text-tg-text outline-none border-b-2 border-tg-button/60 py-1"
             maxLength={500}
           />
         ) : (
@@ -147,7 +147,7 @@ export default function ItemRow({
               )}
             </div>
             {((creatorName && !isOwnItem) || (editorName && !isOwnEdit)) && (
-              <p className="text-[11px] text-tg-hint truncate">
+              <p className="text-[11px] text-tg-hint tracking-wide truncate">
                 {creatorName && !isOwnItem && creatorName.split(" ")[0]}
                 {creatorName && !isOwnItem && editorName && !isOwnEdit && " · "}
                 {editorName && !isOwnEdit && (
@@ -174,12 +174,12 @@ export default function ItemRow({
             tg?.HapticFeedback?.impactOccurred("light");
             onSkip(id, !skipped);
           }}
-          className="p-1 shrink-0"
+          className="p-1.5 rounded-full shrink-0"
         >
           {skipped ? (
-            <RotateCcw className="w-4 h-4 text-tg-link" />
+            <RotateCcw className="w-[18px] h-[18px] text-tg-link" />
           ) : (
-            <CircleOff className="w-4 h-4 text-tg-hint" />
+            <CircleOff className="w-[18px] h-[18px] text-tg-hint" />
           )}
         </button>
       )}
@@ -190,9 +190,9 @@ export default function ItemRow({
             e.stopPropagation();
             onReminderTap(id);
           }}
-          className="p-1 shrink-0"
+          className="p-1.5 rounded-full shrink-0"
         >
-          <Bell className={`w-4 h-4 ${reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
+          <Bell className={`w-[18px] h-[18px] ${reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
         </button>
       )}
 
@@ -201,9 +201,9 @@ export default function ItemRow({
           e.stopPropagation();
           onDelete(id);
         }}
-        className="p-1 shrink-0"
+        className="p-1.5 rounded-full shrink-0"
       >
-        <X className="w-4 h-4 text-tg-hint" />
+        <X className="w-[18px] h-[18px] text-tg-hint/60 active:text-tg-destructive" />
       </button>
     </div>
   );

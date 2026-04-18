@@ -12,7 +12,7 @@ export default function OfflineIndicator() {
 
   if (connectionStatus === "auth_failed") {
     return (
-      <div className="flex items-center justify-center gap-2 py-1.5 px-3 bg-red-100 dark:bg-red-900/30">
+      <div className="flex items-center justify-center gap-2 py-2 px-4 bg-red-50 dark:bg-red-950/40">
         <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
         <span className="text-xs text-red-600 dark:text-red-400">{t('sessionExpired')}</span>
       </div>
@@ -24,7 +24,7 @@ export default function OfflineIndicator() {
     return (
       <button
         onClick={reconnect}
-        className="flex items-center justify-center gap-2 py-1.5 px-3 bg-tg-secondary-bg w-full"
+        className="flex items-center justify-center gap-2 py-2 px-4 bg-tg-secondary-bg/70 w-full"
       >
         <WifiOff className="w-3.5 h-3.5 text-tg-hint" />
         <span className="text-xs text-tg-hint">{t('connectionProblems')}</span>
@@ -33,7 +33,7 @@ export default function OfflineIndicator() {
   }
 
   return (
-    <div className="flex items-center justify-center gap-2 py-1.5 px-3 bg-tg-secondary-bg">
+    <div className="flex items-center justify-center gap-2 py-2 px-4 bg-tg-secondary-bg/70">
       <RefreshCw className="w-3.5 h-3.5 text-tg-hint animate-spin" />
       <span className="text-xs text-tg-hint">{t('syncing')}</span>
     </div>

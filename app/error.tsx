@@ -18,7 +18,7 @@ export default function Error({
       <p className="text-tg-hint mb-4">Something went wrong</p>
       <button
         onClick={reset}
-        className="px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
+        className="px-6 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium active:scale-[0.98]"
       >
         Try again
       </button>

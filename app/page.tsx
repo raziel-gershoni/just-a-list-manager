@@ -236,11 +236,11 @@ function HomeContent() {
 
   if (loading) {
     return (
-      <div className="p-4 space-y-3">
+      <div className="px-5 pt-3 space-y-3">
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-16 bg-tg-secondary-bg rounded-xl animate-pulse"
+            className="h-[72px] bg-tg-secondary-bg rounded-2xl skeleton-shimmer"
           />
         ))}
       </div>
@@ -253,7 +253,7 @@ function HomeContent() {
         <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
         <button
           onClick={fetchLists}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
+          className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium active:scale-[0.98]"
         >
           <RefreshCw className="w-4 h-4" />
           {t('common.retry')}
@@ -268,14 +268,14 @@ function HomeContent() {
         <div className="absolute top-4 end-4 z-10 flex items-center gap-1">
           <button
             onClick={() => setShowLanguage(true)}
-            className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+            className="p-2.5 rounded-full text-tg-hint active:bg-tg-secondary-bg active:scale-95"
           >
             <Globe className="w-5 h-5" />
           </button>
           {isWebApp && (
             <button
               onClick={handleLogout}
-              className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+              className="p-2.5 rounded-full text-tg-hint active:bg-tg-secondary-bg active:scale-95"
               title={t("common.logout")}
             >
               <LogOut className="w-5 h-5" />
@@ -308,19 +308,19 @@ function HomeContent() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <header className="p-4 pb-2 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-tg-text">{t('lists.title')}</h1>
+      <header className="px-5 py-5 pb-3 flex items-center justify-between">
+        <h1 className="text-2xl font-bold tracking-tight text-tg-text">{t('lists.title')}</h1>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowLanguage(true)}
-            className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+            className="p-2.5 rounded-full text-tg-hint active:bg-tg-secondary-bg active:scale-95"
           >
             <Globe className="w-5 h-5" />
           </button>
           {isWebApp && (
             <button
               onClick={handleLogout}
-              className="p-2 rounded-lg text-tg-hint active:opacity-60 transition-opacity"
+              className="p-2.5 rounded-full text-tg-hint active:bg-tg-secondary-bg active:scale-95"
               title={t("common.logout")}
             >
               <LogOut className="w-5 h-5" />
@@ -336,7 +336,7 @@ function HomeContent() {
         homeScreenStatus !== null &&
         homeScreenStatus !== "added" &&
         homeScreenStatus !== "unsupported" && (
-          <div className="mx-4 mt-2 flex items-center gap-3 rounded-xl bg-tg-secondary-bg px-4 py-3">
+          <div className="mx-5 mt-3 flex items-center gap-3 rounded-2xl bg-tg-secondary-bg px-5 py-4 border border-border/30">
             <Smartphone className="w-5 h-5 text-tg-button shrink-0" />
             <span className="flex-1 text-sm text-tg-text">
               {t('lists.addToHomeScreen')}
@@ -362,7 +362,7 @@ function HomeContent() {
           </div>
         )}
 
-      <div className="flex-1 p-4 pt-2 space-y-2">
+      <div className="flex-1 px-5 pt-3 pb-24 space-y-3">
         {lists.map((list) => (
           <ListCard
             key={list.id}
@@ -382,7 +382,7 @@ function HomeContent() {
       {/* FAB to create new list */}
       <button
         onClick={() => setShowCreate(true)}
-        className="fixed bottom-6 end-6 w-14 h-14 rounded-full bg-tg-button text-tg-button-text shadow-lg flex items-center justify-center active:opacity-80 transition-opacity z-20"
+        className="fixed bottom-8 end-6 w-14 h-14 rounded-full bg-tg-button text-tg-button-text shadow-xl shadow-tg-button/25 flex items-center justify-center active:scale-90 transition-all duration-200 z-20"
       >
         <Plus className="w-6 h-6" />
       </button>
@@ -422,7 +422,7 @@ function HomeContent() {
 
       {/* Undo toast */}
       {undoAction && (
-        <div className="fixed bottom-6 start-4 end-4 bg-foreground text-background rounded-xl py-3 px-4 flex items-center justify-between z-30 shadow-lg">
+        <div className="fixed bottom-8 start-5 end-5 bg-foreground text-background rounded-2xl py-3.5 px-5 flex items-center justify-between z-30 shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <span className="text-sm">{undoAction.message}</span>
           <button
             onClick={undoAction.undo}
@@ -451,9 +451,10 @@ function CreateListSheet({
 }) {
   const t = useTranslations();
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose}>
-      <div className="bg-tg-bg w-full max-w-lg rounded-t-2xl p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold text-tg-text mb-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter" onClick={onClose}>
+      <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter" onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
+        <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">
           {t('lists.newList')}
         </h2>
         <input
@@ -466,19 +467,19 @@ function CreateListSheet({
           placeholder={t('lists.newListPlaceholder')}
           autoFocus
           maxLength={100}
-          className="w-full px-4 py-3 rounded-xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint outline-none text-base mb-4"
+          className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-base mb-4 focus:ring-2 focus:ring-tg-button/20"
         />
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl bg-tg-secondary-bg text-tg-text font-medium"
+            className="flex-1 py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
           >
             {t('common.cancel')}
           </button>
           <button
             onClick={onSubmit}
             disabled={!value.trim() || creating}
-            className="flex-1 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium disabled:opacity-40"
+            className="flex-1 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium disabled:opacity-40 active:scale-[0.98]"
           >
             {creating ? t('common.creating') : t('common.create')}
           </button>
@@ -503,9 +504,10 @@ function RenameListSheet({
 }) {
   const t = useTranslations();
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose}>
-      <div className="bg-tg-bg w-full max-w-lg rounded-t-2xl p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold text-tg-text mb-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter" onClick={onClose}>
+      <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter" onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
+        <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">
           {t('lists.rename')}
         </h2>
         <input
@@ -518,19 +520,19 @@ function RenameListSheet({
           placeholder={t('lists.newListPlaceholder')}
           autoFocus
           maxLength={100}
-          className="w-full px-4 py-3 rounded-xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint outline-none text-base mb-4"
+          className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-base mb-4 focus:ring-2 focus:ring-tg-button/20"
         />
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl bg-tg-secondary-bg text-tg-text font-medium"
+            className="flex-1 py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
           >
             {t('common.cancel')}
           </button>
           <button
             onClick={onSubmit}
             disabled={!value.trim() || renaming}
-            className="flex-1 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium disabled:opacity-40"
+            className="flex-1 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium disabled:opacity-40 active:scale-[0.98]"
           >
             {t('common.save')}
           </button>
@@ -557,9 +559,10 @@ function LanguageSheet({
 }) {
   const t = useTranslations();
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose}>
-      <div className="bg-tg-bg w-full max-w-lg rounded-t-2xl p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold text-tg-text mb-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter" onClick={onClose}>
+      <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter" onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
+        <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">
           {t("settings.language")}
         </h2>
         <div className="space-y-1">
@@ -567,7 +570,7 @@ function LanguageSheet({
             <button
               key={opt.value}
               onClick={() => onSelect(opt.value)}
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-tg-text active:bg-tg-secondary-bg transition-colors"
+              className="w-full flex items-center justify-between px-4 py-3 rounded-2xl text-tg-text active:bg-tg-secondary-bg transition-colors"
             >
               <span className="text-base">{t(opt.labelKey)}</span>
               {currentLocale === opt.value && (
@@ -578,7 +581,7 @@ function LanguageSheet({
         </div>
         <button
           onClick={onClose}
-          className="w-full mt-4 py-3 rounded-xl bg-tg-secondary-bg text-tg-text font-medium"
+          className="w-full mt-4 py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
         >
           {t("common.close")}
         </button>

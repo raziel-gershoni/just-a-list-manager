@@ -102,7 +102,7 @@ function InviteContent() {
   if (status === "error") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center mb-4">
+        <div className="w-16 h-16 rounded-2xl bg-red-50 dark:bg-red-950/50 flex items-center justify-center mb-4">
           <span className="text-2xl">!</span>
         </div>
         <h2 className="text-lg font-semibold text-tg-text mb-2">
@@ -111,7 +111,7 @@ function InviteContent() {
         <p className="text-tg-hint mb-6">{errorMessage}</p>
         <button
           onClick={() => router.push("/")}
-          className="px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
+          className="px-6 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium active:scale-[0.98]"
         >
           {t('common.goHome')}
         </button>
@@ -129,12 +129,12 @@ function InviteContent() {
         {listName && (
           <p className="text-tg-text mb-1 font-medium">{listName}</p>
         )}
-        <p className="text-tg-hint mb-8">
+        <p className="text-tg-hint mb-10">
           {t('share.waitingDescription')}
         </p>
         <button
           onClick={cancelRequest}
-          className="px-6 py-3 rounded-xl bg-tg-secondary-bg text-tg-text font-medium"
+          className="px-6 py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
         >
           {t('share.cancelRequest')}
         </button>

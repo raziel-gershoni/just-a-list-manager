@@ -56,7 +56,7 @@ export default function SortableItem({
   return (
     <div
       ref={ref}
-      className={`touch-pan-y select-none ${isDragSource ? "opacity-50" : ""}`}
+      className={`touch-pan-y select-none ${isDragSource ? "opacity-50 scale-[1.02] shadow-lg rounded-xl" : ""}`}
     >
       <ItemRow
         id={id}

@@ -102,35 +102,36 @@ export default function ShareDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
-      <div className="bg-tg-bg w-full max-w-lg rounded-t-2xl p-6 max-h-[80vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter">
+      <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 max-h-[80vh] overflow-y-auto sheet-enter">
+        <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-tg-text">
+          <h2 className="text-lg font-semibold tracking-tight text-tg-text">
             {t('title')} &ldquo;{listName}&rdquo;
           </h2>
-          <button onClick={onClose} className="p-1">
+          <button onClick={onClose} className="p-2 rounded-full active:bg-tg-secondary-bg">
             <X className="w-5 h-5 text-tg-hint" />
           </button>
         </div>
 
-        {/* Permission selector */}
-        <div className="flex gap-2 mb-4">
+        {/* Permission selector — segmented control */}
+        <div className="flex bg-tg-secondary-bg rounded-2xl p-1 mb-4">
           <button
             onClick={() => setPermission("edit")}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
               permission === "edit"
-                ? "bg-tg-button text-tg-button-text"
-                : "bg-tg-secondary-bg text-tg-hint"
+                ? "bg-tg-button text-tg-button-text shadow-sm"
+                : "text-tg-hint"
             }`}
           >
             {t('editPerm')}
           </button>
           <button
             onClick={() => setPermission("view")}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
               permission === "view"
-                ? "bg-tg-button text-tg-button-text"
-                : "bg-tg-secondary-bg text-tg-hint"
+                ? "bg-tg-button text-tg-button-text shadow-sm"
+                : "text-tg-hint"
             }`}
           >
             {t('view')}
@@ -140,12 +141,12 @@ export default function ShareDialog({
         {/* Generate or show link */}
         {inviteLink ? (
           <div className="flex gap-2 mb-6">
-            <div className="flex-1 bg-tg-secondary-bg rounded-lg px-3 py-2 text-sm text-tg-text truncate">
+            <div className="flex-1 bg-tg-secondary-bg rounded-xl px-4 py-3 text-sm text-tg-text truncate">
               {inviteLink}
             </div>
             <button
               onClick={copyLink}
-              className="px-3 py-2 rounded-lg bg-tg-button text-tg-button-text"
+              className="px-3 py-3 rounded-xl bg-tg-button text-tg-button-text"
             >
               {copied ? (
                 <Check className="w-4 h-4" />
@@ -158,7 +159,7 @@ export default function ShareDialog({
           <button
             onClick={generateLink}
             disabled={loading}
-            className="w-full py-3 rounded-xl bg-tg-button text-tg-button-text font-medium mb-6 flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium mb-6 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98]"
           >
             <Link2 className="w-4 h-4" />
             {t('generateLink')}
@@ -175,7 +176,7 @@ export default function ShareDialog({
               {collaborators.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between py-2 px-3 bg-tg-secondary-bg rounded-lg"
+                  className="flex items-center justify-between py-3 px-4 bg-tg-secondary-bg rounded-xl"
                 >
                   <div>
                     <span className="text-sm text-tg-text">
@@ -190,7 +191,7 @@ export default function ShareDialog({
                     </span>
                   </div>
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${
+                    className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                       c.status === "approved"
                         ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
                         : c.status === "pending"

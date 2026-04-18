@@ -46,7 +46,7 @@ export default function CompletedItemsSection({
           }
         }}
         onClick={() => setShowCompleted((p) => { localStorage.setItem("panel_completed", String(!p)); return !p; })}
-        className="sticky top-0 z-20 flex items-center gap-2 w-full px-4 py-3 text-sm text-tg-hint bg-tg-secondary-bg border-t border-tg-hint/20"
+        className="sticky top-0 z-20 flex items-center gap-2.5 w-full px-5 py-3.5 text-[13px] font-medium tracking-wide text-tg-hint bg-tg-secondary-bg/80 backdrop-blur-md border-t border-separator"
       >
         {showCompleted ? (
           <ChevronDown className="w-4 h-4" />
@@ -59,7 +59,7 @@ export default function CompletedItemsSection({
             e.stopPropagation();
             onClearCompleted();
           }}
-          className="ms-auto text-tg-destructive text-xs flex items-center gap-1"
+          className="ms-auto text-tg-destructive/80 text-[12px] font-medium tracking-wide flex items-center gap-1"
         >
           <Trash2 className="w-3 h-3" />
           {t('items.clearCompleted')}
@@ -68,7 +68,7 @@ export default function CompletedItemsSection({
       {showCompleted &&
         completedGroups.map((group) => (
           <div key={group.label}>
-            <div className="sticky z-10 px-4 pt-3 pb-1 text-xs text-tg-hint font-medium bg-tg-secondary-bg" style={{ top: 'var(--done-header-h, 44px)' }}>
+            <div className="sticky z-10 px-5 pt-4 pb-1.5 text-[11px] text-tg-hint/70 font-semibold tracking-widest uppercase bg-tg-secondary-bg/80 backdrop-blur-md" style={{ top: 'var(--done-header-h, 44px)' }}>
               {group.label}
             </div>
             {group.items.map((item) => (
