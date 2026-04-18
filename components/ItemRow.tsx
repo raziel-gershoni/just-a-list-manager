@@ -4,6 +4,20 @@ import { useState, useRef, useEffect } from "react";
 import { Bell, Check, CircleOff, Clock, Copy, Pencil, RotateCcw, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
+function formatShortTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (isToday) return time;
+  if (isTomorrow) return `Tom ${time}`;
+  return d.toLocaleDateString([], { weekday: "short" }) + ` ${time}`;
+}
+
 interface ItemRowProps {
   id: string;
   text: string;
@@ -190,9 +204,12 @@ export default function ItemRow({
             e.stopPropagation();
             onReminderTap(id);
           }}
-          className="p-1.5 rounded-full shrink-0"
+          className="p-1.5 rounded-full shrink-0 flex items-center gap-1"
         >
           <Bell className={`w-[18px] h-[18px] ${reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
+          {reminderAt && (
+            <span className="text-[11px] text-tg-link tracking-wide">{formatShortTime(reminderAt)}</span>
+          )}
         </button>
       )}
 

@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   // Lists where user is owner
   const { data: ownedLists } = await supabase
     .from("lists")
-    .select("id, name, owner_id, created_at, updated_at")
+    .select("id, name, owner_id, created_at, updated_at, reminders_enabled")
     .eq("owner_id", auth.userId)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
@@ -27,12 +27,12 @@ export async function GET(request: NextRequest) {
     .eq("status", "approved");
 
   const collabListIds = (collabRecords || []).map((c) => c.list_id);
-  let collabLists: { id: string; name: string; owner_id: string; created_at: string; updated_at: string }[] = [];
+  let collabLists: { id: string; name: string; owner_id: string; created_at: string; updated_at: string; reminders_enabled: boolean }[] = [];
 
   if (collabListIds.length > 0) {
     const { data } = await supabase
       .from("lists")
-      .select("id, name, owner_id, created_at, updated_at")
+      .select("id, name, owner_id, created_at, updated_at, reminders_enabled")
       .in("id", collabListIds)
       .is("deleted_at", null)
       .order("updated_at", { ascending: false });
@@ -190,17 +190,17 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(restored);
   }
 
-  // Rename flow
-  const { name } = parsed.data;
+  // Update flow (name, reminders_enabled, etc.)
+  const { name, reminders_enabled } = parsed.data;
 
-  if (!name?.trim() || name.trim().length > 100) {
+  if (name !== undefined && (!name.trim() || name.trim().length > 100)) {
     return NextResponse.json(
       { error: "List name required (max 100 chars)" },
       { status: 400 }
     );
   }
 
-  // Only owner can rename
+  // Only owner can update list settings
   const { data: list } = await supabase
     .from("lists")
     .select("owner_id")
@@ -215,9 +215,17 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates.name = name.trim();
+  if (reminders_enabled !== undefined) updates.reminders_enabled = reminders_enabled;
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No updates provided" }, { status: 400 });
+  }
+
   const { data: updated, error } = await supabase
     .from("lists")
-    .update({ name: name.trim() })
+    .update(updates)
     .eq("id", id)
     .select()
     .single();

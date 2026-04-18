@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Send, Share2, Users } from "lucide-react";
+import { ArrowLeft, Send, Settings, Share2, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 
@@ -9,9 +9,10 @@ interface ListHeaderProps {
   isShared: boolean;
   onRemind: () => void;
   onShare: () => void;
+  onSettings: () => void;
 }
 
-export default function ListHeader({ listName, isShared, onRemind, onShare }: ListHeaderProps) {
+export default function ListHeader({ listName, isShared, onRemind, onShare, onSettings }: ListHeaderProps) {
   const router = useRouter();
   const t = useTranslations();
 
@@ -29,6 +30,9 @@ export default function ListHeader({ listName, isShared, onRemind, onShare }: Li
           </p>
         )}
       </div>
+      <button onClick={onSettings} className="p-2 rounded-full active:bg-tg-secondary-bg">
+        <Settings className="w-5 h-5 text-tg-hint/80" />
+      </button>
       {isShared && (
         <button onClick={onRemind} className="p-2 rounded-full active:bg-tg-secondary-bg">
           <Send className="w-5 h-5 text-tg-hint/80" />

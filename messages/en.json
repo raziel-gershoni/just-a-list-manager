@@ -131,7 +131,10 @@
     "language": "Language",
     "english": "English",
     "hebrew": "עברית",
-    "russian": "Русский"
+    "russian": "Русский",
+    "listSettings": "List Settings",
+    "reminders": "Reminders",
+    "remindersDescription": "Show reminder options for items"
   },
   "errors": {
     "unauthorized": "Unauthorized. Please reopen the app.",

@@ -131,7 +131,10 @@
     "language": "Язык",
     "english": "English",
     "hebrew": "עברית",
-    "russian": "Русский"
+    "russian": "Русский",
+    "listSettings": "Настройки списка",
+    "reminders": "Напоминания",
+    "remindersDescription": "Показывать опции напоминаний для элементов"
   },
   "errors": {
     "unauthorized": "Не авторизован. Пожалуйста, откройте приложение заново.",

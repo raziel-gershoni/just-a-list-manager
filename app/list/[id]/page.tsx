@@ -41,8 +41,9 @@ function ListContent() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, isShared, fetchItems, refreshItems } =
+  const { listName, setListName, items, setItems, loading, error, isShared, remindersEnabled, setRemindersEnabled, fetchItems, refreshItems } =
     useListData(listId, jwtRef);
+  const [showSettings, setShowSettings] = useState(false);
 
   const [showCompleted, setShowCompleted] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -170,6 +171,7 @@ function ListContent() {
         isShared={isShared}
         onRemind={handleRemind}
         onShare={() => setShowShare(true)}
+        onSettings={() => setShowSettings(true)}
       />
 
       <OfflineIndicator />
@@ -195,10 +197,10 @@ function ListContent() {
               onToggle={handleToggle}
               onDelete={handleDelete}
               onEdit={handleEditItem}
-              onSkip={handleSkip}
+              onSkip={item.my_remind_at ? undefined : handleSkip}
               onRemoveDuplicates={handleRemoveDuplicates}
-              reminderAt={item.my_remind_at}
-              onReminderTap={(id) => setReminderItem(id)}
+              reminderAt={remindersEnabled ? item.my_remind_at : undefined}
+              onReminderTap={remindersEnabled ? (id) => setReminderItem(id) : undefined}
             />
           ))}
         </DragDropProvider>
@@ -251,6 +253,44 @@ function ListContent() {
         isOpen={showShare}
         onClose={() => setShowShare(false)}
       />
+
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter" onClick={() => setShowSettings(false)}>
+          <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter" onClick={(e) => e.stopPropagation()}>
+            <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
+            <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">{t('settings.listSettings')}</h2>
+            <button
+              onClick={async () => {
+                const newValue = !remindersEnabled;
+                setRemindersEnabled(newValue);
+                const jwt = jwtRef.current;
+                if (jwt) {
+                  fetch("/api/lists", {
+                    method: "PATCH",
+                    headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: listId, reminders_enabled: newValue }),
+                  }).catch(() => {});
+                }
+              }}
+              className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl active:bg-tg-secondary-bg"
+            >
+              <div>
+                <span className="text-base text-tg-text">{t('settings.reminders')}</span>
+                <p className="text-[13px] text-tg-hint">{t('settings.remindersDescription')}</p>
+              </div>
+              <div className={`w-11 h-6 rounded-full relative transition-colors ${remindersEnabled ? "bg-tg-button" : "bg-tg-secondary-bg border border-border"}`}>
+                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${remindersEnabled ? "start-[22px]" : "start-0.5"}`} />
+              </div>
+            </button>
+            <button
+              onClick={() => setShowSettings(false)}
+              className="w-full mt-4 py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
+            >
+              {t('common.close')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {reminderItem && (() => {
         const item = items.find((i) => i.id === reminderItem);
