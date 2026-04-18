@@ -484,10 +484,12 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         newRemindAt = new Date(originalTime.getTime() + 30 * 60 * 1000);
     }
 
-    // Update reminder: new remind_at, clear sent_at
+    // Update reminder: new remind_at, clear sent_at, and clear recurrence
+    // (the next recurring instance was already created when this reminder fired,
+    // so the snoozed copy should be one-time only)
     await supabase
       .from("item_reminders")
-      .update({ remind_at: newRemindAt.toISOString(), sent_at: null })
+      .update({ remind_at: newRemindAt.toISOString(), sent_at: null, recurrence: null })
       .eq("id", reminderId);
 
     const formattedTime = newRemindAt.toLocaleString("en-US", {

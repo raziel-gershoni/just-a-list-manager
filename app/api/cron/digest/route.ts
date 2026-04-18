@@ -67,9 +67,10 @@ export async function GET(request: NextRequest) {
       const items = reminders.map((r) => {
         const item = r.items as unknown as { text: string };
         const list = r.lists as unknown as { name: string };
-        const time = new Date(r.remind_at).toLocaleTimeString("en-US", {
-          hour: "numeric",
+        const time = new Date(r.remind_at).toLocaleTimeString(user.language || "en", {
+          hour: "2-digit",
           minute: "2-digit",
+          hour12: false,
           timeZone: user.timezone,
         });
         return { text: item.text, listName: list.name, time };

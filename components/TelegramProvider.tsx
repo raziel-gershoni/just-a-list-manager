@@ -329,16 +329,20 @@ export default function TelegramProvider({
               const serverLocale = resolveLocale(userData2.language);
               applyLocale(serverLocale);
             }
-            // Sync timezone
+            // Sync timezone and language if changed
             try {
               const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-              if (tz && userData2?.timezone !== tz) {
+              const tgLang = resolveLocale(userData?.language_code);
+              const updates: Record<string, string> = {};
+              if (tz && userData2?.timezone !== tz) updates.timezone = tz;
+              if (tgLang && userData2?.language !== tgLang) updates.language = tgLang;
+              if (Object.keys(updates).length > 0) {
                 const currentToken = jwtRef.current;
                 if (currentToken) {
                   fetch("/api/user", {
                     method: "PATCH",
                     headers: { Authorization: `Bearer ${currentToken}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ timezone: tz }),
+                    body: JSON.stringify(updates),
                   }).catch(() => {});
                 }
               }
