@@ -98,6 +98,11 @@ export default function LoginPage() {
   const [locale, setLocale] = useState<SupportedLocale>("en");
 
   useEffect(() => {
+    // Apply dark mode from device preference
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      document.documentElement.classList.add("dark");
+    }
+
     let resolved: SupportedLocale | null = null;
     try {
       const cached = localStorage.getItem("app_locale");

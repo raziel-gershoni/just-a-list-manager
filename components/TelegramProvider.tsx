@@ -182,6 +182,13 @@ export default function TelegramProvider({
     if (!isTelegramMiniApp) {
       isWebAppRef.current = true;
 
+      // Apply dark mode from device preference
+      if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+
       // Web app flow: check for stored JWT
       const storedToken = localStorage.getItem("web_auth_token");
       if (!storedToken) {
