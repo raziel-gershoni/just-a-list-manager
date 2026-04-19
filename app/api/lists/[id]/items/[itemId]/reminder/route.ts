@@ -26,15 +26,7 @@ export async function POST(
   if (!parsed.success) return parsed.response;
 
   const remindAt = new Date(parsed.data.remind_at);
-  const now = new Date();
-  const oneYearFromNow = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
-
-  if (remindAt <= now) {
-    return NextResponse.json(
-      { error: "Reminder must be in the future" },
-      { status: 400 }
-    );
-  }
+  const oneYearFromNow = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
   if (remindAt > oneYearFromNow) {
     return NextResponse.json(

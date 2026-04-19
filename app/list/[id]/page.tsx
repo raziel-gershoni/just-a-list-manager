@@ -91,7 +91,7 @@ function ListContent() {
     jwtRef,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleCancelReminder } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -344,6 +344,7 @@ function ListContent() {
             isOpen={true}
             onClose={() => setReminderItem(null)}
             onSetReminder={handleSetReminder}
+            onUpdateReminder={handleUpdateReminder}
             onCancelReminder={handleCancelReminder}
             existingReminder={
               item.my_reminder_id

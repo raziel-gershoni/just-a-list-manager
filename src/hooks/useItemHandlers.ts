@@ -503,5 +503,36 @@ export function useItemHandlers({
     [jwtRef, listId, t, setItems, setReminderToast]
   );
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleCancelReminder };
+  const handleUpdateReminder = useCallback(
+    async (itemId: string, reminderId: string, updates: { recurrence?: string; is_shared?: boolean }) => {
+      const jwt = jwtRef.current;
+      if (!jwt) return;
+      try {
+        const res = await fetch(`/api/lists/${listId}/items/${itemId}/reminder/${reminderId}`, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+          body: JSON.stringify(updates),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          setReminderToast(err?.error || "Failed to update reminder");
+          setTimeout(() => setReminderToast(null), 3000);
+          return;
+        }
+        const data = await res.json();
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === itemId
+              ? { ...i, my_reminder_recurrence: data.recurrence, my_reminder_shared: data.is_shared }
+              : i
+          )
+        );
+      } catch (e) {
+        console.error("[List] Update reminder error:", e);
+      }
+    },
+    [jwtRef, listId, setItems, setReminderToast]
+  );
+
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder };
 }

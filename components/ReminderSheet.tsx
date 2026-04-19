@@ -12,6 +12,7 @@ interface ReminderSheetProps {
   isOpen: boolean;
   onClose: () => void;
   onSetReminder: (itemId: string, remindAt: string, isShared: boolean, recurrence?: string) => void;
+  onUpdateReminder?: (itemId: string, reminderId: string, updates: { recurrence?: string; is_shared?: boolean }) => void;
   onCancelReminder: (itemId: string, reminderId: string) => void;
   existingReminder?: { id: string; remind_at: string; is_shared: boolean; recurrence?: string } | null;
 }
@@ -24,6 +25,7 @@ export default function ReminderSheet({
   isOpen,
   onClose,
   onSetReminder,
+  onUpdateReminder,
   onCancelReminder,
   existingReminder,
 }: ReminderSheetProps) {
@@ -203,8 +205,8 @@ export default function ReminderSheet({
                 onClick={() => {
                   setRecurrence(opt.value);
                   // Auto-save recurrence change when editing an existing reminder
-                  if (existingReminder) {
-                    onSetReminder(itemId, existingReminder.remind_at, sharedReminder, opt.value);
+                  if (existingReminder && onUpdateReminder) {
+                    onUpdateReminder(itemId, existingReminder.id, { recurrence: opt.value });
                   }
                 }}
                 className={`${pillBase} ${
