@@ -180,28 +180,20 @@ function ListContent() {
       <AddItemInput
         listId={listId}
         listType={listType}
-        onAddItem={handleAddItem}
-        onAddItemWithReminder={isReminders ? async (text: string, remindAt: string) => {
-          // Add item, then create reminder for it
-          handleAddItem(text);
-          // Find the pending item and create a reminder after it's synced
-          const jwt = jwtRef.current;
-          if (!jwt) return;
-          // Small delay to let the item creation mutation queue
-          setTimeout(async () => {
-            const latestItems = items;
-            const newItem = latestItems.find((i) => i.text === text && i._pending);
-            if (newItem) {
-              try {
-                await fetch(`/api/lists/${listId}/items/${newItem.id}/reminder`, {
-                  method: "POST",
-                  headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
-                  body: JSON.stringify({ remind_at: remindAt, is_shared: false }),
-                });
-              } catch {}
-            }
-          }, 500);
-        } : undefined}
+        onAddItem={(text, recycleId) => {
+          handleAddItem(text, recycleId);
+          // Auto-open ReminderSheet for newly added items in reminders lists
+          if (isReminders) {
+            // Find the pending item that was just added (it's prepended to items)
+            setTimeout(() => {
+              setItems((prev) => {
+                const newItem = prev.find((i) => i._pending && i.text === text);
+                if (newItem) setReminderItem(newItem.id);
+                return prev;
+              });
+            }, 0);
+          }
+        }}
       />
 
       {/* Item list */}
@@ -450,7 +442,6 @@ function ReminderItemsList({
               text={item.text}
               completed={false}
               isPending={item._pending}
-              isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
               creatorName={isShared ? item.creator_name : null}
               isOwnItem={item.created_by === userId}
               editorName={isShared ? item.editor_name : null}
@@ -495,7 +486,6 @@ function ReminderItemsList({
               id={item.id}
               text={item.text}
               completed={true}
-              isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
               creatorName={isShared ? item.creator_name : null}
               isOwnItem={item.created_by === userId}
               editorName={isShared ? item.editor_name : null}
