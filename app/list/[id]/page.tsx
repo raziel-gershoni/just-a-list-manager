@@ -213,6 +213,7 @@ function ListContent() {
             onDelete={handleDelete}
             onEdit={handleEditItem}
             onReminderTap={(id) => setReminderItem(id)}
+            onSetReminder={handleSetReminder}
             onClearCompleted={handleClearCompleted}
             t={t}
           />
@@ -410,6 +411,7 @@ function ReminderItemsList({
   onDelete,
   onEdit,
   onReminderTap,
+  onSetReminder,
   onClearCompleted,
   t,
 }: {
@@ -424,11 +426,24 @@ function ReminderItemsList({
   onDelete: (id: string) => void;
   onEdit: (id: string, newText: string) => void;
   onReminderTap: (id: string) => void;
+  onSetReminder: (itemId: string, remindAt: string, isShared: boolean, recurrence?: string) => void;
   onClearCompleted: () => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   t: any;
 }) {
   const groups = groupByDate(items, t);
+  const overdueLabel = t('items.overdue');
+
+  const snooze1h = (item: ItemData) => {
+    const remindAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    onSetReminder(item.id, remindAt, item.my_reminder_shared ?? false, item.my_reminder_recurrence ?? undefined);
+  };
+  const snoozeTomorrow = (item: ItemData) => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    onSetReminder(item.id, d.toISOString(), item.my_reminder_shared ?? false, item.my_reminder_recurrence ?? undefined);
+  };
 
   return (
     <>
@@ -438,22 +453,39 @@ function ReminderItemsList({
             {group.label}
           </div>
           {group.items.map((item) => (
-            <ItemRow
-              key={item.id}
-              id={item.id}
-              text={item.text}
-              completed={false}
-              isPending={item._pending}
-              creatorName={isShared ? item.creator_name : null}
-              isOwnItem={item.created_by === userId}
-              editorName={isShared ? item.editor_name : null}
-              isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-              onToggle={onToggle}
-              onDelete={onDelete}
-              onEdit={onEdit}
-              reminderAt={item.my_remind_at}
-              onReminderTap={onReminderTap}
-            />
+            <div key={item.id}>
+              <ItemRow
+                id={item.id}
+                text={item.text}
+                completed={false}
+                isPending={item._pending}
+                creatorName={isShared ? item.creator_name : null}
+                isOwnItem={item.created_by === userId}
+                editorName={isShared ? item.editor_name : null}
+                isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+                onToggle={onToggle}
+                onDelete={onDelete}
+                onEdit={onEdit}
+                reminderAt={item.my_remind_at}
+                onReminderTap={onReminderTap}
+              />
+              {group.label === overdueLabel && (
+                <div className="flex gap-2 px-5 pb-2">
+                  <button
+                    onClick={() => snooze1h(item)}
+                    className="px-3 py-1 rounded-full text-[12px] font-medium bg-tg-secondary-bg text-tg-text active:scale-95"
+                  >
+                    +1h
+                  </button>
+                  <button
+                    onClick={() => snoozeTomorrow(item)}
+                    className="px-3 py-1 rounded-full text-[12px] font-medium bg-tg-secondary-bg text-tg-text active:scale-95"
+                  >
+                    {t('items.tomorrowMorning')}
+                  </button>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       ))}

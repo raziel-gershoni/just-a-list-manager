@@ -121,14 +121,48 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       });
       if (!res.ok) return;
       const { items: fetchedItems } = await res.json();
-      const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string } }) => ({
-        ...item,
-        creator_name: item.users?.name ?? null,
-        editor_name: item.editor?.name ?? null,
-        _pending: false,
-        users: undefined,
-        editor: undefined,
-      }));
+
+      // Re-fetch reminders so items keep their reminder data after reconnect
+      const remindersUrl = listType === "reminders"
+        ? `/api/lists/${listId}/reminders?include_sent=1`
+        : `/api/lists/${listId}/reminders`;
+      const remindersRes = await fetch(remindersUrl, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      const remindersByItem = new Map<string, { id: string; remind_at: string; is_shared: boolean; recurrence?: string; sent_at?: string }>();
+      if (remindersRes.ok) {
+        const { reminders } = await remindersRes.json();
+        for (const r of reminders || []) {
+          const existing = remindersByItem.get(r.item_id);
+          if (!existing) {
+            remindersByItem.set(r.item_id, r);
+          } else {
+            const existingIsSent = !!existing.sent_at;
+            const newIsSent = !!r.sent_at;
+            if (existingIsSent && !newIsSent) {
+              remindersByItem.set(r.item_id, r);
+            } else if (existingIsSent === newIsSent && r.remind_at < existing.remind_at) {
+              remindersByItem.set(r.item_id, r);
+            }
+          }
+        }
+      }
+
+      const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string }) => {
+        const reminder = remindersByItem.get(item.id);
+        return {
+          ...item,
+          creator_name: item.users?.name ?? null,
+          editor_name: item.editor?.name ?? null,
+          _pending: false,
+          users: undefined,
+          editor: undefined,
+          my_remind_at: reminder?.remind_at ?? null,
+          my_reminder_id: reminder?.id ?? null,
+          my_reminder_shared: reminder?.is_shared ?? false,
+          my_reminder_recurrence: reminder?.recurrence ?? null,
+        };
+      });
       setItems((prev) => {
         const pendingItems = prev.filter((i) => i._pending);
         const serverIds = new Set(mapped.map((i: ItemData) => i.id));
