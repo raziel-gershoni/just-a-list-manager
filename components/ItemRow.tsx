@@ -37,6 +37,7 @@ interface ItemRowProps {
   onRemoveDuplicates?: (text: string) => void;
   reminderAt?: string | null;
   onReminderTap?: (id: string) => void;
+  isOverdue?: boolean;
 }
 
 export default function ItemRow({
@@ -57,6 +58,7 @@ export default function ItemRow({
   onRemoveDuplicates,
   reminderAt,
   onReminderTap,
+  isOverdue,
 }: ItemRowProps) {
   const t = useTranslations("items");
   const [isEditing, setIsEditing] = useState(false);
@@ -208,9 +210,9 @@ export default function ItemRow({
           }}
           className="p-1.5 rounded-full shrink-0 flex items-center gap-1"
         >
-          <Bell className={`w-[18px] h-[18px] ${reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
+          <Bell className={`w-[18px] h-[18px] ${isOverdue ? "text-amber-500" : reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
           {reminderAt && (
-            <span className="text-[11px] text-tg-link tracking-wide">{formatShortTime(reminderAt, t("tom"))}</span>
+            <span className={`text-[11px] tracking-wide ${isOverdue ? "text-amber-500" : "text-tg-link"}`}>{formatShortTime(reminderAt, t("tom"))}</span>
           )}
         </button>
       )}
