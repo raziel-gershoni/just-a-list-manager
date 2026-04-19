@@ -92,7 +92,8 @@
     "laterGroup": "Later",
     "todayEvening": "Today 6pm",
     "tomorrowMorning": "Tomorrow 9am",
-    "custom": "Custom"
+    "custom": "Custom",
+    "tom": "Tom"
   },
   "voice": {
     "added": "Added to {listName}:",

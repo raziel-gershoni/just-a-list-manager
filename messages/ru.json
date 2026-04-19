@@ -92,7 +92,8 @@
     "laterGroup": "Позже",
     "todayEvening": "Сегодня 18:00",
     "tomorrowMorning": "Завтра 09:00",
-    "custom": "Выбрать"
+    "custom": "Выбрать",
+    "tom": "Завтра"
   },
   "voice": {
     "added": "Добавлено в {listName}:",

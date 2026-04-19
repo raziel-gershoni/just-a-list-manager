@@ -92,7 +92,8 @@
     "laterGroup": "מאוחר יותר",
     "todayEvening": "היום 18:00",
     "tomorrowMorning": "מחר 09:00",
-    "custom": "מותאם"
+    "custom": "מותאם",
+    "tom": "מחר"
   },
   "voice": {
     "added": "נוסף ל{listName}:",

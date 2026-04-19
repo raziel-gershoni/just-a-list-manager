@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Bell, Check, CircleOff, Clock, Copy, Pencil, RotateCcw, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
-function formatShortTime(iso: string): string {
+function formatShortTime(iso: string, tomLabel: string): string {
   const d = new Date(iso);
   const now = new Date();
   const isToday = d.toDateString() === now.toDateString();
@@ -14,7 +15,7 @@ function formatShortTime(iso: string): string {
 
   const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   if (isToday) return time;
-  if (isTomorrow) return `Tom ${time}`;
+  if (isTomorrow) return `${tomLabel} ${time}`;
   return d.toLocaleDateString([], { weekday: "short" }) + ` ${time}`;
 }
 
@@ -57,6 +58,7 @@ export default function ItemRow({
   reminderAt,
   onReminderTap,
 }: ItemRowProps) {
+  const t = useTranslations("items");
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -208,7 +210,7 @@ export default function ItemRow({
         >
           <Bell className={`w-[18px] h-[18px] ${reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
           {reminderAt && (
-            <span className="text-[11px] text-tg-link tracking-wide">{formatShortTime(reminderAt)}</span>
+            <span className="text-[11px] text-tg-link tracking-wide">{formatShortTime(reminderAt, t("tom"))}</span>
           )}
         </button>
       )}
