@@ -58,6 +58,7 @@ function ListContent() {
   });
   const [showShare, setShowShare] = useState(false);
   const [reminderItem, setReminderItem] = useState<string | null>(null);
+  const [pendingReminderText, setPendingReminderText] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<{
     message: string;
     undo: () => void;
@@ -105,6 +106,16 @@ function ListContent() {
       listType,
       t: t as (key: string, values?: Record<string, unknown>) => string,
     });
+
+  // Auto-open ReminderSheet when a newly added item gets its real ID
+  useEffect(() => {
+    if (!pendingReminderText) return;
+    const item = items.find((i) => i.text === pendingReminderText && !i._pending && !i.completed && !i.deleted_at);
+    if (item) {
+      setReminderItem(item.id);
+      setPendingReminderText(null);
+    }
+  }, [items, pendingReminderText]);
 
   const onListDeleted = useCallback(() => router.push("/"), [router]);
 
@@ -183,16 +194,9 @@ function ListContent() {
         listType={listType}
         onAddItem={(text, recycleId) => {
           handleAddItem(text, recycleId);
-          // Auto-open ReminderSheet for newly added items in reminders lists
+          // Auto-open ReminderSheet after item syncs in reminders lists
           if (isReminders) {
-            // Find the pending item that was just added (it's prepended to items)
-            setTimeout(() => {
-              setItems((prev) => {
-                const newItem = prev.find((i) => i._pending && i.text === text);
-                if (newItem) setReminderItem(newItem.id);
-                return prev;
-              });
-            }, 0);
+            setPendingReminderText(text);
           }
         }}
       />
