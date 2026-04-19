@@ -190,8 +190,8 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(restored);
   }
 
-  // Update flow (name, etc.)
-  const { name } = parsed.data;
+  // Update flow (name, type, etc.)
+  const { name, type } = parsed.data;
 
   if (name !== undefined && (!name.trim() || name.trim().length > 100)) {
     return NextResponse.json(
@@ -217,6 +217,7 @@ export async function PATCH(request: NextRequest) {
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name.trim();
+  if (type !== undefined) updates.type = type;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No updates provided" }, { status: 400 });

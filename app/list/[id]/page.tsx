@@ -41,7 +41,7 @@ function ListContent() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, isShared, listType, fetchItems, refreshItems } =
+  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, fetchItems, refreshItems } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const isReminders = listType === "reminders";
@@ -306,8 +306,28 @@ function ListContent() {
           <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter" onClick={(e) => e.stopPropagation()}>
             <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
             <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">{t('settings.listSettings')}</h2>
-            <div className="px-4 py-3 text-sm text-tg-hint">
-              {listType === "reminders" ? t('lists.typeReminders') : listType === "grocery" ? t('lists.typeGrocery') : t('lists.typeRegular')}
+            <div className="flex bg-tg-secondary-bg rounded-2xl p-1 mb-4">
+              {(["regular", "grocery", "reminders"] as const).map((tp) => (
+                <button
+                  key={tp}
+                  onClick={() => {
+                    setListType(tp);
+                    const jwt = jwtRef.current;
+                    if (jwt) {
+                      fetch("/api/lists", {
+                        method: "PATCH",
+                        headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ id: listId, type: tp }),
+                      }).catch(() => {});
+                    }
+                  }}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                    listType === tp ? "bg-tg-button text-tg-button-text shadow-sm" : "text-tg-hint"
+                  }`}
+                >
+                  {tp === "regular" ? t('lists.typeRegular') : tp === "grocery" ? t('lists.typeGrocery') : t('lists.typeReminders')}
+                </button>
+              ))}
             </div>
             <button
               onClick={() => setShowSettings(false)}

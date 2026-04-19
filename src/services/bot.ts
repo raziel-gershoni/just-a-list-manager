@@ -451,10 +451,10 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     const reminderId = parts[1];
     const duration = parts[2];
 
-    // Look up the reminder to get the original remind_at
+    // Look up the reminder and user timezone
     const { data: reminder } = await supabase
       .from("item_reminders")
-      .select("id, remind_at")
+      .select("id, remind_at, created_by")
       .eq("id", reminderId)
       .single();
 
@@ -492,11 +492,23 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .update({ remind_at: newRemindAt.toISOString(), sent_at: null, recurrence: null })
       .eq("id", reminderId);
 
+    // Get user timezone for display
+    let tz = "UTC";
+    if (reminder.created_by) {
+      const { data: user } = await supabase
+        .from("users")
+        .select("timezone")
+        .eq("id", reminder.created_by)
+        .single();
+      if (user?.timezone) tz = user.timezone;
+    }
+
     const formattedTime = newRemindAt.toLocaleString("en-US", {
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: tz,
     });
 
     await bot.answerCallbackQuery(query.id, {
