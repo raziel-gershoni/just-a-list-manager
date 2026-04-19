@@ -37,6 +37,17 @@ export async function POST(
     );
   }
 
+  // Cancel active reminders for cleared items
+  const clearedIds = (cleared || []).map((i) => i.id);
+  if (clearedIds.length > 0) {
+    await supabase
+      .from("item_reminders")
+      .update({ cancelled_at: new Date().toISOString() })
+      .in("item_id", clearedIds)
+      .is("sent_at", null)
+      .is("cancelled_at", null);
+  }
+
   return NextResponse.json({
     cleared: (cleared || []).length,
     clearedIds: (cleared || []).map((i) => i.id),
