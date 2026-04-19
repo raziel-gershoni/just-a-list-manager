@@ -155,6 +155,8 @@ export function useItemHandlers({
 
   const handleToggle = useCallback(
     async (itemId: string, completed: boolean) => {
+      const item = items.find((i) => i.id === itemId);
+
       // Optimistic
       setItems((prev) =>
         prev.map((i) =>
@@ -185,10 +187,72 @@ export function useItemHandlers({
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
+
+          // For recurring items in reminders lists: create next occurrence
+          if (completed && listType === "reminders" && item?.my_reminder_recurrence && item?.my_remind_at) {
+            const currentRemindAt = new Date(item.my_remind_at);
+            let nextRemindAt: Date;
+            switch (item.my_reminder_recurrence) {
+              case "daily":
+                nextRemindAt = new Date(currentRemindAt.getTime() + 24 * 60 * 60 * 1000);
+                break;
+              case "weekly":
+                nextRemindAt = new Date(currentRemindAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+                break;
+              case "monthly":
+                nextRemindAt = new Date(currentRemindAt);
+                nextRemindAt.setMonth(nextRemindAt.getMonth() + 1);
+                break;
+              default:
+                nextRemindAt = new Date(currentRemindAt.getTime() + 24 * 60 * 60 * 1000);
+            }
+
+            // Create new item with same text
+            const createRes = await fetch(`/api/lists/${listId}/items`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${jwt}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ text: item.text, idempotencyKey: genMutId(), position: Date.now() }),
+            });
+            if (createRes.ok) {
+              const { items: created } = await createRes.json();
+              if (created?.[0]) {
+                // Create reminder on the new item
+                await fetch(`/api/lists/${listId}/items/${created[0].id}/reminder`, {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${jwt}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    remind_at: nextRemindAt.toISOString(),
+                    is_shared: item.my_reminder_shared ?? false,
+                    recurrence: item.my_reminder_recurrence,
+                  }),
+                });
+                // Add the new item to local state
+                setItems((prev) => [
+                  {
+                    ...created[0],
+                    creator_name: null,
+                    editor_name: null,
+                    _pending: false,
+                    my_remind_at: nextRemindAt.toISOString(),
+                    my_reminder_id: null,
+                    my_reminder_shared: item.my_reminder_shared ?? false,
+                    my_reminder_recurrence: item.my_reminder_recurrence,
+                  },
+                  ...prev,
+                ]);
+              }
+            }
+          }
         },
       });
     },
-    [jwtRef, listId, addMutation, setItems]
+    [jwtRef, listId, listType, items, addMutation, setItems]
   );
 
   const handleDelete = useCallback(
