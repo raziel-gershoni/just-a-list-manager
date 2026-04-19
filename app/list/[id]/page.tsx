@@ -439,9 +439,8 @@ function ReminderItemsList({
     onSetReminder(item.id, remindAt, item.my_reminder_shared ?? false, item.my_reminder_recurrence ?? undefined);
   };
   const snoozeTomorrow = (item: ItemData) => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
+    const d = item.my_remind_at ? new Date(item.my_remind_at) : new Date();
+    d.setDate(new Date().getDate() + 1);
     onSetReminder(item.id, d.toISOString(), item.my_reminder_shared ?? false, item.my_reminder_recurrence ?? undefined);
   };
 
@@ -481,7 +480,7 @@ function ReminderItemsList({
                     onClick={() => snoozeTomorrow(item)}
                     className="px-3 py-1 rounded-full text-[12px] font-medium bg-tg-secondary-bg text-tg-text active:scale-95"
                   >
-                    {t('items.tomorrowMorning')}
+                    {t('items.tomorrowGroup')}
                   </button>
                 </div>
               )}
