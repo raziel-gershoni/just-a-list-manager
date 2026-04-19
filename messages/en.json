@@ -50,7 +50,10 @@
     "shared": "Shared",
     "loadError": "Couldn't load your lists",
     "addToHomeScreen": "Add to Home Screen for quick access",
-    "addToHomeScreenAction": "Add"
+    "addToHomeScreenAction": "Add",
+    "typeRegular": "List",
+    "typeGrocery": "Grocery",
+    "typeReminders": "Reminders"
   },
   "items": {
     "addPlaceholder": "Add item...",
@@ -80,7 +83,16 @@
       "monthAgo": "About a month ago",
       "monthsAgo": "A few months ago",
       "longAgo": "A long time ago"
-    }
+    },
+    "addReminderPlaceholder": "Add reminder...",
+    "overdue": "Overdue",
+    "todayGroup": "Today",
+    "tomorrowGroup": "Tomorrow",
+    "thisWeekGroup": "This Week",
+    "laterGroup": "Later",
+    "todayEvening": "Today 6pm",
+    "tomorrowMorning": "Tomorrow 9am",
+    "custom": "Custom"
   },
   "voice": {
     "added": "Added to {listName}:",

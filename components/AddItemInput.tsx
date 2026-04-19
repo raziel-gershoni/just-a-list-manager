@@ -13,18 +13,24 @@ interface RecyclableItem {
 
 interface AddItemInputProps {
   listId: string;
+  listType?: "regular" | "reminders" | "grocery";
   onAddItem: (text: string, recycleId?: string) => void;
+  onAddItemWithReminder?: (text: string, remindAt: string) => void;
 }
 
-export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
+export default function AddItemInput({ listId, listType = "regular", onAddItem, onAddItemWithReminder }: AddItemInputProps) {
   const { jwtRef } = useTelegram();
   const t = useTranslations();
   const [value, setValue] = useState("");
   const [suggestions, setSuggestions] = useState<RecyclableItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [customDateTime, setCustomDateTime] = useState("");
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const isReminders = listType === "reminders";
 
   const searchItems = useCallback(
     async (query: string) => {
@@ -83,7 +89,37 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
     setValue("");
     setSuggestions([]);
     setShowSuggestions(false);
+    setShowCustomPicker(false);
     inputRef.current?.focus();
+  };
+
+  const handleSubmitWithTime = (remindAt: string) => {
+    if (!value.trim() || !onAddItemWithReminder) return;
+
+    const tg = getTelegramWebApp();
+    tg?.HapticFeedback?.notificationOccurred("success");
+
+    onAddItemWithReminder(value.trim(), remindAt);
+    setValue("");
+    setCustomDateTime("");
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setShowCustomPicker(false);
+    inputRef.current?.focus();
+  };
+
+  const getTodayEvening = () => {
+    const d = new Date();
+    d.setHours(18, 0, 0, 0);
+    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+    return d.toISOString();
+  };
+
+  const getTomorrowMorning = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString();
   };
 
   const handleSuggestionClick = (item: RecyclableItem) => {
@@ -111,7 +147,12 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      handleSubmit();
+      if (isReminders) {
+        // For reminders lists, Enter with text defaults to today evening
+        if (value.trim()) handleSubmitWithTime(getTodayEvening());
+      } else {
+        handleSubmit();
+      }
     }
   };
 
@@ -120,7 +161,7 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
     const handleClick = (e: MouseEvent) => {
       if (
         inputRef.current &&
-        !inputRef.current.parentElement?.contains(e.target as Node)
+        !inputRef.current.parentElement?.parentElement?.contains(e.target as Node)
       ) {
         setShowSuggestions(false);
       }
@@ -143,21 +184,73 @@ export default function AddItemInput({ listId, onAddItem }: AddItemInputProps) {
               onFocus={() => {
                 if (suggestions.length > 0) setShowSuggestions(true);
               }}
-              placeholder={t('items.addPlaceholder')}
-              className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-[15px] focus:ring-2 focus:ring-tg-button/20"
+              placeholder={isReminders ? t('items.addReminderPlaceholder') : t('items.addPlaceholder')}
+              className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-base focus:ring-2 focus:ring-tg-button/20"
             />
             {isSearching && (
               <Loader2 className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tg-hint animate-spin" />
             )}
           </div>
-          <button
-            onClick={handleSubmit}
-            disabled={!value.trim()}
-            className="px-4 py-3 rounded-2xl bg-tg-button text-tg-button-text font-medium disabled:opacity-30 active:scale-95"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
+          {!isReminders && (
+            <button
+              onClick={handleSubmit}
+              disabled={!value.trim()}
+              className="px-4 py-3 rounded-2xl bg-tg-button text-tg-button-text font-medium disabled:opacity-30 active:scale-95"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          )}
         </div>
+
+        {/* Time preset pills for reminders lists */}
+        {isReminders && (
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() => handleSubmitWithTime(getTodayEvening())}
+              disabled={!value.trim()}
+              className="px-3 py-1.5 rounded-full text-sm font-medium bg-tg-secondary-bg text-tg-text disabled:opacity-30 active:scale-95"
+            >
+              {t('items.todayEvening')}
+            </button>
+            <button
+              onClick={() => handleSubmitWithTime(getTomorrowMorning())}
+              disabled={!value.trim()}
+              className="px-3 py-1.5 rounded-full text-sm font-medium bg-tg-secondary-bg text-tg-text disabled:opacity-30 active:scale-95"
+            >
+              {t('items.tomorrowMorning')}
+            </button>
+            <button
+              onClick={() => setShowCustomPicker(!showCustomPicker)}
+              disabled={!value.trim()}
+              className="px-3 py-1.5 rounded-full text-sm font-medium bg-tg-secondary-bg text-tg-text disabled:opacity-30 active:scale-95"
+            >
+              {t('items.custom')}
+            </button>
+          </div>
+        )}
+
+        {/* Custom datetime picker */}
+        {isReminders && showCustomPicker && (
+          <div className="flex gap-2 mt-2">
+            <input
+              type="datetime-local"
+              value={customDateTime}
+              onChange={(e) => setCustomDateTime(e.target.value)}
+              className="flex-1 bg-tg-secondary-bg text-tg-text rounded-xl px-3 py-2.5 text-sm"
+            />
+            <button
+              onClick={() => {
+                if (customDateTime) {
+                  handleSubmitWithTime(new Date(customDateTime).toISOString());
+                }
+              }}
+              disabled={!customDateTime || !value.trim()}
+              className="px-4 py-2.5 rounded-xl bg-tg-button text-tg-button-text text-sm font-medium disabled:opacity-30 active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Autocomplete suggestions */}
         {showSuggestions && suggestions.length > 0 && (

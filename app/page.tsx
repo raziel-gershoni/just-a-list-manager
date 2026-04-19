@@ -29,6 +29,7 @@ function HomeContent() {
   const [error, setError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newListName, setNewListName] = useState("");
+  const [newListType, setNewListType] = useState<"regular" | "reminders" | "grocery">("regular");
   const [creating, setCreating] = useState(false);
 
   // List management state
@@ -123,11 +124,12 @@ function HomeContent() {
           Authorization: `Bearer ${jwt}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: newListName.trim() }),
+        body: JSON.stringify({ name: newListName.trim(), type: newListType }),
       });
       if (res.ok) {
         const list = await res.json();
         setNewListName("");
+        setNewListType("regular");
         setShowCreate(false);
         router.push(`/list/${list.id}`);
       } else {
@@ -287,6 +289,8 @@ function HomeContent() {
           <CreateListSheet
             value={newListName}
             onChange={setNewListName}
+            listType={newListType}
+            onTypeChange={setNewListType}
             onSubmit={createList}
             onClose={() => setShowCreate(false)}
             creating={creating}
@@ -391,6 +395,8 @@ function HomeContent() {
         <CreateListSheet
           value={newListName}
           onChange={setNewListName}
+          listType={newListType}
+          onTypeChange={setNewListType}
           onSubmit={createList}
           onClose={() => setShowCreate(false)}
           creating={creating}
@@ -439,12 +445,16 @@ function HomeContent() {
 function CreateListSheet({
   value,
   onChange,
+  listType,
+  onTypeChange,
   onSubmit,
   onClose,
   creating,
 }: {
   value: string;
   onChange: (v: string) => void;
+  listType: "regular" | "reminders" | "grocery";
+  onTypeChange: (t: "regular" | "reminders" | "grocery") => void;
   onSubmit: () => void;
   onClose: () => void;
   creating: boolean;
@@ -457,6 +467,33 @@ function CreateListSheet({
         <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">
           {t('lists.newList')}
         </h2>
+        {/* Type selector */}
+        <div className="flex bg-tg-secondary-bg rounded-2xl p-1 mb-4">
+          <button
+            onClick={() => onTypeChange("regular")}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              listType === "regular" ? "bg-tg-button text-tg-button-text shadow-sm" : "text-tg-hint"
+            }`}
+          >
+            {t('lists.typeRegular')}
+          </button>
+          <button
+            onClick={() => onTypeChange("grocery")}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              listType === "grocery" ? "bg-tg-button text-tg-button-text shadow-sm" : "text-tg-hint"
+            }`}
+          >
+            {t('lists.typeGrocery')}
+          </button>
+          <button
+            onClick={() => onTypeChange("reminders")}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              listType === "reminders" ? "bg-tg-button text-tg-button-text shadow-sm" : "text-tg-hint"
+            }`}
+          >
+            {t('lists.typeReminders')}
+          </button>
+        </div>
         <input
           type="text"
           value={value}

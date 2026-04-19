@@ -9,7 +9,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [isShared, setIsShared] = useState(false);
-  const [remindersEnabled, setRemindersEnabled] = useState(true);
+  const [listType, setListType] = useState<"regular" | "reminders" | "grocery">("regular");
 
   const fetchItems = useCallback(async () => {
     const jwt = jwtRef.current;
@@ -22,11 +22,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       });
       if (listsRes.ok) {
         const allLists = await listsRes.json();
-        const currentList = allLists.find((l: { id: string; name: string; is_shared?: boolean; reminders_enabled?: boolean }) => l.id === listId);
+        const currentList = allLists.find((l: { id: string; name: string; is_shared?: boolean; type?: string }) => l.id === listId);
         if (currentList) {
           setListName(currentList.name);
           setIsShared(currentList.is_shared ?? false);
-          setRemindersEnabled(currentList.reminders_enabled ?? true);
+          setListType((currentList.type as "regular" | "reminders" | "grocery") ?? "regular");
         }
       }
 
@@ -143,5 +143,5 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     }
   }, [jwtRef, listId]);
 
-  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, remindersEnabled, setRemindersEnabled, fetchItems, refreshItems };
+  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, fetchItems, refreshItems };
 }

@@ -50,7 +50,10 @@
     "shared": "משותפת",
     "loadError": "לא ניתן לטעון את הרשימות",
     "addToHomeScreen": "הוסף למסך הבית לגישה מהירה",
-    "addToHomeScreenAction": "הוסף"
+    "addToHomeScreenAction": "הוסף",
+    "typeRegular": "רשימה",
+    "typeGrocery": "קניות",
+    "typeReminders": "תזכורות"
   },
   "items": {
     "addPlaceholder": "הוסף פריט...",
@@ -80,7 +83,16 @@
       "monthAgo": "לפני כחודש",
       "monthsAgo": "לפני כמה חודשים",
       "longAgo": "לפני זמן רב"
-    }
+    },
+    "addReminderPlaceholder": "הוסף תזכורת...",
+    "overdue": "באיחור",
+    "todayGroup": "היום",
+    "tomorrowGroup": "מחר",
+    "thisWeekGroup": "השבוע",
+    "laterGroup": "מאוחר יותר",
+    "todayEvening": "היום 18:00",
+    "tomorrowMorning": "מחר 09:00",
+    "custom": "מותאם"
   },
   "voice": {
     "added": "נוסף ל{listName}:",

@@ -50,7 +50,10 @@
     "shared": "Общий",
     "loadError": "Не удалось загрузить списки",
     "addToHomeScreen": "Добавьте на главный экран для быстрого доступа",
-    "addToHomeScreenAction": "Добавить"
+    "addToHomeScreenAction": "Добавить",
+    "typeRegular": "Список",
+    "typeGrocery": "Покупки",
+    "typeReminders": "Напоминания"
   },
   "items": {
     "addPlaceholder": "Добавить...",
@@ -80,7 +83,16 @@
       "monthAgo": "Около месяца назад",
       "monthsAgo": "Несколько месяцев назад",
       "longAgo": "Давно"
-    }
+    },
+    "addReminderPlaceholder": "Добавить напоминание...",
+    "overdue": "Просрочено",
+    "todayGroup": "Сегодня",
+    "tomorrowGroup": "Завтра",
+    "thisWeekGroup": "На этой неделе",
+    "laterGroup": "Позже",
+    "todayEvening": "Сегодня 18:00",
+    "tomorrowMorning": "Завтра 09:00",
+    "custom": "Выбрать"
   },
   "voice": {
     "added": "Добавлено в {listName}:",

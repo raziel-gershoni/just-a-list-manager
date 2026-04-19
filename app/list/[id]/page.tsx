@@ -41,9 +41,10 @@ function ListContent() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, isShared, remindersEnabled, setRemindersEnabled, fetchItems, refreshItems } =
+  const { listName, setListName, items, setItems, loading, error, isShared, listType, fetchItems, refreshItems } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
+  const isReminders = listType === "reminders";
 
   const [showCompleted, setShowCompleted] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -176,61 +177,107 @@ function ListContent() {
 
       <OfflineIndicator />
 
-      <AddItemInput listId={listId} onAddItem={handleAddItem} />
+      <AddItemInput
+        listId={listId}
+        listType={listType}
+        onAddItem={handleAddItem}
+        onAddItemWithReminder={isReminders ? async (text: string, remindAt: string) => {
+          // Add item, then create reminder for it
+          handleAddItem(text);
+          // Find the pending item and create a reminder after it's synced
+          const jwt = jwtRef.current;
+          if (!jwt) return;
+          // Small delay to let the item creation mutation queue
+          setTimeout(async () => {
+            const latestItems = items;
+            const newItem = latestItems.find((i) => i.text === text && i._pending);
+            if (newItem) {
+              try {
+                await fetch(`/api/lists/${listId}/items/${newItem.id}/reminder`, {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ remind_at: remindAt, is_shared: false }),
+                });
+              } catch {}
+            }
+          }, 500);
+        } : undefined}
+      />
 
       {/* Item list */}
       <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y">
-        {/* Active items */}
-        <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          {activeItems.map((item, index) => (
-            <SortableItem
-              key={item.id}
-              id={item.id}
-              index={index}
-              text={item.text}
-              isPending={item._pending}
-              isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
-              creatorName={isShared ? item.creator_name : null}
-              isOwnItem={item.created_by === userId}
-              editorName={isShared ? item.editor_name : null}
-              isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+        {isReminders ? (
+          /* Reminders list: items sorted by remind_at with date group headers */
+          <ReminderItemsList
+            items={activeItems}
+            completedItems={completedItems}
+            showCompleted={showCompleted}
+            setShowCompleted={setShowCompleted}
+            isShared={isShared}
+            userId={userId}
+            duplicateTexts={duplicateTexts}
+            onToggle={handleToggle}
+            onDelete={handleDelete}
+            onEdit={handleEditItem}
+            onReminderTap={(id) => setReminderItem(id)}
+            onClearCompleted={handleClearCompleted}
+            t={t}
+          />
+        ) : (
+          <>
+            {/* Regular list: position-ordered with drag-to-reorder */}
+            <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+              {activeItems.map((item, index) => (
+                <SortableItem
+                  key={item.id}
+                  id={item.id}
+                  index={index}
+                  text={item.text}
+                  isPending={item._pending}
+                  isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+                  creatorName={isShared ? item.creator_name : null}
+                  isOwnItem={item.created_by === userId}
+                  editorName={isShared ? item.editor_name : null}
+                  isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                  onEdit={handleEditItem}
+                  onSkip={listType === "grocery" ? handleSkip : undefined}
+                  onRemoveDuplicates={handleRemoveDuplicates}
+                />
+              ))}
+            </DragDropProvider>
+
+            {listType === "grocery" && (
+              <SkippedItemsSection
+                skippedItems={skippedItems}
+                showSkipped={showSkipped}
+                setShowSkipped={setShowSkipped}
+                duplicateTexts={duplicateTexts}
+                isShared={isShared}
+                userId={userId}
+                onToggle={handleToggle}
+                onDelete={handleDelete}
+                onEdit={handleEditItem}
+                onSkip={handleSkip}
+              />
+            )}
+
+            <CompletedItemsSection
+              completedItems={completedItems}
+              completedGroups={completedGroups}
+              showCompleted={showCompleted}
+              setShowCompleted={setShowCompleted}
+              duplicateTexts={duplicateTexts}
+              isShared={isShared}
+              userId={userId}
               onToggle={handleToggle}
               onDelete={handleDelete}
               onEdit={handleEditItem}
-              onSkip={item.my_remind_at ? undefined : handleSkip}
-              onRemoveDuplicates={handleRemoveDuplicates}
-              reminderAt={remindersEnabled ? item.my_remind_at : undefined}
-              onReminderTap={remindersEnabled ? (id) => setReminderItem(id) : undefined}
+              onClearCompleted={handleClearCompleted}
             />
-          ))}
-        </DragDropProvider>
-
-        <SkippedItemsSection
-          skippedItems={skippedItems}
-          showSkipped={showSkipped}
-          setShowSkipped={setShowSkipped}
-          duplicateTexts={duplicateTexts}
-          isShared={isShared}
-          userId={userId}
-          onToggle={handleToggle}
-          onDelete={handleDelete}
-          onEdit={handleEditItem}
-          onSkip={handleSkip}
-        />
-
-        <CompletedItemsSection
-          completedItems={completedItems}
-          completedGroups={completedGroups}
-          showCompleted={showCompleted}
-          setShowCompleted={setShowCompleted}
-          duplicateTexts={duplicateTexts}
-          isShared={isShared}
-          userId={userId}
-          onToggle={handleToggle}
-          onDelete={handleDelete}
-          onEdit={handleEditItem}
-          onClearCompleted={handleClearCompleted}
-        />
+          </>
+        )}
 
         {activeItems.length === 0 && skippedItems.length === 0 && completedItems.length === 0 && (
           <div className="text-center text-tg-hint py-16">
@@ -259,29 +306,9 @@ function ListContent() {
           <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter" onClick={(e) => e.stopPropagation()}>
             <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
             <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">{t('settings.listSettings')}</h2>
-            <button
-              onClick={async () => {
-                const newValue = !remindersEnabled;
-                setRemindersEnabled(newValue);
-                const jwt = jwtRef.current;
-                if (jwt) {
-                  fetch("/api/lists", {
-                    method: "PATCH",
-                    headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: listId, reminders_enabled: newValue }),
-                  }).catch(() => {});
-                }
-              }}
-              className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl active:bg-tg-secondary-bg"
-            >
-              <div>
-                <span className="text-base text-tg-text">{t('settings.reminders')}</span>
-                <p className="text-[13px] text-tg-hint">{t('settings.remindersDescription')}</p>
-              </div>
-              <div className={`w-11 h-6 rounded-full relative transition-colors ${remindersEnabled ? "bg-tg-button" : "bg-tg-secondary-bg border border-border"}`}>
-                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${remindersEnabled ? "start-[22px]" : "start-0.5"}`} />
-              </div>
-            </button>
+            <div className="px-4 py-3 text-sm text-tg-hint">
+              {listType === "reminders" ? t('lists.typeReminders') : listType === "grocery" ? t('lists.typeGrocery') : t('lists.typeRegular')}
+            </div>
             <button
               onClick={() => setShowSettings(false)}
               className="w-full mt-4 py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
@@ -314,6 +341,154 @@ function ListContent() {
         );
       })()}
     </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function groupByDate(items: ItemData[], t: any) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
+
+  const groups: { label: string; items: ItemData[] }[] = [];
+  const sorted = [...items].sort((a, b) => {
+    const ta = a.my_remind_at ? new Date(a.my_remind_at).getTime() : Infinity;
+    const tb = b.my_remind_at ? new Date(b.my_remind_at).getTime() : Infinity;
+    return ta - tb;
+  });
+
+  const buckets: Record<string, ItemData[]> = {};
+  for (const item of sorted) {
+    const d = item.my_remind_at ? new Date(item.my_remind_at) : null;
+    let key: string;
+    if (!d) key = t('items.laterGroup');
+    else if (d.getTime() < now.getTime()) key = t('items.overdue');
+    else if (d < tomorrow) key = t('items.todayGroup');
+    else if (d < new Date(tomorrow.getTime() + 86400000)) key = t('items.tomorrowGroup');
+    else if (d < nextWeek) key = t('items.thisWeekGroup');
+    else key = t('items.laterGroup');
+
+    if (!buckets[key]) buckets[key] = [];
+    buckets[key].push(item);
+  }
+
+  const order = [t('items.overdue'), t('items.todayGroup'), t('items.tomorrowGroup'), t('items.thisWeekGroup'), t('items.laterGroup')];
+  for (const label of order) {
+    if (buckets[label]?.length) groups.push({ label, items: buckets[label] });
+  }
+  return groups;
+}
+
+import ItemRow from "@/components/ItemRow";
+import type { ItemData } from "@/src/types";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+
+function ReminderItemsList({
+  items,
+  completedItems,
+  showCompleted,
+  setShowCompleted,
+  isShared,
+  userId,
+  duplicateTexts,
+  onToggle,
+  onDelete,
+  onEdit,
+  onReminderTap,
+  onClearCompleted,
+  t,
+}: {
+  items: ItemData[];
+  completedItems: ItemData[];
+  showCompleted: boolean;
+  setShowCompleted: React.Dispatch<React.SetStateAction<boolean>>;
+  isShared: boolean;
+  userId: string | null;
+  duplicateTexts: Set<string>;
+  onToggle: (id: string, completed: boolean) => void;
+  onDelete: (id: string) => void;
+  onEdit: (id: string, newText: string) => void;
+  onReminderTap: (id: string) => void;
+  onClearCompleted: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: any;
+}) {
+  const groups = groupByDate(items, t);
+
+  return (
+    <>
+      {groups.map((group) => (
+        <div key={group.label}>
+          <div className="px-5 pt-4 pb-1.5 text-[11px] text-tg-hint/70 font-semibold tracking-widest uppercase bg-tg-secondary-bg/80 backdrop-blur-md">
+            {group.label}
+          </div>
+          {group.items.map((item) => (
+            <ItemRow
+              key={item.id}
+              id={item.id}
+              text={item.text}
+              completed={false}
+              isPending={item._pending}
+              isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+              creatorName={isShared ? item.creator_name : null}
+              isOwnItem={item.created_by === userId}
+              editorName={isShared ? item.editor_name : null}
+              isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+              onToggle={onToggle}
+              onDelete={onDelete}
+              onEdit={onEdit}
+              reminderAt={item.my_remind_at}
+              onReminderTap={onReminderTap}
+            />
+          ))}
+        </div>
+      ))}
+
+      {items.length === 0 && completedItems.length === 0 && (
+        <div className="text-center text-tg-hint py-16">
+          <p className="text-lg mb-1">{t('items.emptyTitle')}</p>
+          <p className="text-sm">{t('items.emptyDescription')}</p>
+        </div>
+      )}
+
+      {/* Completed section for reminders */}
+      {completedItems.length > 0 && (
+        <>
+          <button
+            onClick={() => setShowCompleted((p) => { localStorage.setItem("panel_completed", String(!p)); return !p; })}
+            className="sticky top-0 z-20 flex items-center gap-2.5 w-full px-5 py-3.5 text-[13px] font-medium tracking-wide text-tg-hint bg-tg-secondary-bg/80 backdrop-blur-md border-t border-separator"
+          >
+            {showCompleted ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />}
+            {t('items.completedSection', { count: completedItems.length })}
+            <button
+              onClick={(e) => { e.stopPropagation(); onClearCompleted(); }}
+              className="ms-auto text-tg-destructive/80 text-[12px] font-medium tracking-wide flex items-center gap-1"
+            >
+              <Trash2 className="w-3 h-3" />
+              {t('items.clearCompleted')}
+            </button>
+          </button>
+          {showCompleted && completedItems.map((item) => (
+            <ItemRow
+              key={item.id}
+              id={item.id}
+              text={item.text}
+              completed={true}
+              isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+              creatorName={isShared ? item.creator_name : null}
+              isOwnItem={item.created_by === userId}
+              editorName={isShared ? item.editor_name : null}
+              isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+              onToggle={onToggle}
+              onDelete={onDelete}
+              onEdit={onEdit}
+              reminderAt={item.my_remind_at}
+            />
+          ))}
+        </>
+      )}
+    </>
   );
 }
 
