@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   // Lists where user is owner
   const { data: ownedLists } = await supabase
     .from("lists")
-    .select("id, name, owner_id, created_at, updated_at, reminders_enabled")
+    .select("id, name, owner_id, created_at, updated_at, type")
     .eq("owner_id", auth.userId)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
@@ -27,12 +27,12 @@ export async function GET(request: NextRequest) {
     .eq("status", "approved");
 
   const collabListIds = (collabRecords || []).map((c) => c.list_id);
-  let collabLists: { id: string; name: string; owner_id: string; created_at: string; updated_at: string; reminders_enabled: boolean }[] = [];
+  let collabLists: { id: string; name: string; owner_id: string; created_at: string; updated_at: string; type: string }[] = [];
 
   if (collabListIds.length > 0) {
     const { data } = await supabase
       .from("lists")
-      .select("id, name, owner_id, created_at, updated_at, reminders_enabled")
+      .select("id, name, owner_id, created_at, updated_at, type")
       .in("id", collabListIds)
       .is("deleted_at", null)
       .order("updated_at", { ascending: false });
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
 
   const { data: list, error } = await supabase
     .from("lists")
-    .insert({ name, owner_id: auth.userId })
+    .insert({ name, owner_id: auth.userId, type: parsed.data.type || "regular" })
     .select()
     .single();
 
@@ -190,8 +190,8 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(restored);
   }
 
-  // Update flow (name, reminders_enabled, etc.)
-  const { name, reminders_enabled } = parsed.data;
+  // Update flow (name, etc.)
+  const { name } = parsed.data;
 
   if (name !== undefined && (!name.trim() || name.trim().length > 100)) {
     return NextResponse.json(
@@ -217,7 +217,6 @@ export async function PATCH(request: NextRequest) {
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name.trim();
-  if (reminders_enabled !== undefined) updates.reminders_enabled = reminders_enabled;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No updates provided" }, { status: 400 });
