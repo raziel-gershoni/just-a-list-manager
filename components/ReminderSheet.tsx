@@ -28,7 +28,13 @@ export default function ReminderSheet({
   existingReminder,
 }: ReminderSheetProps) {
   const t = useTranslations("reminder");
-  const [customDateTime, setCustomDateTime] = useState("");
+  const [customDateTime, setCustomDateTime] = useState(() => {
+    // Pre-populate with existing reminder time, or current time + 1 hour
+    const d = existingReminder?.remind_at ? new Date(existingReminder.remind_at) : new Date(Date.now() + 60 * 60 * 1000);
+    // Format as YYYY-MM-DDTHH:mm in local time for datetime-local input
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
   const [recurrence, setRecurrence] = useState<string | undefined>(
     existingReminder?.recurrence ?? undefined
   );
