@@ -17,6 +17,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     try {
       setError(false);
       // Fetch list info
+      let currentListType: string = "regular";
       const listsRes = await fetch("/api/lists", {
         headers: { Authorization: `Bearer ${jwt}` },
       });
@@ -26,7 +27,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         if (currentList) {
           setListName(currentList.name);
           setIsShared(currentList.is_shared ?? false);
-          setListType((currentList.type as "regular" | "reminders" | "grocery") ?? "regular");
+          currentListType = currentList.type ?? "regular";
+          setListType(currentListType as "regular" | "reminders" | "grocery");
         }
       }
 
@@ -38,17 +40,32 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         const { items: fetchedItems } = await res.json();
         const FOUR_HOURS = 4 * 60 * 60 * 1000;
         const now = Date.now();
-        // Fetch active reminders for all items in this list
-        const remindersRes = await fetch(`/api/lists/${listId}/reminders`, {
+        // Fetch reminders for all items in this list
+        // For reminders-type lists, include sent reminders so fired items keep their time
+        const remindersUrl = currentListType === "reminders"
+          ? `/api/lists/${listId}/reminders?include_sent=1`
+          : `/api/lists/${listId}/reminders`;
+        const remindersRes = await fetch(remindersUrl, {
           headers: { Authorization: `Bearer ${jwt}` },
         });
-        const remindersByItem = new Map<string, { id: string; remind_at: string; is_shared: boolean; recurrence?: string }>();
+        const remindersByItem = new Map<string, { id: string; remind_at: string; is_shared: boolean; recurrence?: string; sent_at?: string }>();
         if (remindersRes.ok) {
           const { reminders } = await remindersRes.json();
           for (const r of reminders || []) {
-            // Keep the earliest reminder per item
-            if (!remindersByItem.has(r.item_id) || r.remind_at < remindersByItem.get(r.item_id)!.remind_at) {
+            const existing = remindersByItem.get(r.item_id);
+            // Prefer active (unsent) reminders over sent ones; among same type, keep earliest
+            if (!existing) {
               remindersByItem.set(r.item_id, r);
+            } else {
+              const existingIsSent = !!existing.sent_at;
+              const newIsSent = !!r.sent_at;
+              if (existingIsSent && !newIsSent) {
+                // Prefer active over sent
+                remindersByItem.set(r.item_id, r);
+              } else if (existingIsSent === newIsSent && r.remind_at < existing.remind_at) {
+                // Same type — keep earliest
+                remindersByItem.set(r.item_id, r);
+              }
             }
           }
         }

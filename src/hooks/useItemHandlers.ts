@@ -19,6 +19,7 @@ interface UseItemHandlersParams {
   } | null>>;
   setDuplicateWarning: React.Dispatch<React.SetStateAction<string | null>>;
   setReminderToast: React.Dispatch<React.SetStateAction<string | null>>;
+  listType?: "regular" | "reminders" | "grocery";
   t: (key: string, values?: Record<string, unknown>) => string;
 }
 
@@ -32,6 +33,7 @@ export function useItemHandlers({
   setUndoAction,
   setDuplicateWarning,
   setReminderToast,
+  listType,
   t,
 }: UseItemHandlersParams) {
   const addSingleItem = useCallback(
@@ -94,15 +96,17 @@ export function useItemHandlers({
       // No JWT guard here — items are added optimistically and queued.
       // The executor reads jwtRef.current at execution time (after reconnect).
 
-      // Check for duplicate
-      const existing = items.find(
-        (i) => !i.completed && !i.deleted_at && !i.skipped_at && i.text.toLowerCase() === text.toLowerCase()
-      );
-      if (existing) {
-        const tg = getTelegramWebApp();
-        tg?.HapticFeedback?.notificationOccurred("warning");
-        setDuplicateWarning(t("items.duplicateWarning"));
-        setTimeout(() => setDuplicateWarning(null), 2500);
+      // Check for duplicate (skip in reminders lists — duplicates are expected)
+      if (listType !== "reminders") {
+        const existing = items.find(
+          (i) => !i.completed && !i.deleted_at && !i.skipped_at && i.text.toLowerCase() === text.toLowerCase()
+        );
+        if (existing) {
+          const tg = getTelegramWebApp();
+          tg?.HapticFeedback?.notificationOccurred("warning");
+          setDuplicateWarning(t("items.duplicateWarning"));
+          setTimeout(() => setDuplicateWarning(null), 2500);
+        }
       }
 
       if (recycleId) {

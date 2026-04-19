@@ -102,6 +102,7 @@ function ListContent() {
       setUndoAction,
       setDuplicateWarning,
       setReminderToast,
+      listType,
       t: t as (key: string, values?: Record<string, unknown>) => string,
     });
 

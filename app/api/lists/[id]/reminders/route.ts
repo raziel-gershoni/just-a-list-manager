@@ -17,14 +17,20 @@ export async function GET(
   }
 
   const supabase = createServerClient();
-  const { data: reminders, error } = await supabase
+  const includeSent = request.nextUrl.searchParams.get("include_sent") === "1";
+
+  let query = supabase
     .from("item_reminders")
-    .select("id, item_id, remind_at, is_shared, recurrence")
+    .select("id, item_id, remind_at, is_shared, recurrence, sent_at")
     .eq("list_id", listId)
     .eq("created_by", auth.userId)
-    .is("sent_at", null)
-    .is("cancelled_at", null)
-    .order("remind_at", { ascending: true });
+    .is("cancelled_at", null);
+
+  if (!includeSent) {
+    query = query.is("sent_at", null);
+  }
+
+  const { data: reminders, error } = await query.order("remind_at", { ascending: true });
 
   if (error) {
     console.error("[Reminders] List error:", error);
