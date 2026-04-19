@@ -451,10 +451,10 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     const reminderId = parts[1];
     const duration = parts[2];
 
-    // Look up the reminder and user timezone
+    // Look up the reminder, item text, and user timezone
     const { data: reminder } = await supabase
       .from("item_reminders")
-      .select("id, remind_at, created_by")
+      .select("id, remind_at, created_by, items!inner(text)")
       .eq("id", reminderId)
       .single();
 
@@ -463,6 +463,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       return;
     }
 
+    const itemText = (reminder.items as unknown as { text: string }).text;
     const originalTime = new Date(reminder.remind_at);
     let newRemindAt: Date;
 
@@ -503,13 +504,22 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       if (user?.timezone) tz = user.timezone;
     }
 
-    const formattedTime = newRemindAt.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: tz,
-    });
+    // Smart time formatting: time-only for today, "Tomorrow HH:mm" for tomorrow, "Mon DD, HH:mm" for later
+    const nowInTz = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
+    const remindInTz = new Date(newRemindAt.toLocaleString("en-US", { timeZone: tz }));
+    const isToday = nowInTz.toDateString() === remindInTz.toDateString();
+    const tomorrow = new Date(nowInTz); tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = tomorrow.toDateString() === remindInTz.toDateString();
+
+    const timePart = newRemindAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz });
+    let formattedTime: string;
+    if (isToday) {
+      formattedTime = timePart;
+    } else if (isTomorrow) {
+      formattedTime = `Tomorrow ${timePart}`;
+    } else {
+      formattedTime = newRemindAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: tz }) + `, ${timePart}`;
+    }
 
     await bot.answerCallbackQuery(query.id, {
       text: `Snoozed until ${formattedTime}`,
@@ -517,7 +527,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
 
     try {
       await bot.editMessageText(
-        `\u23F0 Snoozed until ${formattedTime}`,
+        `\u23F0 ${itemText} \u2014 snoozed until ${formattedTime}`,
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,
