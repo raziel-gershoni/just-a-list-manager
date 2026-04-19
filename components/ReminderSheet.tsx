@@ -200,7 +200,13 @@ export default function ReminderSheet({
             {recurrenceOptions.map((opt) => (
               <button
                 key={opt.key}
-                onClick={() => setRecurrence(opt.value)}
+                onClick={() => {
+                  setRecurrence(opt.value);
+                  // Auto-save recurrence change when editing an existing reminder
+                  if (existingReminder) {
+                    onSetReminder(itemId, existingReminder.remind_at, sharedReminder, opt.value);
+                  }
+                }}
                 className={`${pillBase} ${
                   recurrence === opt.value ? pillSelected : pillUnselected
                 }`}

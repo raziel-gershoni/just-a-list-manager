@@ -453,7 +453,12 @@ export function useItemHandlers({
           },
           body: JSON.stringify({ remind_at: remindAt, is_shared: isSharedReminder, recurrence }),
         });
-        if (!res.ok) throw new Error(`Set reminder failed: ${res.status}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          setReminderToast(err?.error || "Failed to set reminder");
+          setTimeout(() => setReminderToast(null), 3000);
+          return;
+        }
         const data = await res.json();
         // Update local state with the reminder info
         setItems((prev) =>

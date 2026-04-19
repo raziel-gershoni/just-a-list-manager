@@ -27,12 +27,11 @@ export async function POST(
 
   const remindAt = new Date(parsed.data.remind_at);
   const now = new Date();
-  const fiveMinFromNow = new Date(now.getTime() + 5 * 60 * 1000);
   const oneYearFromNow = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
 
-  if (remindAt < fiveMinFromNow) {
+  if (remindAt <= now) {
     return NextResponse.json(
-      { error: "Reminder must be at least 5 minutes in the future" },
+      { error: "Reminder must be in the future" },
       { status: 400 }
     );
   }
@@ -45,22 +44,6 @@ export async function POST(
   }
 
   const supabase = createServerClient();
-
-  // Check max 5 active reminders per item per user
-  const { count } = await supabase
-    .from("item_reminders")
-    .select("id", { count: "exact", head: true })
-    .eq("item_id", itemId)
-    .eq("created_by", auth.userId)
-    .is("sent_at", null)
-    .is("cancelled_at", null);
-
-  if ((count ?? 0) >= 5) {
-    return NextResponse.json(
-      { error: "Maximum 5 active reminders per item" },
-      { status: 400 }
-    );
-  }
 
   // Cancel existing active reminders for this item/user before creating new one
   await supabase
