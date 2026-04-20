@@ -70,22 +70,13 @@ export class GeminiVoiceProcessor implements VoiceProcessor {
     const audioBase64 = audio.toString("base64");
     const listNamesStr = listNames.join(", ");
 
-    const prompt = `You are a shopping/task list assistant. The user's lists are: [${listNamesStr}].
-Current time: ${currentTime}
-User timezone: ${timezone}
+    const prompt = `Shopping/task list assistant. Lists: [${listNamesStr}]. Now: ${currentTime}, TZ: ${timezone}.
 
-Listen to the audio and extract items the user wants to add or remove from their lists.
-
-Rules:
-- If the user names a list, use that exact name from the available lists
-- If the user doesn't name a list, assign the most contextually appropriate list based on item type and list names
-- If only one list exists, assign all items to it
-- Handle mixed languages naturally (Hebrew, English, Russian in one message)
-- Each item should be a separate entry
-- If the user mentions a time, date, or schedule (e.g., "tomorrow at 9am", "in 2 hours", "daily at 8pm", "מחר בתשע", "завтра в 9"), set remind_at as ISO 8601 datetime with timezone offset
-- If the user mentions recurrence ("daily", "weekly", "monthly", "כל יום", "каждый день"), set recurrence accordingly
-- remind_at and recurrence are optional — only set them if the user explicitly mentions a time or schedule
-- For the item text, extract just the task/item name without the time/schedule part`;
+Extract items to add/remove. Rules:
+- Match list names from available lists, or infer from context. One list = assign all to it.
+- Mixed languages OK (Hebrew, English, Russian).
+- Each item = separate entry. Item text = just the task name, no time words.
+- ONLY if user says a time/schedule: set remind_at (ISO 8601 with offset) and optionally recurrence (daily/weekly/monthly). Otherwise leave them null.`;
 
     try {
       const result = await model.generateContent([

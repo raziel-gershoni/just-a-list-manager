@@ -180,6 +180,9 @@ export async function handleVoiceMessage(
       return;
     }
 
+    // Show typing indicator while processing
+    try { await bot.sendChatAction(chatId, "typing"); } catch {}
+
     // Process with Gemini
     const processor = getVoiceProcessor();
     const listNames = uniqueLists.map((l) => l.name);
@@ -278,7 +281,12 @@ export async function handleVoiceMessage(
             recurrence: voiceItem.recurrence ?? null,
           });
 
-          receipt.added[receipt.added.length - 1] += " \u23F0";
+          // Format reminder time for receipt
+          const tz = user.timezone || "UTC";
+          const remindDate = new Date(voiceItem.remind_at);
+          const timeStr = remindDate.toLocaleString("en-GB", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz });
+          const recLabel = voiceItem.recurrence ? ` (${voiceItem.recurrence})` : "";
+          receipt.added[receipt.added.length - 1] += ` \u23F0 ${timeStr}${recLabel}`;
         }
       } else {
         await processRemoveItem(
