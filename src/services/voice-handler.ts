@@ -284,7 +284,7 @@ export async function handleVoiceMessage(
           // Format reminder time for receipt
           const tz = user.timezone || "UTC";
           const remindDate = new Date(voiceItem.remind_at);
-          const timeStr = remindDate.toLocaleString("en-GB", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz });
+          const timeStr = remindDate.toLocaleString(lang || "en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz });
           const recLabel = voiceItem.recurrence ? ` (${voiceItem.recurrence})` : "";
           receipt.added[receipt.added.length - 1] += ` \u23F0 ${timeStr}${recLabel}`;
         }
