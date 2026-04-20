@@ -379,5 +379,13 @@ export async function DELETE(
     return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
 
+  // Cancel active reminders for the deleted item
+  await supabase
+    .from("item_reminders")
+    .update({ cancelled_at: new Date().toISOString() })
+    .eq("item_id", itemId)
+    .is("sent_at", null)
+    .is("cancelled_at", null);
+
   return NextResponse.json({ success: true });
 }
