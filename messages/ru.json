@@ -190,7 +190,14 @@
     "sent": "Напоминание установлено!",
     "cancelled": "Напоминание отменено",
     "snoozed": "Отложено до {time}",
+    "snoozedItem": "⏰ {itemText} — отложено до {time}",
+    "doneItem": "✅ {itemText} — готово",
     "done": "Готово",
-    "snooze": "Отложить"
+    "snooze": "Отложить",
+    "snooze30m": "30 мин",
+    "snooze1h": "1 час",
+    "snooze3h": "3 часа",
+    "snoozeTomorrow": "Завтра",
+    "notFound": "Напоминание не найдено."
   }
 }

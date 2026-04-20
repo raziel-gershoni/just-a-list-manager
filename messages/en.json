@@ -190,7 +190,14 @@
     "sent": "Reminder set!",
     "cancelled": "Reminder cancelled",
     "snoozed": "Snoozed until {time}",
+    "snoozedItem": "⏰ {itemText} — snoozed until {time}",
+    "doneItem": "✅ {itemText} — done",
     "done": "Done",
-    "snooze": "Snooze"
+    "snooze": "Snooze",
+    "snooze30m": "30 min",
+    "snooze1h": "1 hour",
+    "snooze3h": "3 hours",
+    "snoozeTomorrow": "Tomorrow",
+    "notFound": "Reminder not found."
   }
 }

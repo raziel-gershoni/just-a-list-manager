@@ -372,6 +372,14 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
   } else if (data.startsWith("reminder_done:")) {
     const reminderId = data.replace("reminder_done:", "");
 
+    // Get user language
+    const { data: botUser } = await supabase
+      .from("users")
+      .select("language")
+      .eq("telegram_id", query.from.id)
+      .single();
+    const lang = botUser?.language || "en";
+
     // Look up the reminder
     const { data: reminder } = await supabase
       .from("item_reminders")
@@ -380,7 +388,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .single();
 
     if (!reminder) {
-      await bot.answerCallbackQuery(query.id, { text: "Reminder not found." });
+      await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.notFound") });
       return;
     }
 
@@ -405,11 +413,11 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .update({ cancelled_at: new Date().toISOString() })
       .eq("id", reminderId);
 
-    await bot.answerCallbackQuery(query.id, { text: "Done!" });
+    await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.done") });
 
     try {
       await bot.editMessageText(
-        `\u2705 ${itemText} \u2014 done`,
+        getMsg(lang, "reminder.doneItem").replace("{itemText}", itemText),
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,
@@ -422,6 +430,14 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     // Show snooze time buttons
     const reminderId = data.replace("reminder_snooze:", "");
 
+    // Get user language
+    const { data: botUser } = await supabase
+      .from("users")
+      .select("language")
+      .eq("telegram_id", query.from.id)
+      .single();
+    const lang = botUser?.language || "en";
+
     await bot.answerCallbackQuery(query.id);
 
     try {
@@ -429,12 +445,12 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         {
           inline_keyboard: [
             [
-              { text: "30 min", callback_data: `reminder_snooze:${reminderId}:30m` },
-              { text: "1 hour", callback_data: `reminder_snooze:${reminderId}:1h` },
+              { text: getMsg(lang, "reminder.snooze30m"), callback_data: `reminder_snooze:${reminderId}:30m` },
+              { text: getMsg(lang, "reminder.snooze1h"), callback_data: `reminder_snooze:${reminderId}:1h` },
             ],
             [
-              { text: "3 hours", callback_data: `reminder_snooze:${reminderId}:3h` },
-              { text: "Tomorrow", callback_data: `reminder_snooze:${reminderId}:tomorrow` },
+              { text: getMsg(lang, "reminder.snooze3h"), callback_data: `reminder_snooze:${reminderId}:3h` },
+              { text: getMsg(lang, "reminder.snoozeTomorrow"), callback_data: `reminder_snooze:${reminderId}:tomorrow` },
             ],
           ],
         },
@@ -464,6 +480,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     }
 
     const itemText = (reminder.items as unknown as { text: string }).text;
+    // Note: lang for this handler is fetched below with timezone
     const originalTime = new Date(reminder.remind_at);
     let newRemindAt: Date;
 
@@ -493,41 +510,43 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .update({ remind_at: newRemindAt.toISOString(), sent_at: null, recurrence: null })
       .eq("id", reminderId);
 
-    // Get user timezone for display
+    // Get user timezone and language for display
     let tz = "UTC";
+    let lang = "en";
     if (reminder.created_by) {
       const { data: user } = await supabase
         .from("users")
-        .select("timezone")
+        .select("timezone, language")
         .eq("id", reminder.created_by)
         .single();
       if (user?.timezone) tz = user.timezone;
+      if (user?.language) lang = user.language;
     }
 
     // Smart time formatting: time-only for today, "Tomorrow HH:mm" for tomorrow, "Mon DD, HH:mm" for later
     const nowInTz = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
     const remindInTz = new Date(newRemindAt.toLocaleString("en-US", { timeZone: tz }));
     const isToday = nowInTz.toDateString() === remindInTz.toDateString();
-    const tomorrow = new Date(nowInTz); tomorrow.setDate(tomorrow.getDate() + 1);
-    const isTomorrow = tomorrow.toDateString() === remindInTz.toDateString();
+    const tmrw = new Date(nowInTz); tmrw.setDate(tmrw.getDate() + 1);
+    const isTomorrow = tmrw.toDateString() === remindInTz.toDateString();
 
     const timePart = newRemindAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz });
     let formattedTime: string;
     if (isToday) {
       formattedTime = timePart;
     } else if (isTomorrow) {
-      formattedTime = `Tomorrow ${timePart}`;
+      formattedTime = `${getMsg(lang, "reminder.snoozeTomorrow")} ${timePart}`;
     } else {
       formattedTime = newRemindAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: tz }) + `, ${timePart}`;
     }
 
     await bot.answerCallbackQuery(query.id, {
-      text: `Snoozed until ${formattedTime}`,
+      text: getMsg(lang, "reminder.snoozed").replace("{time}", formattedTime),
     });
 
     try {
       await bot.editMessageText(
-        `\u23F0 ${itemText} \u2014 snoozed until ${formattedTime}`,
+        getMsg(lang, "reminder.snoozedItem").replace("{itemText}", itemText).replace("{time}", formattedTime),
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,

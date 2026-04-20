@@ -190,7 +190,14 @@
     "sent": "תזכורת הוגדרה!",
     "cancelled": "תזכורת בוטלה",
     "snoozed": "נדחתה ל-{time}",
+    "snoozedItem": "⏰ {itemText} — נדחה ל-{time}",
+    "doneItem": "✅ {itemText} — בוצע",
     "done": "בוצע",
-    "snooze": "דחה"
+    "snooze": "דחה",
+    "snooze30m": "30 דקות",
+    "snooze1h": "שעה",
+    "snooze3h": "3 שעות",
+    "snoozeTomorrow": "מחר",
+    "notFound": "תזכורת לא נמצאה."
   }
 }
