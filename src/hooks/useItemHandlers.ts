@@ -59,6 +59,11 @@ export function useItemHandlers({
       };
       setItems((prev) => [newItem, ...prev]);
 
+      // Clear animation flag after it plays
+      setTimeout(() => {
+        setItems((prev) => prev.map((i) => i.id === tempId ? { ...i, _justAdded: false } : i));
+      }, 300);
+
       addMutation({
         id: mutId,
         type: "create",

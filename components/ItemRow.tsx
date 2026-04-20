@@ -107,7 +107,7 @@ export default function ItemRow({
   };
 
   return (
-    <div className={`flex items-center gap-3 py-3.5 px-5 border-b border-separator ${isExiting ? "animate-out fade-out slide-out-to-right-4 duration-200 fill-mode-forwards" : ""} ${isJustAdded ? "animate-in fade-in slide-in-from-top-2 duration-200" : ""}`}>
+    <div className={`flex items-center gap-3 py-3.5 px-5 border-b border-separator transition-all duration-200 ${isExiting ? "opacity-0 translate-x-4 max-h-0 py-0 overflow-hidden" : "opacity-100 translate-x-0"} ${isJustAdded ? "animate-in fade-in slide-in-from-top-2 duration-200" : ""}`}>
       <button
         onClick={(e) => {
           e.stopPropagation();
