@@ -55,6 +55,7 @@ export function useItemHandlers({
         edited_by: null,
         editor_name: null,
         _pending: true,
+        _justAdded: true,
       };
       setItems((prev) => [newItem, ...prev]);
 
@@ -157,6 +158,12 @@ export function useItemHandlers({
     async (itemId: string, completed: boolean) => {
       const item = items.find((i) => i.id === itemId);
 
+      // Animate out then update
+      if (completed) {
+        setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, _exiting: true } : i));
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
       // Optimistic
       setItems((prev) =>
         prev.map((i) =>
@@ -165,6 +172,7 @@ export function useItemHandlers({
                 ...i,
                 completed,
                 completed_at: completed ? new Date().toISOString() : null,
+                _exiting: false,
               }
             : i
         )
@@ -261,8 +269,9 @@ export function useItemHandlers({
       tg?.HapticFeedback?.notificationOccurred("warning");
 
       const deletedItem = items.find((i) => i.id === itemId);
-      // Optimistic removal
-      setItems((prev) => prev.filter((i) => i.id !== itemId));
+      // Animate out then remove
+      setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, _exiting: true } : i));
+      setTimeout(() => setItems((prev) => prev.filter((i) => i.id !== itemId)), 200);
 
       // Show undo toast
       const timeout = setTimeout(() => setUndoAction(null), 4000);

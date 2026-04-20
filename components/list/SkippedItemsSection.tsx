@@ -48,25 +48,28 @@ export default function SkippedItemsSection({
         <CircleOff className="w-3.5 h-3.5" />
         {t('items.skippedSection', { count: skippedItems.length })}
       </button>
-      {showSkipped &&
-        skippedItems.map((item) => (
-          <ItemRow
-            key={item.id}
-            id={item.id}
-            text={item.text}
-            completed={false}
-            skipped={true}
-            isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
-            creatorName={isShared ? item.creator_name : null}
-            isOwnItem={item.created_by === userId}
-            editorName={isShared ? item.editor_name : null}
-            isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-            onToggle={onToggle}
-            onDelete={onDelete}
-            onEdit={onEdit}
-            onSkip={onSkip}
-          />
-        ))}
+      <div className={`grid transition-[grid-template-rows] duration-300 ${showSkipped ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="overflow-hidden">
+          {skippedItems.map((item) => (
+            <ItemRow
+              key={item.id}
+              id={item.id}
+              text={item.text}
+              completed={false}
+              skipped={true}
+              isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+              creatorName={isShared ? item.creator_name : null}
+              isOwnItem={item.created_by === userId}
+              editorName={isShared ? item.editor_name : null}
+              isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+              onToggle={onToggle}
+              onDelete={onDelete}
+              onEdit={onEdit}
+              onSkip={onSkip}
+            />
+          ))}
+        </div>
+      </div>
     </>
   );
 }

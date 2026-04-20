@@ -162,7 +162,7 @@ export default function AddItemInput({ listId, listType = "regular", onAddItem }
 
         {/* Autocomplete suggestions */}
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute top-full start-0 end-0 mt-2 bg-tg-section-bg rounded-2xl shadow-xl shadow-black/8 dark:shadow-black/25 border border-border/50 overflow-hidden z-20">
+          <div className="absolute top-full start-0 end-0 mt-2 bg-tg-section-bg rounded-2xl shadow-xl shadow-black/8 dark:shadow-black/25 border border-border/50 overflow-hidden z-20 animate-in fade-in zoom-in-95 duration-150">
             {suggestions.map((item) => (
               <button
                 key={item.id}

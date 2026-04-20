@@ -27,6 +27,8 @@ interface SortableItemProps {
   onRemoveDuplicates?: (text: string) => void;
   reminderAt?: string | null;
   onReminderTap?: (id: string) => void;
+  isExiting?: boolean;
+  isJustAdded?: boolean;
 }
 
 export default function SortableItem({
@@ -46,6 +48,8 @@ export default function SortableItem({
   onRemoveDuplicates,
   reminderAt,
   onReminderTap,
+  isExiting,
+  isJustAdded,
 }: SortableItemProps) {
   const { ref, isDragSource } = useSortable({
     id,
@@ -56,7 +60,7 @@ export default function SortableItem({
   return (
     <div
       ref={ref}
-      className={`touch-pan-y select-none ${isDragSource ? "opacity-50 scale-[1.02] shadow-lg rounded-xl" : ""}`}
+      className={`touch-pan-y select-none transition-transform duration-150 ${isDragSource ? "opacity-50 scale-[1.02] shadow-lg rounded-xl" : ""}`}
     >
       <ItemRow
         id={id}
@@ -75,6 +79,8 @@ export default function SortableItem({
         onRemoveDuplicates={onRemoveDuplicates}
         reminderAt={reminderAt}
         onReminderTap={onReminderTap}
+        isExiting={isExiting}
+        isJustAdded={isJustAdded}
       />
     </div>
   );

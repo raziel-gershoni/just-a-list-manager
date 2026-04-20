@@ -15,6 +15,8 @@ export interface ItemData {
   my_reminder_shared?: boolean;
   my_reminder_recurrence?: string | null;
   _pending?: boolean;
+  _justAdded?: boolean;
+  _exiting?: boolean;
 }
 
 export type CompletedGroup = { label: string; items: ItemData[] };

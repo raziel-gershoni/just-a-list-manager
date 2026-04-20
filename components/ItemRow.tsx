@@ -38,6 +38,8 @@ interface ItemRowProps {
   reminderAt?: string | null;
   onReminderTap?: (id: string) => void;
   isOverdue?: boolean;
+  isExiting?: boolean;
+  isJustAdded?: boolean;
 }
 
 export default function ItemRow({
@@ -59,6 +61,8 @@ export default function ItemRow({
   reminderAt,
   onReminderTap,
   isOverdue,
+  isExiting,
+  isJustAdded,
 }: ItemRowProps) {
   const t = useTranslations("items");
   const [isEditing, setIsEditing] = useState(false);
@@ -103,7 +107,7 @@ export default function ItemRow({
   };
 
   return (
-    <div className="flex items-center gap-3 py-3.5 px-5 border-b border-separator">
+    <div className={`flex items-center gap-3 py-3.5 px-5 border-b border-separator ${isExiting ? "animate-out fade-out slide-out-to-right-4 duration-200 fill-mode-forwards" : ""} ${isJustAdded ? "animate-in fade-in slide-in-from-top-2 duration-200" : ""}`}>
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -210,7 +214,7 @@ export default function ItemRow({
           }}
           className="p-1.5 rounded-full shrink-0 flex items-center gap-1"
         >
-          <Bell className={`w-[18px] h-[18px] ${isOverdue ? "text-amber-500" : reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
+          <Bell className={`w-[18px] h-[18px] ${isOverdue ? "text-amber-500 animate-pulse" : reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
           {reminderAt && (
             <span className={`text-[11px] tracking-wide ${isOverdue ? "text-amber-500" : "text-tg-link"}`}>{formatShortTime(reminderAt, t("tom"))}</span>
           )}

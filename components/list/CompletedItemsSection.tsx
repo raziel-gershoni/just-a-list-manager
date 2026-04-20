@@ -65,8 +65,9 @@ export default function CompletedItemsSection({
           {t('items.clearCompleted')}
         </button>
       </button>
-      {showCompleted &&
-        completedGroups.map((group) => (
+      <div className={`grid transition-[grid-template-rows] duration-300 ${showCompleted ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="overflow-hidden">
+        {completedGroups.map((group) => (
           <div key={group.label}>
             <div className="sticky z-10 px-5 pt-4 pb-1.5 text-[11px] text-tg-hint/70 font-semibold tracking-widest uppercase bg-tg-secondary-bg/80 backdrop-blur-md" style={{ top: 'var(--done-header-h, 44px)' }}>
               {group.label}
@@ -89,6 +90,8 @@ export default function CompletedItemsSection({
             ))}
           </div>
         ))}
+        </div>
+      </div>
     </>
   );
 }

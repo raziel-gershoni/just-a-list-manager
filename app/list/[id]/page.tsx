@@ -241,6 +241,8 @@ function ListContent() {
                   onEdit={handleEditItem}
                   onSkip={listType === "grocery" ? handleSkip : undefined}
                   onRemoveDuplicates={handleRemoveDuplicates}
+                  isExiting={item._exiting}
+                  isJustAdded={item._justAdded}
                 />
               ))}
             </DragDropProvider>
