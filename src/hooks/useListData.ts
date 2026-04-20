@@ -192,7 +192,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     } catch (e) {
       console.error("[List] Background refresh error:", e);
     }
-  }, [jwtRef, listId]);
+  }, [jwtRef, listId, listType]);
 
   return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, fetchItems, refreshItems };
 }
