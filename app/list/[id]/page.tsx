@@ -450,6 +450,8 @@ function ReminderItemsList({
               completed={false}
               isPending={item._pending}
               isOverdue={group.label === t('items.overdue')}
+              isExiting={item._exiting}
+              isJustAdded={item._justAdded}
               creatorName={isShared ? item.creator_name : null}
               isOwnItem={item.created_by === userId}
               editorName={isShared ? item.editor_name : null}
