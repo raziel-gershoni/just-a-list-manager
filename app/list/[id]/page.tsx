@@ -490,7 +490,7 @@ function ReminderItemsList({
               {t('items.clearCompleted')}
             </button>
           </button>
-          {showCompleted && completedItems.map((item) => (
+          {showCompleted && (<div className="item-enter">{completedItems.map((item) => (
             <ItemRow
               key={item.id}
               id={item.id}
@@ -505,7 +505,7 @@ function ReminderItemsList({
               onEdit={onEdit}
               reminderAt={item.my_remind_at}
             />
-          ))}
+          ))}</div>)}
         </>
       )}
     </>

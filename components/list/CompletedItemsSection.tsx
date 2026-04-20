@@ -65,33 +65,33 @@ export default function CompletedItemsSection({
           {t('items.clearCompleted')}
         </button>
       </button>
-      <div className={`grid transition-[grid-template-rows] duration-300 ${showCompleted ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="overflow-hidden">
-        {completedGroups.map((group) => (
-          <div key={group.label}>
-            <div className="sticky z-10 px-5 pt-4 pb-1.5 text-[11px] text-tg-hint/70 font-semibold tracking-widest uppercase bg-tg-secondary-bg/80 backdrop-blur-md" style={{ top: 'var(--done-header-h, 44px)' }}>
-              {group.label}
+      {showCompleted && (
+        <div className="item-enter">
+          {completedGroups.map((group) => (
+            <div key={group.label}>
+              <div className="sticky z-10 px-5 pt-4 pb-1.5 text-[11px] text-tg-hint/70 font-semibold tracking-widest uppercase bg-tg-secondary-bg/80 backdrop-blur-md" style={{ top: 'var(--done-header-h, 44px)' }}>
+                {group.label}
+              </div>
+              {group.items.map((item) => (
+                <ItemRow
+                  key={item.id}
+                  id={item.id}
+                  text={item.text}
+                  completed={true}
+                  isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+                  creatorName={isShared ? item.creator_name : null}
+                  isOwnItem={item.created_by === userId}
+                  editorName={isShared ? item.editor_name : null}
+                  isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+                  onToggle={onToggle}
+                  onDelete={onDelete}
+                  onEdit={onEdit}
+                />
+              ))}
             </div>
-            {group.items.map((item) => (
-              <ItemRow
-                key={item.id}
-                id={item.id}
-                text={item.text}
-                completed={true}
-                isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
-                creatorName={isShared ? item.creator_name : null}
-                isOwnItem={item.created_by === userId}
-                editorName={isShared ? item.editor_name : null}
-                isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-                onToggle={onToggle}
-                onDelete={onDelete}
-                onEdit={onEdit}
-              />
-            ))}
-          </div>
-        ))}
+          ))}
         </div>
-      </div>
+      )}
     </>
   );
 }

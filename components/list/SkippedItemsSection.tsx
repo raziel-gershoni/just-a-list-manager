@@ -48,8 +48,8 @@ export default function SkippedItemsSection({
         <CircleOff className="w-3.5 h-3.5" />
         {t('items.skippedSection', { count: skippedItems.length })}
       </button>
-      <div className={`grid transition-[grid-template-rows] duration-300 ${showSkipped ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="overflow-hidden">
+      {showSkipped && (
+        <div className="item-enter">
           {skippedItems.map((item) => (
             <ItemRow
               key={item.id}
@@ -69,7 +69,7 @@ export default function SkippedItemsSection({
             />
           ))}
         </div>
-      </div>
+      )}
     </>
   );
 }
