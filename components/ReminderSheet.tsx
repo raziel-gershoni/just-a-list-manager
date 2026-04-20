@@ -184,6 +184,7 @@ export default function ReminderSheet({
               type="datetime-local"
               value={customDateTime}
               onChange={(e) => setCustomDateTime(e.target.value)}
+              step={300}
               className="flex-1 bg-tg-secondary-bg text-tg-text rounded-xl px-3 py-2.5 text-sm"
             />
             <button
