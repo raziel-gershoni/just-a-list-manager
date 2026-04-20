@@ -72,7 +72,7 @@ export async function handleVoiceMessage(
     // Look up user
     const { data: user } = await supabase
       .from("users")
-      .select("id, language")
+      .select("id, language, timezone")
       .eq("telegram_id", telegramUserId)
       .single();
 
@@ -183,7 +183,7 @@ export async function handleVoiceMessage(
     // Process with Gemini
     const processor = getVoiceProcessor();
     const listNames = uniqueLists.map((l) => l.name);
-    const result = await processor.process(audioBuffer, listNames);
+    const result = await processor.process(audioBuffer, listNames, user.timezone || "UTC", new Date().toISOString());
 
     if (result.items.length === 0) {
       try {
@@ -248,7 +248,7 @@ export async function handleVoiceMessage(
       };
 
       if (voiceItem.action === "add") {
-        await processAddItem(
+        const itemId = await processAddItem(
           supabase,
           bot,
           chatId,
@@ -258,6 +258,28 @@ export async function handleVoiceMessage(
           receipt,
           lang
         );
+
+        // Create reminder if voice included a time
+        if (itemId && voiceItem.remind_at) {
+          await supabase
+            .from("item_reminders")
+            .update({ cancelled_at: new Date().toISOString() })
+            .eq("item_id", itemId)
+            .eq("created_by", user.id)
+            .is("sent_at", null)
+            .is("cancelled_at", null);
+
+          await supabase.from("item_reminders").insert({
+            item_id: itemId,
+            list_id: targetList.id,
+            created_by: user.id,
+            remind_at: voiceItem.remind_at,
+            is_shared: false,
+            recurrence: voiceItem.recurrence ?? null,
+          });
+
+          receipt.added[receipt.added.length - 1] += " \u23F0";
+        }
       } else {
         await processRemoveItem(
           supabase,
@@ -326,7 +348,7 @@ async function processAddItem(
   userId: string,
   receipt: { added: string[]; removed: string[] },
   lang: string | undefined
-) {
+): Promise<string | null> {
   const { getMsg } = await import("./bot");
   // Check for recyclable items via fuzzy match
   const matches = await findFuzzyMatch(listId, voiceItem.text);
@@ -343,7 +365,7 @@ async function processAddItem(
       // High confidence — auto-recycle
       await recycleItem(match.id, userId);
       receipt.added.push(`${match.text} ${getMsg(lang, "voice.recycledLabel")}`);
-      return;
+      return match.id;
     }
     // Low confidence (0.3–0.6) — fall through to create new item
   } else if (matches.length > 1) {
@@ -356,7 +378,7 @@ async function processAddItem(
     if (similarity > 0.6) {
       await recycleItem(bestMatch.id, userId);
       receipt.added.push(`${bestMatch.text} ${getMsg(lang, "voice.recycledLabel")}`);
-      return;
+      return bestMatch.id;
     }
     // Low confidence — fall through to create new item
   }
@@ -371,14 +393,15 @@ async function processAddItem(
 
   const nextPosition = (maxPosResult?.[0]?.position || 0) + 1;
 
-  await supabase.from("items").insert({
+  const { data: created } = await supabase.from("items").insert({
     list_id: listId,
     text: voiceItem.text,
     position: nextPosition,
     created_by: userId,
-  });
+  }).select("id").single();
 
   receipt.added.push(voiceItem.text);
+  return created?.id ?? null;
 }
 
 async function processRemoveItem(
