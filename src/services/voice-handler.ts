@@ -165,6 +165,9 @@ export async function handleVoiceMessage(
       return;
     }
 
+    // Show typing indicator immediately
+    try { await bot.sendChatAction(chatId, "typing"); } catch {}
+
     // Download voice file
     const fileUrl = await bot.getFileLink(voice.file_id);
     const audioResponse = await fetch(fileUrl);
@@ -180,13 +183,21 @@ export async function handleVoiceMessage(
       return;
     }
 
-    // Show typing indicator while processing
+    // Keep typing indicator alive during Gemini processing
+    const typingInterval = setInterval(() => {
+      bot.sendChatAction(chatId, "typing").catch(() => {});
+    }, 4000);
     try { await bot.sendChatAction(chatId, "typing"); } catch {}
 
     // Process with Gemini
     const processor = getVoiceProcessor();
     const listNames = uniqueLists.map((l) => l.name);
-    const result = await processor.process(audioBuffer, listNames, user.timezone || "UTC", new Date().toISOString());
+    let result: Awaited<ReturnType<typeof processor.process>>;
+    try {
+      result = await processor.process(audioBuffer, listNames, user.timezone || "UTC", new Date().toISOString());
+    } finally {
+      clearInterval(typingInterval);
+    }
 
     if (result.items.length === 0) {
       try {
