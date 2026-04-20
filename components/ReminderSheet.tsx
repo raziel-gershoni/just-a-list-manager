@@ -31,8 +31,9 @@ export default function ReminderSheet({
 }: ReminderSheetProps) {
   const t = useTranslations("reminder");
   const [customDateTime, setCustomDateTime] = useState(() => {
-    // Pre-populate with existing reminder time, or current time + 1 hour
+    // Pre-populate with existing reminder time, or current time + 1 hour (rounded to 5min)
     const d = existingReminder?.remind_at ? new Date(existingReminder.remind_at) : new Date(Date.now() + 60 * 60 * 1000);
+    if (!existingReminder?.remind_at) d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
     // Format as YYYY-MM-DDTHH:mm in local time for datetime-local input
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -65,22 +66,24 @@ export default function ReminderSheet({
     onClose();
   };
 
+  const round5 = (d: Date) => { d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0); return d; };
+
   const computeIn30Min = () => {
     const d = new Date();
     d.setMinutes(d.getMinutes() + 30);
-    return d.toISOString();
+    return round5(d).toISOString();
   };
 
   const computeIn1Hour = () => {
     const d = new Date();
     d.setHours(d.getHours() + 1);
-    return d.toISOString();
+    return round5(d).toISOString();
   };
 
   const computeIn3Hours = () => {
     const d = new Date();
     d.setHours(d.getHours() + 3);
-    return d.toISOString();
+    return round5(d).toISOString();
   };
 
   const computeTomorrow9am = () => {

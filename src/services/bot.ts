@@ -482,24 +482,25 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     const itemText = (reminder.items as unknown as { text: string }).text;
     // Note: lang for this handler is fetched below with timezone
     const originalTime = new Date(reminder.remind_at);
+    const round5 = (d: Date) => { d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0); return d; };
     let newRemindAt: Date;
 
     switch (duration) {
       case "30m":
-        newRemindAt = new Date(originalTime.getTime() + 30 * 60 * 1000);
+        newRemindAt = round5(new Date(originalTime.getTime() + 30 * 60 * 1000));
         break;
       case "1h":
-        newRemindAt = new Date(originalTime.getTime() + 60 * 60 * 1000);
+        newRemindAt = round5(new Date(originalTime.getTime() + 60 * 60 * 1000));
         break;
       case "3h":
-        newRemindAt = new Date(originalTime.getTime() + 3 * 60 * 60 * 1000);
+        newRemindAt = round5(new Date(originalTime.getTime() + 3 * 60 * 60 * 1000));
         break;
       case "tomorrow":
         newRemindAt = new Date(originalTime);
         newRemindAt.setDate(newRemindAt.getDate() + 1);
         break;
       default:
-        newRemindAt = new Date(originalTime.getTime() + 30 * 60 * 1000);
+        newRemindAt = round5(new Date(originalTime.getTime() + 30 * 60 * 1000));
     }
 
     // Update reminder: new remind_at, clear sent_at, and clear recurrence
