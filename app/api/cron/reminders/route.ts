@@ -41,8 +41,16 @@ export async function GET(request: NextRequest) {
       };
       const list = reminder.lists as unknown as { name: string };
 
-      // If item is completed or deleted, cancel the reminder
-      if (item.completed || item.deleted_at) {
+      // If item is completed, silently mark as sent (preserves time display in done section)
+      // If item is deleted, cancel the reminder
+      if (item.completed) {
+        await supabase
+          .from("item_reminders")
+          .update({ sent_at: new Date().toISOString() })
+          .eq("id", reminder.id);
+        continue;
+      }
+      if (item.deleted_at) {
         await supabase
           .from("item_reminders")
           .update({ cancelled_at: new Date().toISOString() })

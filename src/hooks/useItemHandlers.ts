@@ -233,6 +233,20 @@ export function useItemHandlers({
             if (createRes.ok) {
               const { items: created } = await createRes.json();
               if (created?.[0]) {
+                // Add to state immediately so Realtime INSERT skips it (ID match)
+                setItems((prev) => [
+                  {
+                    ...created[0],
+                    creator_name: null,
+                    editor_name: null,
+                    _pending: false,
+                    my_remind_at: nextRemindAt.toISOString(),
+                    my_reminder_id: null,
+                    my_reminder_shared: item.my_reminder_shared ?? false,
+                    my_reminder_recurrence: item.my_reminder_recurrence,
+                  },
+                  ...prev,
+                ]);
                 // Create reminder on the new item
                 await fetch(`/api/lists/${listId}/items/${created[0].id}/reminder`, {
                   method: "POST",
@@ -246,8 +260,6 @@ export function useItemHandlers({
                     recurrence: item.my_reminder_recurrence,
                   }),
                 });
-                // Refresh to pick up new item + reminder together (avoids Realtime race)
-                refreshItems?.();
               }
             }
           }
