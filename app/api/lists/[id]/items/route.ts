@@ -337,15 +337,8 @@ export async function PATCH(
     );
   }
 
-  // Cancel unsent reminders when item is completed (keep sent ones for time display)
-  if (patchData.completed === true) {
-    await supabase
-      .from("item_reminders")
-      .update({ cancelled_at: new Date().toISOString() })
-      .eq("item_id", itemId)
-      .is("sent_at", null)
-      .is("cancelled_at", null);
-  }
+  // Don't cancel reminders on completion — the cron handles cleanup for completed items,
+  // and the frontend needs the reminder to display the original time in the done section.
 
   return NextResponse.json(item);
 }
