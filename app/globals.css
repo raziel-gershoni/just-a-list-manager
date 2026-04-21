@@ -203,4 +203,40 @@
     30% { transform: rotate(3deg); }
     40% { transform: rotate(0deg); }
   }
+
+  /* Time wheel picker */
+  .time-picker-wrapper {
+    background: var(--tg-theme-secondary-bg-color, oklch(0.965 0.002 247.86));
+    border-radius: 1rem;
+    padding: 0.25rem 0;
+    overflow: hidden;
+  }
+  .time-picker {
+    height: 180px;
+  }
+  .time-picker-colon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
+    width: 1.5rem;
+    flex-shrink: 0;
+  }
+  .time-picker [data-rwp-option] {
+    font-size: 1.125rem;
+    color: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
+    font-variant-numeric: tabular-nums;
+  }
+  .time-picker [data-rwp-highlight-item] {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--tg-theme-text-color, oklch(0.205 0.012 247.86));
+    font-variant-numeric: tabular-nums;
+  }
+  .time-picker [data-rwp-highlight-wrapper] {
+    background: var(--tg-theme-bg-color, oklch(1 0 0));
+    border-radius: 0.5rem;
+  }
 }

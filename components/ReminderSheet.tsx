@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Bell, X } from "lucide-react";
+import TimePicker from "@/components/TimePicker";
 
 interface ReminderSheetProps {
   itemId: string;
@@ -185,36 +186,23 @@ export default function ReminderSheet({
         {/* Custom picker */}
         <div className="mb-5">
           <p className="text-sm text-tg-hint mb-2">{t("customTime")}</p>
-          <div className="flex gap-2 items-center">
+          <div className="space-y-3">
             <input
               type="date"
               value={picker.date}
               onChange={(e) => setPicker(p => ({ ...p, date: e.target.value }))}
-              className="flex-1 min-w-0 bg-tg-secondary-bg text-tg-text rounded-xl px-3 py-2.5 text-sm"
+              className="w-full bg-tg-secondary-bg text-tg-text rounded-xl px-3 py-2.5 text-sm"
             />
-            <select
-              value={picker.hour}
-              onChange={(e) => setPicker(p => ({ ...p, hour: Number(e.target.value) }))}
-              className="bg-tg-secondary-bg text-tg-text rounded-xl px-2 py-2.5 text-sm text-center"
-            >
-              {Array.from({ length: 24 }, (_, i) => (
-                <option key={i} value={i}>{String(i).padStart(2, "0")}</option>
-              ))}
-            </select>
-            <span className="text-tg-hint font-medium text-sm">:</span>
-            <select
-              value={picker.minute}
-              onChange={(e) => setPicker(p => ({ ...p, minute: Number(e.target.value) }))}
-              className="bg-tg-secondary-bg text-tg-text rounded-xl px-2 py-2.5 text-sm text-center"
-            >
-              {Array.from({ length: 12 }, (_, i) => i * 5).map(m => (
-                <option key={m} value={m}>{String(m).padStart(2, "0")}</option>
-              ))}
-            </select>
+            <TimePicker
+              hour={picker.hour}
+              minute={picker.minute}
+              onHourChange={(h) => setPicker(p => ({ ...p, hour: h }))}
+              onMinuteChange={(m) => setPicker(p => ({ ...p, minute: m }))}
+            />
             <button
               onClick={handleCustomSet}
               disabled={!picker.date}
-              className="px-4 py-2.5 rounded-xl bg-tg-button text-tg-button-text text-sm font-medium disabled:opacity-50"
+              className="w-full py-2.5 rounded-xl bg-tg-button text-tg-button-text text-sm font-medium disabled:opacity-50"
             >
               {t("set")}
             </button>

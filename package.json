@@ -13,6 +13,7 @@
   "dependencies": {
     "@dnd-kit/react": "^0.2.4",
     "@google/generative-ai": "^0.24.1",
+    "@ncdai/react-wheel-picker": "^1.2.2",
     "@supabase/supabase-js": "^2.95.3",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.2",
