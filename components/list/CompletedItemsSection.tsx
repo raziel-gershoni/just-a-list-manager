@@ -84,6 +84,7 @@ export default function CompletedItemsSection({
                   editorName={isShared ? item.editor_name : null}
                   isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
                   reminderAt={item.my_remind_at}
+                  recurrence={item.my_reminder_recurrence}
                   onToggle={onToggle}
                   onDelete={onDelete}
                   onEdit={onEdit}

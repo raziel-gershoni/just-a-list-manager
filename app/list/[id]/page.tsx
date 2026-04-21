@@ -461,6 +461,7 @@ function ReminderItemsList({
               onDelete={onDelete}
               onEdit={onEdit}
               reminderAt={item.my_remind_at}
+              recurrence={item.my_reminder_recurrence}
               onReminderTap={onReminderTap}
             />
           ))}
@@ -505,6 +506,7 @@ function ReminderItemsList({
               onDelete={onDelete}
               onEdit={onEdit}
               reminderAt={item.my_remind_at}
+              recurrence={item.my_reminder_recurrence}
             />
           ))}</div>)}
         </>

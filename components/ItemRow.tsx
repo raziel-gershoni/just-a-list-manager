@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Bell, Check, CircleOff, Clock, Copy, Pencil, RotateCcw, X } from "lucide-react";
+import { Bell, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
 function formatShortTime(iso: string, tomLabel: string): string {
@@ -36,6 +36,7 @@ interface ItemRowProps {
   onSkip?: (id: string, skipped: boolean) => void;
   onRemoveDuplicates?: (text: string) => void;
   reminderAt?: string | null;
+  recurrence?: string | null;
   onReminderTap?: (id: string) => void;
   isOverdue?: boolean;
   isExiting?: boolean;
@@ -59,6 +60,7 @@ export default function ItemRow({
   onSkip,
   onRemoveDuplicates,
   reminderAt,
+  recurrence,
   onReminderTap,
   isOverdue,
   isExiting,
@@ -214,14 +216,24 @@ export default function ItemRow({
           }}
           className="p-1.5 rounded-full shrink-0 flex items-center gap-1"
         >
-          <Bell className={`w-[18px] h-[18px] ${isOverdue ? "text-amber-500 bell-pulse" : reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
+          {recurrence ? (
+            <span className={`relative shrink-0 ${isOverdue ? "text-amber-500" : reminderAt ? "text-tg-link" : "text-tg-hint"}`}>
+              <Bell className={`w-[18px] h-[18px] ${isOverdue ? "bell-pulse" : ""}`} />
+              <Repeat className="w-[9px] h-[9px] absolute -bottom-0.5 -right-0.5 stroke-[3]" />
+            </span>
+          ) : (
+            <Bell className={`w-[18px] h-[18px] ${isOverdue ? "text-amber-500 bell-pulse" : reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
+          )}
           {reminderAt && (
             <span className={`text-[11px] tracking-wide ${isOverdue ? "text-amber-500" : "text-tg-link"}`}>{formatShortTime(reminderAt, t("tom"))}</span>
           )}
         </button>
       )}
       {completed && reminderAt && (
-        <span className="text-[11px] tracking-wide text-tg-hint shrink-0">{formatShortTime(reminderAt, t("tom"))}</span>
+        <span className="text-[11px] tracking-wide text-tg-hint shrink-0 flex items-center gap-1">
+          {recurrence && <Repeat className="w-[10px] h-[10px]" />}
+          {formatShortTime(reminderAt, t("tom"))}
+        </span>
       )}
 
       <button
