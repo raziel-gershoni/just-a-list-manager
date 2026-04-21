@@ -337,12 +337,13 @@ export async function PATCH(
     );
   }
 
-  // Cancel active reminders when item is completed
+  // Cancel unsent reminders when item is completed (keep sent ones for time display)
   if (patchData.completed === true) {
     await supabase
       .from("item_reminders")
       .update({ cancelled_at: new Date().toISOString() })
       .eq("item_id", itemId)
+      .is("sent_at", null)
       .is("cancelled_at", null);
   }
 
