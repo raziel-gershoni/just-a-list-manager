@@ -37,13 +37,12 @@ export async function POST(
 
   const supabase = createServerClient();
 
-  // Cancel existing active reminders for this item/user before creating new one
+  // Cancel all existing reminders (sent or unsent) for this item/user before creating new one
   await supabase
     .from("item_reminders")
     .update({ cancelled_at: new Date().toISOString() })
     .eq("item_id", itemId)
     .eq("created_by", auth.userId)
-    .is("sent_at", null)
     .is("cancelled_at", null);
 
   const { data: reminder, error } = await supabase
