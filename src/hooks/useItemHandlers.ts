@@ -201,23 +201,22 @@ export function useItemHandlers({
           });
           if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
 
-          // For recurring items in reminders lists: create next occurrence
+          // For recurring items in reminders lists: create next occurrence after now
           if (completed && listType === "reminders" && item?.my_reminder_recurrence && item?.my_remind_at) {
-            const currentRemindAt = new Date(item.my_remind_at);
-            let nextRemindAt: Date;
+            const now = new Date();
+            const nextRemindAt = new Date(item.my_remind_at);
             switch (item.my_reminder_recurrence) {
               case "daily":
-                nextRemindAt = new Date(currentRemindAt.getTime() + 24 * 60 * 60 * 1000);
+                while (nextRemindAt <= now) nextRemindAt.setDate(nextRemindAt.getDate() + 1);
                 break;
               case "weekly":
-                nextRemindAt = new Date(currentRemindAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+                while (nextRemindAt <= now) nextRemindAt.setDate(nextRemindAt.getDate() + 7);
                 break;
               case "monthly":
-                nextRemindAt = new Date(currentRemindAt);
-                nextRemindAt.setMonth(nextRemindAt.getMonth() + 1);
+                while (nextRemindAt <= now) nextRemindAt.setMonth(nextRemindAt.getMonth() + 1);
                 break;
               default:
-                nextRemindAt = new Date(currentRemindAt.getTime() + 24 * 60 * 60 * 1000);
+                while (nextRemindAt <= now) nextRemindAt.setDate(nextRemindAt.getDate() + 1);
             }
 
             // Create new item with same text

@@ -53,17 +53,22 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           const { reminders } = await remindersRes.json();
           for (const r of reminders || []) {
             const existing = remindersByItem.get(r.item_id);
-            // Prefer active (unsent) reminders over sent ones; among same type, keep earliest
+            // Prefer sent (fired) reminders over unsent; among sent keep latest, among unsent keep earliest
             if (!existing) {
               remindersByItem.set(r.item_id, r);
             } else {
               const existingIsSent = !!existing.sent_at;
               const newIsSent = !!r.sent_at;
-              if (existingIsSent && !newIsSent) {
-                // Prefer active over sent
+              if (!existingIsSent && newIsSent) {
+                // Prefer sent (user was notified) over unsent future
                 remindersByItem.set(r.item_id, r);
-              } else if (existingIsSent === newIsSent && r.remind_at < existing.remind_at) {
-                // Same type — keep earliest
+              } else if (existingIsSent && !newIsSent) {
+                // Keep sent — don't replace with unsent
+              } else if (existingIsSent && newIsSent && r.remind_at > existing.remind_at) {
+                // Both sent — keep latest
+                remindersByItem.set(r.item_id, r);
+              } else if (!existingIsSent && !newIsSent && r.remind_at < existing.remind_at) {
+                // Both unsent — keep earliest
                 remindersByItem.set(r.item_id, r);
               }
             }

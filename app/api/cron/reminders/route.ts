@@ -127,41 +127,11 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Mark as sent
+      // Mark as sent (next occurrence created when user acknowledges via "Done")
       await supabase
         .from("item_reminders")
         .update({ sent_at: new Date().toISOString() })
         .eq("id", reminder.id);
-
-      // Handle recurrence
-      if (reminder.recurrence) {
-        const currentRemindAt = new Date(reminder.remind_at);
-        let nextRemindAt: Date;
-
-        switch (reminder.recurrence) {
-          case "daily":
-            nextRemindAt = new Date(currentRemindAt.getTime() + 24 * 60 * 60 * 1000);
-            break;
-          case "weekly":
-            nextRemindAt = new Date(currentRemindAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-            break;
-          case "monthly":
-            nextRemindAt = new Date(currentRemindAt);
-            nextRemindAt.setMonth(nextRemindAt.getMonth() + 1);
-            break;
-          default:
-            nextRemindAt = new Date(currentRemindAt.getTime() + 24 * 60 * 60 * 1000);
-        }
-
-        await supabase.from("item_reminders").insert({
-          item_id: reminder.item_id,
-          list_id: reminder.list_id,
-          created_by: reminder.created_by,
-          remind_at: nextRemindAt.toISOString(),
-          is_shared: reminder.is_shared,
-          recurrence: reminder.recurrence,
-        });
-      }
 
       processed++;
     } catch (e) {

@@ -383,7 +383,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     // Look up the reminder
     const { data: reminder } = await supabase
       .from("item_reminders")
-      .select("id, item_id, list_id")
+      .select("id, item_id, list_id, created_by, remind_at, is_shared, recurrence")
       .eq("id", reminderId)
       .single();
 
@@ -401,17 +401,45 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
 
     const itemText = item?.text || "Item";
 
-    // Mark item as completed
-    await supabase
-      .from("items")
-      .update({ completed: true, completed_at: new Date().toISOString() })
-      .eq("id", reminder.item_id);
-
-    // Cancel the reminder
+    // Cancel the current reminder
     await supabase
       .from("item_reminders")
       .update({ cancelled_at: new Date().toISOString() })
       .eq("id", reminderId);
+
+    if (reminder.recurrence) {
+      // Recurring: create next occurrence (don't complete the item)
+      const now = new Date();
+      const next = new Date(reminder.remind_at);
+      switch (reminder.recurrence) {
+        case "daily":
+          while (next <= now) next.setDate(next.getDate() + 1);
+          break;
+        case "weekly":
+          while (next <= now) next.setDate(next.getDate() + 7);
+          break;
+        case "monthly":
+          while (next <= now) next.setMonth(next.getMonth() + 1);
+          break;
+        default:
+          while (next <= now) next.setDate(next.getDate() + 1);
+      }
+
+      await supabase.from("item_reminders").insert({
+        item_id: reminder.item_id,
+        list_id: reminder.list_id,
+        created_by: reminder.created_by,
+        remind_at: next.toISOString(),
+        is_shared: reminder.is_shared,
+        recurrence: reminder.recurrence,
+      });
+    } else {
+      // One-time: mark item as completed
+      await supabase
+        .from("items")
+        .update({ completed: true, completed_at: new Date().toISOString() })
+        .eq("id", reminder.item_id);
+    }
 
     await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.done") });
 
