@@ -198,6 +198,8 @@
     "snooze1h": "שעה",
     "snooze3h": "3 שעות",
     "snoozeTomorrow": "מחר",
-    "notFound": "תזכורת לא נמצאה."
+    "notFound": "תזכורת לא נמצאה.",
+    "today": "היום",
+    "tomorrow": "מחר"
   }
 }

@@ -198,6 +198,8 @@
     "snooze1h": "1 hour",
     "snooze3h": "3 hours",
     "snoozeTomorrow": "Tomorrow",
-    "notFound": "Reminder not found."
+    "notFound": "Reminder not found.",
+    "today": "Today",
+    "tomorrow": "Tomorrow"
   }
 }
