@@ -220,6 +220,9 @@ export default function ItemRow({
           )}
         </button>
       )}
+      {completed && reminderAt && (
+        <span className="text-[11px] tracking-wide text-tg-hint shrink-0">{formatShortTime(reminderAt, t("tom"))}</span>
+      )}
 
       <button
         onClick={(e) => {

@@ -19,6 +19,7 @@ interface UseItemHandlersParams {
   } | null>>;
   setDuplicateWarning: React.Dispatch<React.SetStateAction<string | null>>;
   setReminderToast: React.Dispatch<React.SetStateAction<string | null>>;
+  refreshItems?: () => Promise<void>;
   listType?: "regular" | "reminders" | "grocery";
   t: (key: string, values?: Record<string, unknown>) => string;
 }
@@ -33,6 +34,7 @@ export function useItemHandlers({
   setUndoAction,
   setDuplicateWarning,
   setReminderToast,
+  refreshItems,
   listType,
   t,
 }: UseItemHandlersParams) {
@@ -244,27 +246,15 @@ export function useItemHandlers({
                     recurrence: item.my_reminder_recurrence,
                   }),
                 });
-                // Add the new item to local state
-                setItems((prev) => [
-                  {
-                    ...created[0],
-                    creator_name: null,
-                    editor_name: null,
-                    _pending: false,
-                    my_remind_at: nextRemindAt.toISOString(),
-                    my_reminder_id: null,
-                    my_reminder_shared: item.my_reminder_shared ?? false,
-                    my_reminder_recurrence: item.my_reminder_recurrence,
-                  },
-                  ...prev,
-                ]);
+                // Refresh to pick up new item + reminder together (avoids Realtime race)
+                refreshItems?.();
               }
             }
           }
         },
       });
     },
-    [jwtRef, listId, listType, items, addMutation, setItems]
+    [jwtRef, listId, listType, items, addMutation, setItems, refreshItems]
   );
 
   const handleDelete = useCallback(
