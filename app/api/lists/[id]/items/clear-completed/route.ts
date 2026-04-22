@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
+import { cancelItemReminders } from "@/src/services/reminders";
 
 export async function POST(
   request: NextRequest,
@@ -37,15 +38,9 @@ export async function POST(
     );
   }
 
-  // Cancel all reminders for cleared items (sent and unsent)
+  // Cancel all reminders for cleared items
   const clearedIds = (cleared || []).map((i) => i.id);
-  if (clearedIds.length > 0) {
-    await supabase
-      .from("item_reminders")
-      .update({ cancelled_at: new Date().toISOString() })
-      .in("item_id", clearedIds)
-      .is("cancelled_at", null);
-  }
+  await cancelItemReminders(supabase, clearedIds);
 
   return NextResponse.json({
     cleared: (cleared || []).length,

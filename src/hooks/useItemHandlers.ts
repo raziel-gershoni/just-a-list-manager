@@ -19,7 +19,6 @@ interface UseItemHandlersParams {
   } | null>>;
   setDuplicateWarning: React.Dispatch<React.SetStateAction<string | null>>;
   setReminderToast: React.Dispatch<React.SetStateAction<string | null>>;
-  refreshItems?: () => Promise<void>;
   listType?: "regular" | "reminders" | "grocery";
   t: (key: string, values?: Record<string, unknown>) => string;
 }
@@ -34,7 +33,6 @@ export function useItemHandlers({
   setUndoAction,
   setDuplicateWarning,
   setReminderToast,
-  refreshItems,
   listType,
   t,
 }: UseItemHandlersParams) {
@@ -203,70 +201,50 @@ export function useItemHandlers({
           });
           if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
 
-          // For recurring items in reminders lists: create next occurrence after now
+          // For recurring items in reminders lists: complete + create next occurrence
           if (completed && listType === "reminders" && item?.my_reminder_recurrence && item?.my_remind_at) {
-            const now = new Date();
-            const nextRemindAt = new Date(item.my_remind_at);
-            switch (item.my_reminder_recurrence) {
-              case "daily":
-                while (nextRemindAt <= now) nextRemindAt.setDate(nextRemindAt.getDate() + 1);
-                break;
-              case "weekly":
-                while (nextRemindAt <= now) nextRemindAt.setDate(nextRemindAt.getDate() + 7);
-                break;
-              case "monthly":
-                while (nextRemindAt <= now) nextRemindAt.setMonth(nextRemindAt.getMonth() + 1);
-                break;
-              default:
-                while (nextRemindAt <= now) nextRemindAt.setDate(nextRemindAt.getDate() + 1);
-            }
-
-            // Create new item with same text
-            const createRes = await fetch(`/api/lists/${listId}/items`, {
+            const recurRes = await fetch(`/api/lists/${listId}/items/${itemId}/complete-recurring`, {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${jwt}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({ text: item.text, idempotencyKey: genMutId(), position: Date.now() }),
+              body: JSON.stringify({
+                remindAt: item.my_remind_at,
+                recurrence: item.my_reminder_recurrence,
+                isShared: item.my_reminder_shared ?? false,
+              }),
             });
-            if (createRes.ok) {
-              const { items: created } = await createRes.json();
-              if (created?.[0]) {
-                // Add to state immediately so Realtime INSERT skips it (ID match)
-                setItems((prev) => [
-                  {
-                    ...created[0],
-                    creator_name: null,
-                    editor_name: null,
-                    _pending: false,
-                    my_remind_at: nextRemindAt.toISOString(),
-                    my_reminder_id: null,
-                    my_reminder_shared: item.my_reminder_shared ?? false,
-                    my_reminder_recurrence: item.my_reminder_recurrence,
-                  },
-                  ...prev,
-                ]);
-                // Create reminder on the new item
-                await fetch(`/api/lists/${listId}/items/${created[0].id}/reminder`, {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bearer ${jwt}`,
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    remind_at: nextRemindAt.toISOString(),
-                    is_shared: item.my_reminder_shared ?? false,
-                    recurrence: item.my_reminder_recurrence,
-                  }),
-                });
-              }
+            if (recurRes.ok) {
+              const { newItemId, nextRemindAt } = await recurRes.json();
+              // Add to state immediately so Realtime INSERT skips it (ID match)
+              setItems((prev) => [
+                {
+                  id: newItemId,
+                  text: item.text,
+                  completed: false,
+                  completed_at: null,
+                  deleted_at: null,
+                  skipped_at: null,
+                  position: Date.now(),
+                  created_by: null,
+                  creator_name: null,
+                  edited_by: null,
+                  editor_name: null,
+                  _pending: false,
+                  my_remind_at: nextRemindAt,
+                  my_reminder_id: null,
+                  my_reminder_shared: item.my_reminder_shared ?? false,
+                  my_reminder_recurrence: item.my_reminder_recurrence,
+                },
+                ...prev,
+              ]);
             }
           }
         },
       });
     },
-    [jwtRef, listId, listType, items, addMutation, setItems, refreshItems]
+    [jwtRef, listId, listType, items, addMutation, setItems]
   );
 
   const handleDelete = useCallback(

@@ -6,6 +6,7 @@
 
 import TelegramBot from "node-telegram-bot-api";
 import { createServerClient } from "@/src/lib/supabase";
+import { completeRecurringItem } from "@/src/services/recurring";
 import { serverEnv } from "@/src/lib/env";
 import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
@@ -408,30 +409,15 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .eq("id", reminderId);
 
     if (reminder.recurrence) {
-      // Recurring: create next occurrence (don't complete the item)
-      const now = new Date();
-      const next = new Date(reminder.remind_at);
-      switch (reminder.recurrence) {
-        case "daily":
-          while (next <= now) next.setDate(next.getDate() + 1);
-          break;
-        case "weekly":
-          while (next <= now) next.setDate(next.getDate() + 7);
-          break;
-        case "monthly":
-          while (next <= now) next.setMonth(next.getMonth() + 1);
-          break;
-        default:
-          while (next <= now) next.setDate(next.getDate() + 1);
-      }
-
-      await supabase.from("item_reminders").insert({
-        item_id: reminder.item_id,
-        list_id: reminder.list_id,
-        created_by: reminder.created_by,
-        remind_at: next.toISOString(),
-        is_shared: reminder.is_shared,
+      // Recurring: complete item + create new occurrence (same flow as UI)
+      await completeRecurringItem(supabase, {
+        itemId: reminder.item_id,
+        listId: reminder.list_id,
+        userId: reminder.created_by,
+        text: itemText,
+        remindAt: reminder.remind_at,
         recurrence: reminder.recurrence,
+        isShared: reminder.is_shared,
       });
     } else {
       // One-time: mark item as completed

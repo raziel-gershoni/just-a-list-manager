@@ -5,6 +5,7 @@ import { createServerClient } from "@/src/lib/supabase";
 import { findRecyclableItems, recycleItem } from "@/src/services/item-recycler";
 import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
 import { parseBody } from "@/src/lib/api-validation";
+import { cancelItemReminders } from "@/src/services/reminders";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
@@ -382,12 +383,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
 
-  // Cancel all reminders for the deleted item (sent and unsent)
-  await supabase
-    .from("item_reminders")
-    .update({ cancelled_at: new Date().toISOString() })
-    .eq("item_id", itemId)
-    .is("cancelled_at", null);
+  // Cancel all reminders for the deleted item
+  await cancelItemReminders(supabase, itemId);
 
   return NextResponse.json({ success: true });
 }
