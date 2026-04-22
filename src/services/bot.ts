@@ -402,14 +402,9 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
 
     const itemText = item?.text || "Item";
 
-    // Cancel the current reminder
-    await supabase
-      .from("item_reminders")
-      .update({ cancelled_at: new Date().toISOString() })
-      .eq("id", reminderId);
-
     if (reminder.recurrence) {
-      // Recurring: complete item + create new occurrence (same flow as UI)
+      // Recurring: complete item + create new occurrence
+      // Keep the sent reminder (not cancelled) so completed item shows its time
       await completeRecurringItem(supabase, {
         itemId: reminder.item_id,
         listId: reminder.list_id,
@@ -420,7 +415,11 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         isShared: reminder.is_shared,
       });
     } else {
-      // One-time: mark item as completed
+      // One-time: cancel reminder + mark item as completed
+      await supabase
+        .from("item_reminders")
+        .update({ cancelled_at: new Date().toISOString() })
+        .eq("id", reminderId);
       await supabase
         .from("items")
         .update({ completed: true, completed_at: new Date().toISOString() })
