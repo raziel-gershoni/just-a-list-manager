@@ -28,16 +28,25 @@ export async function completeRecurringItem(
 ): Promise<{ newItemId: string; nextRemindAt: string } | null> {
   const { itemId, listId, userId, text, remindAt, recurrence, isShared } = params;
 
-  // 1. Mark original item completed
+  // 1. Soft-delete previous completed occurrences (same text, same list)
+  await supabase
+    .from("items")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("list_id", listId)
+    .eq("text", text)
+    .eq("completed", true)
+    .is("deleted_at", null);
+
+  // 2. Mark current item completed
   await supabase
     .from("items")
     .update({ completed: true, completed_at: new Date().toISOString() })
     .eq("id", itemId);
 
-  // 2. Calculate next occurrence
+  // 3. Calculate next occurrence
   const nextRemindAt = getNextOccurrence(new Date(remindAt), recurrence);
 
-  // 3. Create new item with same text
+  // 4. Create new item with same text
   const { data: newItem, error: createError } = await supabase
     .from("items")
     .insert({ text, list_id: listId, created_by: userId, position: Date.now() })
@@ -49,7 +58,7 @@ export async function completeRecurringItem(
     return null;
   }
 
-  // 4. Create reminder on the new item
+  // 5. Create reminder on the new item
   await supabase.from("item_reminders").insert({
     item_id: newItem.id,
     list_id: listId,
