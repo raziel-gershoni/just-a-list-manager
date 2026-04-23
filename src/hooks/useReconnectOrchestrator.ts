@@ -239,6 +239,7 @@ export function useReconnectOrchestrator(params: {
     };
 
     window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", debouncedReconnect);
     document.addEventListener("visibilitychange", handleVisibility);
 
     // 45-minute proactive timer (ensures JWT never expires during stable use)
@@ -248,6 +249,7 @@ export function useReconnectOrchestrator(params: {
 
     return () => {
       window.removeEventListener("online", handleOnline);
+      window.removeEventListener("focus", debouncedReconnect);
       document.removeEventListener("visibilitychange", handleVisibility);
       clearInterval(proactiveTimer);
       if (cooldownTimeoutRef.current) clearTimeout(cooldownTimeoutRef.current);
