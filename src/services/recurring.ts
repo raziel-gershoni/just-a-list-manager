@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export function getNextOccurrence(remindAt: Date, recurrence: string): Date {
+  // Advance at least once: if user is marking done, the current occurrence is acknowledged,
+  // so the next reminder must be a future occurrence (not the same one).
   const next = new Date(remindAt);
   const now = new Date();
   const advance = () => {
@@ -10,7 +12,7 @@ export function getNextOccurrence(remindAt: Date, recurrence: string): Date {
       default: next.setDate(next.getDate() + 1); // daily + fallback
     }
   };
-  while (next <= now) advance();
+  do { advance(); } while (next <= now);
   return next;
 }
 
@@ -28,13 +30,14 @@ export async function completeRecurringItem(
 ): Promise<{ newItemId: string; nextRemindAt: string } | null> {
   const { itemId, listId, userId, text, remindAt, recurrence, isShared } = params;
 
-  // 1. Soft-delete previous completed occurrences (same text, same list)
+  // 1. Soft-delete previous completed occurrences (same text, same list, not the current item)
   await supabase
     .from("items")
     .update({ deleted_at: new Date().toISOString() })
     .eq("list_id", listId)
     .eq("text", text)
     .eq("completed", true)
+    .neq("id", itemId)
     .is("deleted_at", null);
 
   // 2. Mark current item completed

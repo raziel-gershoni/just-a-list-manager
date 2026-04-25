@@ -3,6 +3,26 @@
 import { useState, useCallback } from "react";
 import type { ItemData } from "@/src/types";
 
+type Reminder = {
+  id: string;
+  remind_at: string;
+  is_shared: boolean;
+  recurrence?: string;
+  sent_at?: string;
+};
+
+// Pick the reminder that should drive an item's display.
+// Sent (fired) wins over unsent; among sent keep latest; among unsent keep earliest.
+function pickPreferredReminder(existing: Reminder | undefined, candidate: Reminder): Reminder {
+  if (!existing) return candidate;
+  const eSent = !!existing.sent_at;
+  const cSent = !!candidate.sent_at;
+  if (!eSent && cSent) return candidate;
+  if (eSent && !cSent) return existing;
+  if (eSent && cSent) return candidate.remind_at > existing.remind_at ? candidate : existing;
+  return candidate.remind_at < existing.remind_at ? candidate : existing;
+}
+
 export function useListData(listId: string, jwtRef: React.RefObject<string | null>) {
   const [listName, setListName] = useState("");
   const [items, setItems] = useState<ItemData[]>([]);
@@ -48,30 +68,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         const remindersRes = await fetch(remindersUrl, {
           headers: { Authorization: `Bearer ${jwt}` },
         });
-        const remindersByItem = new Map<string, { id: string; remind_at: string; is_shared: boolean; recurrence?: string; sent_at?: string }>();
+        const remindersByItem = new Map<string, Reminder>();
         if (remindersRes.ok) {
           const { reminders } = await remindersRes.json();
           for (const r of reminders || []) {
-            const existing = remindersByItem.get(r.item_id);
-            // Prefer sent (fired) reminders over unsent; among sent keep latest, among unsent keep earliest
-            if (!existing) {
-              remindersByItem.set(r.item_id, r);
-            } else {
-              const existingIsSent = !!existing.sent_at;
-              const newIsSent = !!r.sent_at;
-              if (!existingIsSent && newIsSent) {
-                // Prefer sent (user was notified) over unsent future
-                remindersByItem.set(r.item_id, r);
-              } else if (existingIsSent && !newIsSent) {
-                // Keep sent — don't replace with unsent
-              } else if (existingIsSent && newIsSent && r.remind_at > existing.remind_at) {
-                // Both sent — keep latest
-                remindersByItem.set(r.item_id, r);
-              } else if (!existingIsSent && !newIsSent && r.remind_at < existing.remind_at) {
-                // Both unsent — keep earliest
-                remindersByItem.set(r.item_id, r);
-              }
-            }
+            remindersByItem.set(r.item_id, pickPreferredReminder(remindersByItem.get(r.item_id), r));
           }
         }
 
@@ -134,22 +135,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       const remindersRes = await fetch(remindersUrl, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      const remindersByItem = new Map<string, { id: string; remind_at: string; is_shared: boolean; recurrence?: string; sent_at?: string }>();
+      const remindersByItem = new Map<string, Reminder>();
       if (remindersRes.ok) {
         const { reminders } = await remindersRes.json();
         for (const r of reminders || []) {
-          const existing = remindersByItem.get(r.item_id);
-          if (!existing) {
-            remindersByItem.set(r.item_id, r);
-          } else {
-            const existingIsSent = !!existing.sent_at;
-            const newIsSent = !!r.sent_at;
-            if (existingIsSent && !newIsSent) {
-              remindersByItem.set(r.item_id, r);
-            } else if (existingIsSent === newIsSent && r.remind_at < existing.remind_at) {
-              remindersByItem.set(r.item_id, r);
-            }
-          }
+          remindersByItem.set(r.item_id, pickPreferredReminder(remindersByItem.get(r.item_id), r));
         }
       }
 

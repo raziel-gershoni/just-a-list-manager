@@ -190,19 +190,11 @@ export function useItemHandlers({
         payload: { listId, itemId, completed },
         execute: async () => {
           const jwt = jwtRef.current;
-          const res = await fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${jwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId, completed }),
-            keepalive: true,
-          });
-          if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
+          const isRecurringDone = completed && listType === "reminders" && item?.my_reminder_recurrence && item?.my_remind_at;
 
-          // For recurring items in reminders lists: complete + create next occurrence
-          if (completed && listType === "reminders" && item?.my_reminder_recurrence && item?.my_remind_at) {
+          if (isRecurringDone) {
+            // Recurring completion: complete-recurring endpoint owns the full transition
+            // (marks item completed + creates next occurrence). No separate PATCH.
             const recurRes = await fetch(`/api/lists/${listId}/items/${itemId}/complete-recurring`, {
               method: "POST",
               headers: {
@@ -214,32 +206,44 @@ export function useItemHandlers({
                 recurrence: item.my_reminder_recurrence,
                 isShared: item.my_reminder_shared ?? false,
               }),
+              keepalive: true,
             });
-            if (recurRes.ok) {
-              const { newItemId, nextRemindAt } = await recurRes.json();
-              // Add to state immediately so Realtime INSERT skips it (ID match)
-              setItems((prev) => [
-                {
-                  id: newItemId,
-                  text: item.text,
-                  completed: false,
-                  completed_at: null,
-                  deleted_at: null,
-                  skipped_at: null,
-                  position: Date.now(),
-                  created_by: null,
-                  creator_name: null,
-                  edited_by: null,
-                  editor_name: null,
-                  _pending: false,
-                  my_remind_at: nextRemindAt,
-                  my_reminder_id: null,
-                  my_reminder_shared: item.my_reminder_shared ?? false,
-                  my_reminder_recurrence: item.my_reminder_recurrence,
-                },
-                ...prev,
-              ]);
-            }
+            if (!recurRes.ok) throw new Error(`Recurring complete failed: ${recurRes.status}`);
+            const { newItemId, nextRemindAt } = await recurRes.json();
+            // Add new occurrence to state immediately so Realtime INSERT skips it (ID match)
+            setItems((prev) => [
+              {
+                id: newItemId,
+                text: item.text,
+                completed: false,
+                completed_at: null,
+                deleted_at: null,
+                skipped_at: null,
+                position: Date.now(),
+                created_by: null,
+                creator_name: null,
+                edited_by: null,
+                editor_name: null,
+                _pending: false,
+                my_remind_at: nextRemindAt,
+                my_reminder_id: null,
+                my_reminder_shared: item.my_reminder_shared ?? false,
+                my_reminder_recurrence: item.my_reminder_recurrence,
+              },
+              ...prev,
+            ]);
+          } else {
+            // Normal toggle (non-recurring complete, uncomplete, non-reminders list)
+            const res = await fetch(`/api/lists/${listId}/items`, {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${jwt}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ itemId, completed }),
+              keepalive: true,
+            });
+            if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
           }
         },
       });

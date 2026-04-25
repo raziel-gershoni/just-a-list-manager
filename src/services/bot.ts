@@ -393,14 +393,24 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       return;
     }
 
-    // Get item text for the confirmation message
+    // Get item text and current state for the confirmation message + idempotency guard
     const { data: item } = await supabase
       .from("items")
-      .select("text")
+      .select("text, completed, completed_at")
       .eq("id", reminder.item_id)
       .single();
 
     const itemText = item?.text || "Item";
+
+    // Idempotency: if the item was just completed (within 30s), treat this as a duplicate tap
+    // and skip running the flow again. Prevents double-tap from creating duplicate occurrences.
+    if (item?.completed && item.completed_at) {
+      const completedAge = Date.now() - new Date(item.completed_at).getTime();
+      if (completedAge < 30_000) {
+        await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.done") });
+        return;
+      }
+    }
 
     if (reminder.recurrence) {
       // Recurring: complete item + create new occurrence
