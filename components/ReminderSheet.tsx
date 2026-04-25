@@ -193,8 +193,6 @@ export default function ReminderSheet({
             onDateChange={(d) => setPicker(p => ({ ...p, date: d }))}
             onHourChange={(h) => setPicker(p => ({ ...p, hour: h }))}
             onMinuteChange={(m) => setPicker(p => ({ ...p, minute: m }))}
-            todayLabel={t("today")}
-            tomorrowLabel={t("tomorrow")}
           />
           <button
             onClick={handleCustomSet}

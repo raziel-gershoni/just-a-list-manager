@@ -211,11 +211,16 @@
     padding: 0.25rem 0;
     overflow: hidden;
   }
-  .time-picker {
-    height: 180px;
+  .time-picker-row {
+    width: 100%;
   }
-  .time-picker [data-rwp]:first-child {
-    flex: 1.6;
+  .time-picker-row-bottom {
+    border-top: 1px solid var(--tg-theme-hint-color, oklch(0.556 0.016 247.86) / 0.15);
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+  }
+  .time-picker {
+    height: 160px;
   }
   .time-picker-colon {
     display: flex;

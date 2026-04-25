@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useLocale } from "next-intl";
 import { WheelPicker, WheelPickerWrapper } from "@ncdai/react-wheel-picker";
 import "@ncdai/react-wheel-picker/style.css";
 
@@ -23,66 +24,113 @@ interface DateTimePickerProps {
   onDateChange: (date: string) => void;
   onHourChange: (hour: number) => void;
   onMinuteChange: (minute: number) => void;
-  todayLabel: string;
-  tomorrowLabel: string;
 }
 
-function buildDateOptions(todayLabel: string, tomorrowLabel: string) {
-  const options: { value: string; label: string }[] = [];
-  const now = new Date();
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(now);
-    d.setDate(d.getDate() + i);
-    const value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    let label: string;
-    if (i === 0) label = todayLabel;
-    else if (i === 1) label = tomorrowLabel;
-    else label = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-    options.push({ value, label });
-  }
-  return options;
+function daysInMonth(year: number, month: number): number {
+  // month is 1-12; new Date(y, m, 0) gives last day of month m (1-indexed)
+  return new Date(year, month, 0).getDate();
+}
+
+function clampDate(year: number, month: number, day: number): { year: number; month: number; day: number } {
+  const max = daysInMonth(year, month);
+  return { year, month, day: Math.min(day, max) };
+}
+
+function parseISODate(iso: string): { year: number; month: number; day: number } {
+  const [y, m, d] = iso.split("-").map(Number);
+  return { year: y, month: m, day: d };
+}
+
+function toISODate(year: number, month: number, day: number): string {
+  return `${year}-${pad(month)}-${pad(day)}`;
 }
 
 export default function DateTimePicker({
   date, hour, minute,
   onDateChange, onHourChange, onMinuteChange,
-  todayLabel, tomorrowLabel,
 }: DateTimePickerProps) {
-  const dateOptions = useMemo(
-    () => buildDateOptions(todayLabel, tomorrowLabel),
-    [todayLabel, tomorrowLabel]
-  );
+  const locale = useLocale();
+  const { year, month, day } = parseISODate(date);
+
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 11 }, (_, i) => {
+      const y = currentYear - 5 + i;
+      return { value: String(y), label: String(y) };
+    });
+  }, []);
+
+  const monthOptions = useMemo(() => {
+    const fmt = new Intl.DateTimeFormat(locale, { month: "short" });
+    return Array.from({ length: 12 }, (_, i) => ({
+      value: String(i + 1),
+      label: fmt.format(new Date(2025, i, 1)),
+    }));
+  }, [locale]);
+
+  const dayOptions = useMemo(() => {
+    const max = daysInMonth(year, month);
+    return Array.from({ length: max }, (_, i) => ({
+      value: String(i + 1),
+      label: pad(i + 1),
+    }));
+  }, [year, month]);
 
   const haptic = () => {
     try { (window as any).Telegram?.WebApp?.HapticFeedback?.selectionChanged(); } catch {}
   };
 
+  const updateDate = (y: number, m: number, d: number) => {
+    const clamped = clampDate(y, m, d);
+    onDateChange(toISODate(clamped.year, clamped.month, clamped.day));
+  };
+
   return (
-    <div dir="ltr" className="time-picker-wrapper">
-      <WheelPickerWrapper className="time-picker">
-        <WheelPicker
-          value={date}
-          onValueChange={(v) => { onDateChange(v); haptic(); }}
-          options={dateOptions}
-          optionItemHeight={36}
-          visibleCount={20}
-        />
-        <WheelPicker
-          value={String(hour)}
-          onValueChange={(v) => { onHourChange(Number(v)); haptic(); }}
-          options={hourOptions}
-          optionItemHeight={36}
-          visibleCount={20}
-        />
-        <div className="time-picker-colon">:</div>
-        <WheelPicker
-          value={String(minute)}
-          onValueChange={(v) => { onMinuteChange(Number(v)); haptic(); }}
-          options={minuteOptions}
-          optionItemHeight={36}
-          visibleCount={20}
-        />
-      </WheelPickerWrapper>
+    <div className="time-picker-wrapper">
+      <div dir="ltr" className="time-picker-row">
+        <WheelPickerWrapper className="time-picker">
+          <WheelPicker
+            value={String(day)}
+            onValueChange={(v) => { updateDate(year, month, Number(v)); haptic(); }}
+            options={dayOptions}
+            optionItemHeight={36}
+            visibleCount={20}
+          />
+          <WheelPicker
+            value={String(month)}
+            onValueChange={(v) => { updateDate(year, Number(v), day); haptic(); }}
+            options={monthOptions}
+            optionItemHeight={36}
+            visibleCount={20}
+          />
+          <WheelPicker
+            value={String(year)}
+            onValueChange={(v) => { updateDate(Number(v), month, day); haptic(); }}
+            options={yearOptions}
+            optionItemHeight={36}
+            visibleCount={20}
+          />
+        </WheelPickerWrapper>
+      </div>
+      <div dir="ltr" className="time-picker-row time-picker-row-bottom">
+        <WheelPickerWrapper className="time-picker">
+          <WheelPicker
+            value={String(hour)}
+            onValueChange={(v) => { onHourChange(Number(v)); haptic(); }}
+            options={hourOptions}
+            optionItemHeight={36}
+            visibleCount={20}
+          />
+          <div className="time-picker-colon">:</div>
+          <WheelPicker
+            value={String(minute)}
+            onValueChange={(v) => { onMinuteChange(Number(v)); haptic(); }}
+            options={minuteOptions}
+            optionItemHeight={36}
+            visibleCount={20}
+          />
+        </WheelPickerWrapper>
+      </div>
     </div>
   );
 }
