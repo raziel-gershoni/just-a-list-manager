@@ -425,11 +425,10 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         isShared: reminder.is_shared,
       });
     } else {
-      // One-time: cancel reminder + mark item as completed
-      await supabase
-        .from("item_reminders")
-        .update({ cancelled_at: new Date().toISOString() })
-        .eq("id", reminderId);
+      // One-time: mark item as completed.
+      // Keep the reminder uncancelled so the completed item displays its original time
+      // in the done section. The reminder is already sent and inert; if not yet sent,
+      // the cron will silently mark it sent when due (since item is completed).
       await supabase
         .from("items")
         .update({ completed: true, completed_at: new Date().toISOString() })
