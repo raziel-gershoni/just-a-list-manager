@@ -87,7 +87,7 @@ export default function DateTimePicker({
 
   return (
     <div className="time-picker-wrapper">
-      <div dir="ltr" className="time-picker-row">
+      <div dir="ltr">
         <WheelPickerWrapper className="time-picker">
           <WheelPicker
             value={String(day)}
@@ -110,10 +110,7 @@ export default function DateTimePicker({
             optionItemHeight={36}
             visibleCount={20}
           />
-        </WheelPickerWrapper>
-      </div>
-      <div dir="ltr" className="time-picker-row time-picker-row-bottom">
-        <WheelPickerWrapper className="time-picker">
+          <div className="time-picker-divider" aria-hidden />
           <WheelPicker
             value={String(hour)}
             onValueChange={(v) => { onHourChange(Number(v)); haptic(); }}

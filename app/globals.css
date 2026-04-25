@@ -211,14 +211,6 @@
     padding: 0.25rem 0;
     overflow: hidden;
   }
-  .time-picker-row {
-    width: 100%;
-  }
-  .time-picker-row-bottom {
-    border-top: 1px solid var(--tg-theme-hint-color, oklch(0.556 0.016 247.86) / 0.15);
-    margin-top: 0.25rem;
-    padding-top: 0.25rem;
-  }
   .time-picker {
     height: 160px;
   }
@@ -229,7 +221,14 @@
     font-size: 1.125rem;
     font-weight: 600;
     color: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
-    width: 0.75rem;
+    width: 0.5rem;
+    flex-shrink: 0;
+  }
+  .time-picker-divider {
+    width: 1px;
+    margin: 1.25rem 0.5rem;
+    background: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
+    opacity: 0.2;
     flex-shrink: 0;
   }
   .time-picker [data-rwp-option] {
