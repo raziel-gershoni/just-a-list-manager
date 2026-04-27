@@ -70,16 +70,16 @@ export default function DateTimePicker({
 
   const dayOptions = useMemo(() => {
     const max = daysInMonth(year, month);
-    return Array.from({ length: max }, (_, i) => ({
-      value: String(i + 1),
-      label: pad(i + 1),
-    }));
-  }, [year, month]);
-
-  const weekdayLabel = useMemo(() => {
-    const d = new Date(year, month - 1, day);
-    return new Intl.DateTimeFormat(locale, { weekday: "long" }).format(d);
-  }, [year, month, day, locale]);
+    const fmt = new Intl.DateTimeFormat(locale, { weekday: "short" });
+    return Array.from({ length: max }, (_, i) => {
+      const n = i + 1;
+      const wd = fmt.format(new Date(year, month - 1, n));
+      return {
+        value: String(n),
+        label: `${pad(n)} ${wd}`,
+      };
+    });
+  }, [year, month, locale]);
 
   const haptic = () => {
     try { (window as any).Telegram?.WebApp?.HapticFeedback?.selectionChanged(); } catch {}
@@ -92,7 +92,6 @@ export default function DateTimePicker({
 
   return (
     <div className="time-picker-wrapper">
-      <div className="time-picker-weekday">{weekdayLabel}</div>
       <div dir="ltr">
         <WheelPickerWrapper className="time-picker">
           <WheelPicker

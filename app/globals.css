@@ -211,13 +211,8 @@
     padding: 0.25rem 0;
     overflow: hidden;
   }
-  .time-picker-weekday {
-    text-align: center;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
-    padding: 0.5rem 0 0.25rem;
-    text-transform: capitalize;
+  .time-picker [data-rwp]:first-child {
+    flex: 1.4;
   }
   .time-picker {
     height: 160px;
