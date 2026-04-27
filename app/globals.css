@@ -212,7 +212,11 @@
     overflow: hidden;
   }
   .time-picker [data-rwp]:first-child {
-    flex: 1.4;
+    flex: 1.8;
+  }
+  .time-picker [data-rwp-option],
+  .time-picker [data-rwp-highlight-item] {
+    white-space: nowrap;
   }
   .time-picker {
     height: 160px;

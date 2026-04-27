@@ -76,7 +76,7 @@ export default function DateTimePicker({
       const wd = fmt.format(new Date(year, month - 1, n));
       return {
         value: String(n),
-        label: `${pad(n)} ${wd}`,
+        label: `${wd} ${pad(n)}`,
       };
     });
   }, [year, month, locale]);
