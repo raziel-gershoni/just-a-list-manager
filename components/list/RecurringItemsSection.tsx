@@ -55,7 +55,7 @@ export default function RecurringItemsSection({
         ) : (
           <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
         )}
-        <Repeat className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" strokeWidth={2.25} />
+        <Repeat className="w-3.5 h-3.5 text-tg-link" strokeWidth={3} />
         {t("items.recurring.section", { count: recurringItems.length })}
       </button>
       {showRecurring && (
@@ -80,12 +80,12 @@ export default function RecurringItemsSection({
                     tg?.HapticFeedback?.impactOccurred("light");
                     onToggleRecurring(item.id, false);
                   }}
-                  className="p-1.5 rounded-full shrink-0 bg-emerald-500/15 dark:bg-emerald-400/20 transition-all duration-200 active:scale-90"
+                  className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
                   aria-label={t("items.recurring.toggleOff")}
                 >
                   <Repeat
-                    className="w-[18px] h-[18px] text-emerald-600 dark:text-emerald-400"
-                    strokeWidth={2.25}
+                    className="w-[18px] h-[18px] text-tg-link"
+                    strokeWidth={3}
                   />
                 </button>
                 <button
@@ -95,12 +95,12 @@ export default function RecurringItemsSection({
                     tg?.HapticFeedback?.impactOccurred("medium");
                     onRestoreRecurring(item.id);
                   }}
-                  className="p-1.5 rounded-full shrink-0 border border-emerald-500/40 dark:border-emerald-400/50 active:bg-emerald-500/10 dark:active:bg-emerald-400/15 transition-all duration-200 active:scale-90"
+                  className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
                   aria-label={t("items.recurring.restore")}
                 >
                   <RotateCcw
-                    className="w-4 h-4 text-emerald-600 dark:text-emerald-400"
-                    strokeWidth={2.25}
+                    className="w-[18px] h-[18px] text-tg-link"
+                    strokeWidth={2.5}
                   />
                 </button>
               </div>

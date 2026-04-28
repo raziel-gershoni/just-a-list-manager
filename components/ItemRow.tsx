@@ -220,20 +220,14 @@ export default function ItemRow({
             tg?.HapticFeedback?.impactOccurred("light");
             onToggleRecurring(id, !recurring);
           }}
-          className={`p-1.5 rounded-full shrink-0 transition-all duration-200 active:scale-90 ${
-            recurring
-              ? "bg-emerald-500/15 dark:bg-emerald-400/20"
-              : ""
-          }`}
+          className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
           aria-label={recurring ? t("recurring.toggleOff") : t("recurring.toggleOn")}
         >
           <Repeat
             className={`w-[18px] h-[18px] transition-colors ${
-              recurring
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-tg-hint/45"
+              recurring ? "text-tg-link" : "text-tg-hint"
             }`}
-            strokeWidth={recurring ? 2.25 : 1.75}
+            strokeWidth={recurring ? 3 : 2}
           />
         </button>
       )}
