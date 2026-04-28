@@ -225,7 +225,7 @@ export default function ItemRow({
         >
           <Repeat
             className={`w-[18px] h-[18px] transition-colors ${
-              recurring ? "text-tg-link" : "text-tg-hint"
+              recurring ? "text-amber-500" : "text-tg-hint"
             }`}
             strokeWidth={recurring ? 3 : 2}
           />
