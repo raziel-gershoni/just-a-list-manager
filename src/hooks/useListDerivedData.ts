@@ -27,10 +27,22 @@ export function useListDerivedData(
   const completedItems = useMemo(
     () =>
       items
-        .filter((i) => i.completed && !i.deleted_at)
+        .filter((i) => i.completed && !i.deleted_at && !i.recurring)
         .sort((a, b) => {
           const aTime = a.completed_at ? new Date(a.completed_at).getTime() : 0;
           const bTime = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+          return aTime - bTime;
+        }),
+    [items]
+  );
+
+  const recurringItems = useMemo(
+    () =>
+      items
+        .filter((i) => i.recurring && (i.completed || !!i.deleted_at))
+        .sort((a, b) => {
+          const aTime = new Date(a.completed_at ?? a.deleted_at ?? 0).getTime();
+          const bTime = new Date(b.completed_at ?? b.deleted_at ?? 0).getTime();
           return aTime - bTime;
         }),
     [items]
@@ -54,5 +66,5 @@ export function useListDerivedData(
     return result;
   }, [items]);
 
-  return { activeItems, skippedItems, completedItems, completedGroups, duplicateTexts };
+  return { activeItems, skippedItems, recurringItems, completedItems, completedGroups, duplicateTexts };
 }

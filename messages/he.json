@@ -74,6 +74,15 @@
     "editedBy": "נערך ע\"י {name}",
     "reminderSent": "תזכורת נשלחה!",
     "skippedSection": "לא זמין ({count})",
+    "recurring": {
+      "section": "חוזר ({count})",
+      "toggleOn": "סמן כחוזר",
+      "toggleOff": "בטל חזרה",
+      "restore": "החזר לרשימה",
+      "returnsInMinutes": "חוזר בעוד {count, plural, one {דקה} two {שתי דקות} other {# דקות}}",
+      "returnsInHours": "חוזר בעוד {count, plural, one {שעה} two {שעתיים} other {# שעות}}",
+      "returningSoon": "חוזר בקרוב"
+    },
     "completedTime": {
       "today": "היום",
       "yesterday": "אתמול",

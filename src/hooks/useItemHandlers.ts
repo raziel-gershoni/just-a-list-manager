@@ -49,6 +49,7 @@ export function useItemHandlers({
         completed_at: null,
         deleted_at: null,
         skipped_at: null,
+        recurring: false,
         position,
         created_by: userId,
         creator_name: null,
@@ -219,6 +220,7 @@ export function useItemHandlers({
                 completed_at: null,
                 deleted_at: null,
                 skipped_at: null,
+                recurring: false,
                 position: Date.now(),
                 created_by: null,
                 creator_name: null,
@@ -371,6 +373,74 @@ export function useItemHandlers({
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Skip failed: ${res.status}`);
+        },
+      });
+    },
+    [jwtRef, listId, addMutation, setItems]
+  );
+
+  const handleSetRecurring = useCallback(
+    (itemId: string, recurring: boolean) => {
+      const tg = getTelegramWebApp();
+      tg?.HapticFeedback?.impactOccurred("light");
+
+      setItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, recurring } : i))
+      );
+
+      const mutId = genMutId();
+      addMutation({
+        id: mutId,
+        type: "set-recurring",
+        payload: { listId, itemId, recurring },
+        execute: async () => {
+          const jwt = jwtRef.current;
+          const res = await fetch(`/api/lists/${listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId, recurring }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Set recurring failed: ${res.status}`);
+        },
+      });
+    },
+    [jwtRef, listId, addMutation, setItems]
+  );
+
+  const handleRestoreRecurring = useCallback(
+    (itemId: string) => {
+      const tg = getTelegramWebApp();
+      tg?.HapticFeedback?.impactOccurred("light");
+
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId
+            ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, position: Date.now() }
+            : i
+        )
+      );
+
+      const mutId = genMutId();
+      addMutation({
+        id: mutId,
+        type: "restore-recurring",
+        payload: { listId, itemId },
+        execute: async () => {
+          const jwt = jwtRef.current;
+          const res = await fetch(`/api/lists/${listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId, restoreRecurring: true }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Restore recurring failed: ${res.status}`);
         },
       });
     },
@@ -595,5 +665,5 @@ export function useItemHandlers({
     [jwtRef, listId, setItems, setReminderToast]
   );
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder };
 }

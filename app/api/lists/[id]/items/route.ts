@@ -31,11 +31,13 @@ export async function GET(
   const cursor = searchParams.get("cursor");
   const limit = Math.min(parseInt(searchParams.get("limit") || "200"), 500);
 
+  // Include active items (deleted_at IS NULL) and any recurring items even if soft-deleted,
+  // so the client can auto-respawn deleted recurring items past the 4-hour threshold.
   let query = supabase
     .from("items")
-    .select("id, text, completed, completed_at, deleted_at, skipped_at, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
+    .select("id, text, completed, completed_at, deleted_at, skipped_at, recurring, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
     .eq("list_id", listId)
-    .is("deleted_at", null)
+    .or("deleted_at.is.null,recurring.eq.true")
     .order("position", { ascending: false })
     .limit(limit);
 
@@ -304,6 +306,19 @@ export async function PATCH(
 
   if (typeof updates.skipped === "boolean") {
     patchData.skipped_at = updates.skipped ? new Date().toISOString() : null;
+  }
+
+  if (typeof updates.recurring === "boolean") {
+    patchData.recurring = updates.recurring;
+  }
+
+  // Bring a recurring item back to active: clear all "out-of-active" flags atomically.
+  if (updates.restoreRecurring === true) {
+    patchData.completed = false;
+    patchData.completed_at = null;
+    patchData.deleted_at = null;
+    patchData.skipped_at = null;
+    patchData.position = Date.now();
   }
 
   // Allow restoring soft-deleted items (undo support)

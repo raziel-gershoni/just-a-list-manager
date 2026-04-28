@@ -10,6 +10,7 @@ function makeItem(overrides: Partial<ItemData> = {}): ItemData {
     completed_at: null,
     deleted_at: null,
     skipped_at: null,
+    recurring: false,
     position: 1,
     created_by: null,
     creator_name: null,

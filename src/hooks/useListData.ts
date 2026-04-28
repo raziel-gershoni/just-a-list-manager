@@ -76,7 +76,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           }
         }
 
-        const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string; skipped_at?: string | null }) => {
+        const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string; skipped_at?: string | null; recurring?: boolean; completed?: boolean; completed_at?: string | null; deleted_at?: string | null }) => {
           const reminder = remindersByItem.get(item.id as string);
           const base = {
             ...item,
@@ -103,6 +103,20 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
               body: JSON.stringify({ itemId: base.id, skipped: false }),
             }).catch(() => {});
             return { ...base, skipped_at: null };
+          }
+          // Auto-respawn recurring items past the same 4-hour threshold
+          const respawnAnchor = base.completed_at ?? base.deleted_at ?? null;
+          if (base.recurring && respawnAnchor && now - new Date(respawnAnchor).getTime() > FOUR_HOURS) {
+            const currentJwt = jwtRef.current;
+            fetch(`/api/lists/${listId}/items`, {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${currentJwt}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ itemId: base.id, restoreRecurring: true }),
+            }).catch(() => {});
+            return { ...base, completed: false, completed_at: null, deleted_at: null, skipped_at: null, position: Date.now() };
           }
           return base;
         });

@@ -12,6 +12,7 @@ import ShareDialog from "@/components/ShareDialog";
 import ReminderSheet from "@/components/ReminderSheet";
 import ListHeader from "@/components/list/ListHeader";
 import SkippedItemsSection from "@/components/list/SkippedItemsSection";
+import RecurringItemsSection from "@/components/list/RecurringItemsSection";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
 import ToastContainer from "@/components/list/ToastContainer";
 import { useMutationQueue, type MutationErrorInfo } from "@/src/hooks/useMutationQueue";
@@ -56,6 +57,11 @@ function ListContent() {
     const v = localStorage.getItem("panel_skipped");
     return v === null ? false : v === "true";
   });
+  const [showRecurring, setShowRecurring] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const v = localStorage.getItem("panel_recurring");
+    return v === null ? false : v === "true";
+  });
   const [showShare, setShowShare] = useState(false);
   const [reminderItem, setReminderItem] = useState<string | null>(null);
   const [pendingReminderText, setPendingReminderText] = useState<string | null>(null);
@@ -92,7 +98,7 @@ function ListContent() {
     jwtRef,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -145,7 +151,7 @@ function ListContent() {
     if (isReady) fetchItems();
   }, [isReady, fetchItems]);
 
-  const { activeItems, skippedItems, completedItems, completedGroups, duplicateTexts } =
+  const { activeItems, skippedItems, recurringItems, completedItems, completedGroups, duplicateTexts } =
     useListDerivedData(items, t as (key: string) => string);
 
   if (loading) {
@@ -240,6 +246,8 @@ function ListContent() {
                   onDelete={handleDelete}
                   onEdit={handleEditItem}
                   onSkip={listType === "grocery" ? handleSkip : undefined}
+                  recurring={item.recurring}
+                  onToggleRecurring={listType === "grocery" ? handleSetRecurring : undefined}
                   onRemoveDuplicates={handleRemoveDuplicates}
                   isExiting={item._exiting}
                   isJustAdded={item._justAdded}
@@ -248,18 +256,27 @@ function ListContent() {
             </DragDropProvider>
 
             {listType === "grocery" && (
-              <SkippedItemsSection
-                skippedItems={skippedItems}
-                showSkipped={showSkipped}
-                setShowSkipped={setShowSkipped}
-                duplicateTexts={duplicateTexts}
-                isShared={isShared}
-                userId={userId}
-                onToggle={handleToggle}
-                onDelete={handleDelete}
-                onEdit={handleEditItem}
-                onSkip={handleSkip}
-              />
+              <>
+                <SkippedItemsSection
+                  skippedItems={skippedItems}
+                  showSkipped={showSkipped}
+                  setShowSkipped={setShowSkipped}
+                  duplicateTexts={duplicateTexts}
+                  isShared={isShared}
+                  userId={userId}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                  onEdit={handleEditItem}
+                  onSkip={handleSkip}
+                />
+                <RecurringItemsSection
+                  recurringItems={recurringItems}
+                  showRecurring={showRecurring}
+                  setShowRecurring={setShowRecurring}
+                  onRestoreRecurring={handleRestoreRecurring}
+                  onToggleRecurring={handleSetRecurring}
+                />
+              </>
             )}
 
             <CompletedItemsSection
@@ -278,7 +295,7 @@ function ListContent() {
           </>
         )}
 
-        {activeItems.length === 0 && skippedItems.length === 0 && completedItems.length === 0 && (
+        {activeItems.length === 0 && skippedItems.length === 0 && recurringItems.length === 0 && completedItems.length === 0 && (
           <div className="text-center text-tg-hint py-16">
             <p className="text-lg mb-1">{t('items.emptyTitle')}</p>
             <p className="text-sm">{t('items.emptyDescription')}</p>

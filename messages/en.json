@@ -74,6 +74,15 @@
     "editedBy": "edited by {name}",
     "reminderSent": "Reminder sent!",
     "skippedSection": "Not available ({count})",
+    "recurring": {
+      "section": "Recurring ({count})",
+      "toggleOn": "Mark as recurring",
+      "toggleOff": "Stop recurring",
+      "restore": "Add back to list",
+      "returnsInMinutes": "Returns in {count, plural, one {# minute} other {# minutes}}",
+      "returnsInHours": "Returns in {count, plural, one {# hour} other {# hours}}",
+      "returningSoon": "Returning soon"
+    },
     "completedTime": {
       "today": "Today",
       "yesterday": "Yesterday",

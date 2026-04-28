@@ -74,6 +74,15 @@
     "editedBy": "изменено {name}",
     "reminderSent": "Напоминание отправлено!",
     "skippedSection": "Нет в наличии ({count})",
+    "recurring": {
+      "section": "Повторяющиеся ({count})",
+      "toggleOn": "Отметить как повторяющийся",
+      "toggleOff": "Отменить повторение",
+      "restore": "Вернуть в список",
+      "returnsInMinutes": "Вернётся через {count, plural, one {# минуту} few {# минуты} other {# минут}}",
+      "returnsInHours": "Вернётся через {count, plural, one {# час} few {# часа} other {# часов}}",
+      "returningSoon": "Скоро вернётся"
+    },
     "completedTime": {
       "today": "Сегодня",
       "yesterday": "Вчера",

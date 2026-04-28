@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Bell, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, X } from "lucide-react";
+import { Bell, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, RotateCw, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
 function formatShortTime(iso: string, tomLabel: string): string {
@@ -34,6 +34,8 @@ interface ItemRowProps {
   onEdit?: (id: string, newText: string) => void;
   skipped?: boolean;
   onSkip?: (id: string, skipped: boolean) => void;
+  recurring?: boolean;
+  onToggleRecurring?: (id: string, recurring: boolean) => void;
   onRemoveDuplicates?: (text: string) => void;
   reminderAt?: string | null;
   recurrence?: string | null;
@@ -58,6 +60,8 @@ export default function ItemRow({
   onEdit,
   skipped,
   onSkip,
+  recurring,
+  onToggleRecurring,
   onRemoveDuplicates,
   reminderAt,
   recurrence,
@@ -205,6 +209,23 @@ export default function ItemRow({
           ) : (
             <CircleOff className="w-[18px] h-[18px] text-tg-hint" />
           )}
+        </button>
+      )}
+
+      {onToggleRecurring && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const tg = getTelegramWebApp();
+            tg?.HapticFeedback?.impactOccurred("light");
+            onToggleRecurring(id, !recurring);
+          }}
+          className="p-1.5 rounded-full shrink-0"
+          aria-label={recurring ? t("recurring.toggleOff") : t("recurring.toggleOn")}
+        >
+          <RotateCw
+            className={`w-[18px] h-[18px] ${recurring ? "text-tg-link" : "text-tg-hint"}`}
+          />
         </button>
       )}
 
