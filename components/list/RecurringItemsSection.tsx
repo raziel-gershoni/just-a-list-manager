@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, RotateCcw, RotateCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Repeat, RotateCcw } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import type { ItemData } from "@/src/types";
@@ -55,7 +55,7 @@ export default function RecurringItemsSection({
         ) : (
           <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
         )}
-        <RotateCw className="w-3.5 h-3.5" />
+        <Repeat className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" strokeWidth={2.25} />
         {t("items.recurring.section", { count: recurringItems.length })}
       </button>
       {showRecurring && (
@@ -80,12 +80,12 @@ export default function RecurringItemsSection({
                     tg?.HapticFeedback?.impactOccurred("light");
                     onToggleRecurring(item.id, false);
                   }}
-                  className="p-1.5 rounded-full shrink-0 bg-tg-button shadow-sm transition-colors duration-150"
+                  className="p-1.5 rounded-full shrink-0 bg-emerald-500/15 dark:bg-emerald-400/20 transition-all duration-200 active:scale-90"
                   aria-label={t("items.recurring.toggleOff")}
                 >
-                  <RotateCw
-                    className="w-4 h-4 text-tg-button-text"
-                    strokeWidth={2.5}
+                  <Repeat
+                    className="w-[18px] h-[18px] text-emerald-600 dark:text-emerald-400"
+                    strokeWidth={2.25}
                   />
                 </button>
                 <button
@@ -95,10 +95,13 @@ export default function RecurringItemsSection({
                     tg?.HapticFeedback?.impactOccurred("medium");
                     onRestoreRecurring(item.id);
                   }}
-                  className="p-1.5 rounded-full shrink-0 border border-tg-link/40 active:bg-tg-link/10 transition-colors"
+                  className="p-1.5 rounded-full shrink-0 border border-emerald-500/40 dark:border-emerald-400/50 active:bg-emerald-500/10 dark:active:bg-emerald-400/15 transition-all duration-200 active:scale-90"
                   aria-label={t("items.recurring.restore")}
                 >
-                  <RotateCcw className="w-4 h-4 text-tg-link" strokeWidth={2.25} />
+                  <RotateCcw
+                    className="w-4 h-4 text-emerald-600 dark:text-emerald-400"
+                    strokeWidth={2.25}
+                  />
                 </button>
               </div>
             );

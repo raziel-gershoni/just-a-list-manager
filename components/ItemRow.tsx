@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Bell, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, RotateCw, X } from "lucide-react";
+import { Bell, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
 function formatShortTime(iso: string, tomLabel: string): string {
@@ -220,16 +220,20 @@ export default function ItemRow({
             tg?.HapticFeedback?.impactOccurred("light");
             onToggleRecurring(id, !recurring);
           }}
-          className={`p-1.5 rounded-full shrink-0 transition-colors duration-150 ${
+          className={`p-1.5 rounded-full shrink-0 transition-all duration-200 active:scale-90 ${
             recurring
-              ? "bg-tg-button shadow-sm"
-              : "border border-tg-hint/30"
+              ? "bg-emerald-500/15 dark:bg-emerald-400/20"
+              : ""
           }`}
           aria-label={recurring ? t("recurring.toggleOff") : t("recurring.toggleOn")}
         >
-          <RotateCw
-            className={`w-4 h-4 ${recurring ? "text-tg-button-text" : "text-tg-hint/70"}`}
-            strokeWidth={recurring ? 2.5 : 2}
+          <Repeat
+            className={`w-[18px] h-[18px] transition-colors ${
+              recurring
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-tg-hint/45"
+            }`}
+            strokeWidth={recurring ? 2.25 : 1.75}
           />
         </button>
       )}
