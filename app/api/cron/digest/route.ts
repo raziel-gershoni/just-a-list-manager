@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       // Fetch reminders in that range
       const { data: reminders } = await supabase
         .from("item_reminders")
-        .select("remind_at, items!inner(text), lists!inner(name)")
+        .select("remind_at, items!inner(text, completed, deleted_at), lists!inner(name)")
         .eq("created_by", userId)
         .is("sent_at", null)
         .is("cancelled_at", null)
@@ -62,9 +62,15 @@ export async function GET(request: NextRequest) {
         .order("remind_at", { ascending: true })
         .limit(20);
 
-      if (!reminders || reminders.length === 0) continue;
+      // Exclude reminders for items that are completed or deleted
+      const liveReminders = (reminders || []).filter((r) => {
+        const item = r.items as unknown as { completed: boolean; deleted_at: string | null };
+        return !item.completed && !item.deleted_at;
+      });
 
-      const items = reminders.map((r) => {
+      if (liveReminders.length === 0) continue;
+
+      const items = liveReminders.map((r) => {
         const item = r.items as unknown as { text: string };
         const list = r.lists as unknown as { name: string };
         const time = new Date(r.remind_at).toLocaleTimeString(user.language || "en", {
