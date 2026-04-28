@@ -224,8 +224,8 @@ export default function ItemRow({
           aria-label={recurring ? t("recurring.toggleOff") : t("recurring.toggleOn")}
         >
           <Repeat
-            className={`w-[18px] h-[18px] transition-colors ${
-              recurring ? "text-amber-500" : "text-tg-hint"
+            className={`w-4 h-4 transition-colors ${
+              recurring ? "text-tg-active" : "text-tg-hint"
             }`}
             strokeWidth={recurring ? 3 : 2}
           />
@@ -241,15 +241,15 @@ export default function ItemRow({
           className="p-1.5 rounded-full shrink-0 flex items-center gap-1"
         >
           {recurrence ? (
-            <span className={`relative shrink-0 ${isOverdue ? "text-amber-500" : reminderAt ? "text-tg-link" : "text-tg-hint"}`}>
+            <span className={`relative shrink-0 ${isOverdue ? "text-amber-500" : reminderAt ? "text-tg-active" : "text-tg-hint"}`}>
               <Bell className={`w-[18px] h-[18px] ${isOverdue ? "bell-pulse" : ""}`} />
               <Repeat className="w-[9px] h-[9px] absolute -bottom-0.5 -right-0.5 stroke-[3]" />
             </span>
           ) : (
-            <Bell className={`w-[18px] h-[18px] ${isOverdue ? "text-amber-500 bell-pulse" : reminderAt ? "text-tg-link" : "text-tg-hint"}`} />
+            <Bell className={`w-[18px] h-[18px] ${isOverdue ? "text-amber-500 bell-pulse" : reminderAt ? "text-tg-active" : "text-tg-hint"}`} />
           )}
           {reminderAt && (
-            <span className={`text-[11px] tracking-wide ${isOverdue ? "text-amber-500" : "text-tg-link"}`}>{formatShortTime(reminderAt, t("tom"))}</span>
+            <span className={`text-[11px] tracking-wide ${isOverdue ? "text-amber-500" : "text-tg-active"}`}>{formatShortTime(reminderAt, t("tom"))}</span>
           )}
         </button>
       )}

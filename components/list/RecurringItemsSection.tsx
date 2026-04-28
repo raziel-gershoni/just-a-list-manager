@@ -55,7 +55,7 @@ export default function RecurringItemsSection({
         ) : (
           <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
         )}
-        <Repeat className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
+        <Repeat className="w-3.5 h-3.5 text-tg-active" strokeWidth={3} />
         {t("items.recurring.section", { count: recurringItems.length })}
       </button>
       {showRecurring && (
@@ -84,7 +84,7 @@ export default function RecurringItemsSection({
                   aria-label={t("items.recurring.toggleOff")}
                 >
                   <Repeat
-                    className="w-[18px] h-[18px] text-amber-500"
+                    className="w-4 h-4 text-tg-active"
                     strokeWidth={3}
                   />
                 </button>
@@ -99,7 +99,7 @@ export default function RecurringItemsSection({
                   aria-label={t("items.recurring.restore")}
                 >
                   <RotateCcw
-                    className="w-[18px] h-[18px] text-tg-link"
+                    className="w-[18px] h-[18px] text-tg-active"
                     strokeWidth={2.5}
                   />
                 </button>

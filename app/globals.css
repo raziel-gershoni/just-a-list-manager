@@ -47,6 +47,10 @@
 
   /* Surface tokens */
   --color-separator: var(--separator);
+
+  /* Active interactive state (set reminder, recurring on, etc.) — the only
+     chromatic accent in the app's grayscale palette. */
+  --color-tg-active: var(--tg-active);
 }
 
 :root {
@@ -70,6 +74,7 @@
   --input: oklch(0.945 0.003 285);
   --ring: oklch(0.60 0.03 260);
   --separator: oklch(0 0 0 / 5%);
+  --tg-active: oklch(0.62 0.18 250);
 }
 
 .dark {
@@ -92,6 +97,7 @@
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.55 0.03 260);
   --separator: oklch(1 0 0 / 6%);
+  --tg-active: oklch(0.72 0.16 245);
 }
 
 @layer base {
