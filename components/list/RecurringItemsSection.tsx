@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Repeat, RotateCcw } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Repeat } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import type { ItemData } from "@/src/types";
@@ -67,8 +67,20 @@ export default function RecurringItemsSection({
                 key={item.id}
                 className="flex items-center gap-3 py-3.5 px-5 border-b border-separator"
               >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const tg = getTelegramWebApp();
+                    tg?.HapticFeedback?.impactOccurred("medium");
+                    onRestoreRecurring(item.id);
+                  }}
+                  className="w-[22px] h-[22px] rounded-full flex items-center justify-center shrink-0 bg-tg-button border-[1.5px] border-tg-button transition-all duration-200 active:scale-90"
+                  aria-label={t("items.recurring.restore")}
+                >
+                  <Check className="w-3.5 h-3.5 text-tg-button-text" />
+                </button>
                 <div className="flex-1 min-w-0 opacity-70">
-                  <div className="truncate text-tg-text">{item.text}</div>
+                  <div className="truncate text-tg-text line-through">{item.text}</div>
                   <p className="text-[11px] text-tg-hint tracking-wide truncate">
                     {formatReturnsIn(anchor)}
                   </p>
@@ -86,21 +98,6 @@ export default function RecurringItemsSection({
                   <Repeat
                     className="w-4 h-4 text-tg-active"
                     strokeWidth={3}
-                  />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const tg = getTelegramWebApp();
-                    tg?.HapticFeedback?.impactOccurred("medium");
-                    onRestoreRecurring(item.id);
-                  }}
-                  className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
-                  aria-label={t("items.recurring.restore")}
-                >
-                  <RotateCcw
-                    className="w-[18px] h-[18px] text-tg-active"
-                    strokeWidth={2.5}
                   />
                 </button>
               </div>
