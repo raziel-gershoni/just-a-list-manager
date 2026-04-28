@@ -80,10 +80,13 @@ export default function RecurringItemsSection({
                     tg?.HapticFeedback?.impactOccurred("light");
                     onToggleRecurring(item.id, false);
                   }}
-                  className="p-1.5 rounded-full shrink-0"
+                  className="p-1.5 rounded-full shrink-0 bg-tg-button shadow-sm transition-colors duration-150"
                   aria-label={t("items.recurring.toggleOff")}
                 >
-                  <RotateCw className="w-[18px] h-[18px] text-tg-link" />
+                  <RotateCw
+                    className="w-4 h-4 text-tg-button-text"
+                    strokeWidth={2.5}
+                  />
                 </button>
                 <button
                   onClick={(e) => {
@@ -92,10 +95,10 @@ export default function RecurringItemsSection({
                     tg?.HapticFeedback?.impactOccurred("medium");
                     onRestoreRecurring(item.id);
                   }}
-                  className="p-1.5 rounded-full shrink-0"
+                  className="p-1.5 rounded-full shrink-0 border border-tg-link/40 active:bg-tg-link/10 transition-colors"
                   aria-label={t("items.recurring.restore")}
                 >
-                  <RotateCcw className="w-[18px] h-[18px] text-tg-link" />
+                  <RotateCcw className="w-4 h-4 text-tg-link" strokeWidth={2.25} />
                 </button>
               </div>
             );
