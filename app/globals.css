@@ -232,6 +232,14 @@
   }
   .time-picker {
     height: 160px;
+    /* The library sets each [data-rwp] to a calculated 3D-perspective height
+       (~231px for optionItemHeight=36 / visibleCount=20). The default flex
+       align-items: stretch doesn't stretch explicit-height children, so they
+       sit at flex-start and the highlight (at the child's 50%) lands below
+       the wrapper's center. Centering the children clips them equally top
+       and bottom so the highlight lands on the wrapper's center — where the
+       colon already sits. */
+    align-items: center;
   }
   .time-picker-colon {
     display: flex;
@@ -242,9 +250,6 @@
     color: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
     width: 0.5rem;
     flex-shrink: 0;
-    /* visibleCount=20 (even) leaves the wheel-picker's highlight half a row
-       below the geometric vertical center; nudge the colon to match it. */
-    transform: translateY(18px);
   }
   .time-picker-divider {
     width: 1px;
