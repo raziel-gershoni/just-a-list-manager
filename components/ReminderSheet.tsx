@@ -108,14 +108,6 @@ export default function ReminderSheet({
     { key: "monthly", value: "monthly" },
   ];
 
-  const formatExistingTime = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return iso;
-    }
-  };
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter"
@@ -135,25 +127,18 @@ export default function ReminderSheet({
           </button>
         </div>
 
-        {/* Scrollable middle: existing reminder badge, presets, picker, recurrence, visibility */}
+        {/* Scrollable middle: presets (with cancel for existing), picker, recurrence, visibility */}
         <div className="flex-1 overflow-y-auto px-5 pb-3">
-          {/* Existing reminder — compact inline badge */}
-          {existingReminder && (
-            <div className="flex items-center gap-2 mb-3 py-1.5 px-3 bg-tg-secondary-bg rounded-full">
-              <span className="text-[13px] text-tg-text flex-1 truncate">
-                {t("active", { time: formatExistingTime(existingReminder.remind_at) })}
-              </span>
+          {/* Quick presets — cancel pill prepended when editing an existing reminder */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {existingReminder && (
               <button
                 onClick={handleCancel}
-                className="text-[12px] font-medium text-tg-destructive shrink-0 px-2 -mx-1"
+                className={`${pillBase} bg-tg-destructive/10 text-tg-destructive`}
               >
                 {t("cancel")}
               </button>
-            </div>
-          )}
-
-          {/* Quick presets */}
-          <div className="flex flex-wrap gap-1.5 mb-3">
+            )}
             <button
               onClick={() => handlePreset(computeIn30Min())}
               className={`${pillBase} ${pillUnselected}`}

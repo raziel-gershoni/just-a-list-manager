@@ -220,6 +220,12 @@
   .time-picker [data-rwp]:first-child {
     flex: 1.8;
   }
+  /* Hour (5th child) and minute (last child) only display 2-digit numbers —
+     give them less width so the day column has room for Hebrew labels like "יום ה' 07". */
+  .time-picker [data-rwp]:nth-child(5),
+  .time-picker [data-rwp]:last-child {
+    flex: 0.65;
+  }
   .time-picker [data-rwp-option],
   .time-picker [data-rwp-highlight-item] {
     white-space: nowrap;
