@@ -242,6 +242,9 @@
     color: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
     width: 0.5rem;
     flex-shrink: 0;
+    /* visibleCount=20 (even) leaves the wheel-picker's highlight half a row
+       below the geometric vertical center; nudge the colon to match it. */
+    transform: translateY(18px);
   }
   .time-picker-divider {
     width: 1px;

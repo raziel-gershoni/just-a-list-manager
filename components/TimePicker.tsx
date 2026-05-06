@@ -99,21 +99,21 @@ export default function DateTimePicker({
             onValueChange={(v) => { updateDate(year, month, Number(v)); haptic(); }}
             options={dayOptions}
             optionItemHeight={36}
-            visibleCount={5}
+            visibleCount={20}
           />
           <WheelPicker
             value={String(month)}
             onValueChange={(v) => { updateDate(year, Number(v), day); haptic(); }}
             options={monthOptions}
             optionItemHeight={36}
-            visibleCount={5}
+            visibleCount={20}
           />
           <WheelPicker
             value={String(year)}
             onValueChange={(v) => { updateDate(Number(v), month, day); haptic(); }}
             options={yearOptions}
             optionItemHeight={36}
-            visibleCount={5}
+            visibleCount={20}
           />
           <div className="time-picker-divider" aria-hidden />
           <WheelPicker
@@ -121,7 +121,7 @@ export default function DateTimePicker({
             onValueChange={(v) => { onHourChange(Number(v)); haptic(); }}
             options={hourOptions}
             optionItemHeight={36}
-            visibleCount={5}
+            visibleCount={20}
           />
           <div className="time-picker-colon">:</div>
           <WheelPicker
@@ -129,7 +129,7 @@ export default function DateTimePicker({
             onValueChange={(v) => { onMinuteChange(Number(v)); haptic(); }}
             options={minuteOptions}
             optionItemHeight={36}
-            visibleCount={5}
+            visibleCount={20}
           />
         </WheelPickerWrapper>
       </div>
