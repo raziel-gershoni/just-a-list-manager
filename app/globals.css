@@ -238,8 +238,10 @@
        sit at flex-start and the highlight (at the child's 50%) lands below
        the wrapper's center. Centering the children clips them equally top
        and bottom so the highlight lands on the wrapper's center — where the
-       colon already sits. */
-    align-items: center;
+       colon already sits. !important is required because the library's
+       [data-rwp-wrapper] rule is unlayered and beats this @layer utilities
+       rule via the cascade-layer ordering. */
+    align-items: center !important;
   }
   .time-picker-colon {
     display: flex;
