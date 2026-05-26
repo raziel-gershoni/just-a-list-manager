@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { ItemData } from "@/src/types";
+import type { ListColor, ListIconName } from "@/src/lib/list-icons";
 
 type Reminder = {
   id: string;
@@ -30,6 +31,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [error, setError] = useState(false);
   const [isShared, setIsShared] = useState(false);
   const [listType, setListType] = useState<"regular" | "reminders" | "grocery">("regular");
+  const [listIcon, setListIcon] = useState<ListIconName | null>(null);
+  const [listColor, setListColor] = useState<ListColor | null>(null);
 
   const fetchItems = useCallback(async () => {
     const jwt = jwtRef.current;
@@ -43,12 +46,14 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       });
       if (listsRes.ok) {
         const allLists = await listsRes.json();
-        const currentList = allLists.find((l: { id: string; name: string; is_shared?: boolean; type?: string }) => l.id === listId);
+        const currentList = allLists.find((l: { id: string; name: string; is_shared?: boolean; type?: string; icon?: string | null; color?: string | null }) => l.id === listId);
         if (currentList) {
           setListName(currentList.name);
           setIsShared(currentList.is_shared ?? false);
           currentListType = currentList.type ?? "regular";
           setListType(currentListType as "regular" | "reminders" | "grocery");
+          setListIcon((currentList.icon ?? null) as ListIconName | null);
+          setListColor((currentList.color ?? null) as ListColor | null);
         }
       }
 
@@ -203,5 +208,5 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     }
   }, [jwtRef, listId, listType]);
 
-  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, fetchItems, refreshItems };
+  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, fetchItems, refreshItems };
 }

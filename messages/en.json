@@ -53,7 +53,10 @@
     "addToHomeScreenAction": "Add",
     "typeRegular": "List",
     "typeGrocery": "Grocery",
-    "typeReminders": "Reminders"
+    "typeReminders": "Reminders",
+    "editList": "Edit list",
+    "icon": "Icon",
+    "color": "Color"
   },
   "items": {
     "addPlaceholder": "Add item...",

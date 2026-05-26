@@ -53,7 +53,10 @@
     "addToHomeScreenAction": "Добавить",
     "typeRegular": "Список",
     "typeGrocery": "Покупки",
-    "typeReminders": "Напоминания"
+    "typeReminders": "Напоминания",
+    "editList": "Изменить список",
+    "icon": "Иконка",
+    "color": "Цвет"
   },
   "items": {
     "addPlaceholder": "Добавить...",

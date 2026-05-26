@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import ItemRow from "@/components/ItemRow";
 import type { ItemData, CompletedGroup } from "@/src/types";
@@ -53,6 +53,7 @@ export default function CompletedItemsSection({
         ) : (
           <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
         )}
+        <CheckCircle2 className="w-3.5 h-3.5" style={{ color: "var(--list-emerald)" }} strokeWidth={2.5} />
         {t('items.completedSection', { count: completedItems.length })}
         <button
           onClick={(e) => {

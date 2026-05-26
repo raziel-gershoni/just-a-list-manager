@@ -8,12 +8,17 @@ import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import ListCard from "@/components/ListCard";
 import EmptyState from "@/components/EmptyState";
 import OfflineIndicator from "@/components/OfflineIndicator";
+import IconColorPicker from "@/components/IconColorPicker";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import type { SupportedLocale } from "@/src/lib/i18n";
+import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 
 interface ListData {
   id: string;
   name: string;
+  type: ListType;
+  icon: ListIconName | null;
+  color: ListColor | null;
   active_count: number;
   completed_count: number;
   is_shared: boolean;
@@ -29,13 +34,18 @@ function HomeContent() {
   const [error, setError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newListName, setNewListName] = useState("");
-  const [newListType, setNewListType] = useState<"regular" | "reminders" | "grocery">("regular");
+  const [newListType, setNewListType] = useState<ListType>("regular");
+  const [newListIcon, setNewListIcon] = useState<ListIconName | null>(null);
+  const [newListColor, setNewListColor] = useState<ListColor | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // List management state
-  const [showRename, setShowRename] = useState(false);
-  const [renameValue, setRenameValue] = useState("");
-  const [renaming, setRenaming] = useState(false);
+  // List management state — edit sheet (name + icon + color)
+  const [showEdit, setShowEdit] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editIcon, setEditIcon] = useState<ListIconName | null>(null);
+  const [editColor, setEditColor] = useState<ListColor | null>(null);
+  const [editType, setEditType] = useState<ListType>("regular");
+  const [editSaving, setEditSaving] = useState(false);
   const [undoAction, setUndoAction] = useState<{
     message: string;
     undo: () => void;
@@ -63,8 +73,8 @@ function HomeContent() {
     router.push("/login");
   }, [router]);
 
-  // Track the rename target ID separately so it persists through sheet open
-  const renameTargetRef = useRef<string>("");
+  // Track the edit target ID separately so it persists through sheet open
+  const editTargetRef = useRef<string>("");
 
   const fetchLists = useCallback(async () => {
     const jwt = jwtRef.current;
@@ -124,12 +134,19 @@ function HomeContent() {
           Authorization: `Bearer ${jwt}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: newListName.trim(), type: newListType }),
+        body: JSON.stringify({
+          name: newListName.trim(),
+          type: newListType,
+          icon: newListIcon,
+          color: newListColor,
+        }),
       });
       if (res.ok) {
         const list = await res.json();
         setNewListName("");
         setNewListType("regular");
+        setNewListIcon(null);
+        setNewListColor(null);
         setShowCreate(false);
         router.push(`/list/${list.id}`);
       } else {
@@ -144,15 +161,18 @@ function HomeContent() {
   };
 
   const handleEditList = useCallback((list: ListData) => {
-    renameTargetRef.current = list.id;
-    setRenameValue(list.name);
-    setShowRename(true);
+    editTargetRef.current = list.id;
+    setEditName(list.name);
+    setEditIcon(list.icon);
+    setEditColor(list.color);
+    setEditType(list.type);
+    setShowEdit(true);
   }, []);
 
-  const handleRenameSubmit = useCallback(async () => {
+  const handleEditSubmit = useCallback(async () => {
     const jwt = jwtRef.current;
-    if (!renameValue.trim() || !jwt || !renameTargetRef.current) return;
-    setRenaming(true);
+    if (!editName.trim() || !jwt || !editTargetRef.current) return;
+    setEditSaving(true);
     try {
       const res = await fetch("/api/lists", {
         method: "PATCH",
@@ -160,22 +180,29 @@ function HomeContent() {
           Authorization: `Bearer ${jwt}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id: renameTargetRef.current, name: renameValue.trim() }),
+        body: JSON.stringify({
+          id: editTargetRef.current,
+          name: editName.trim(),
+          icon: editIcon,
+          color: editColor,
+        }),
       });
       if (res.ok) {
         setLists((prev) =>
           prev.map((l) =>
-            l.id === renameTargetRef.current ? { ...l, name: renameValue.trim() } : l
+            l.id === editTargetRef.current
+              ? { ...l, name: editName.trim(), icon: editIcon, color: editColor }
+              : l
           )
         );
-        setShowRename(false);
+        setShowEdit(false);
       }
     } catch (e) {
-      console.error("[Home] Rename error:", e);
+      console.error("[Home] Edit error:", e);
     } finally {
-      setRenaming(false);
+      setEditSaving(false);
     }
-  }, [renameValue, jwtRef]);
+  }, [editName, editIcon, editColor, jwtRef]);
 
   const handleDeleteList = useCallback((listToDelete: ListData) => {
     const jwt = jwtRef.current;
@@ -290,7 +317,17 @@ function HomeContent() {
             value={newListName}
             onChange={setNewListName}
             listType={newListType}
-            onTypeChange={setNewListType}
+            onTypeChange={(t) => {
+              setNewListType(t);
+              setNewListIcon(null);
+              setNewListColor(null);
+            }}
+            icon={newListIcon}
+            color={newListColor}
+            onIconColorChange={(i, c) => {
+              setNewListIcon(i);
+              setNewListColor(c);
+            }}
             onSubmit={createList}
             onClose={() => setShowCreate(false)}
             creating={creating}
@@ -372,6 +409,9 @@ function HomeContent() {
             key={list.id}
             id={list.id}
             name={list.name}
+            type={list.type}
+            icon={list.icon}
+            color={list.color}
             activeCount={list.active_count}
             completedCount={list.completed_count}
             isShared={list.is_shared}
@@ -396,21 +436,38 @@ function HomeContent() {
           value={newListName}
           onChange={setNewListName}
           listType={newListType}
-          onTypeChange={setNewListType}
+          onTypeChange={(t) => {
+            setNewListType(t);
+            setNewListIcon(null);
+            setNewListColor(null);
+          }}
+          icon={newListIcon}
+          color={newListColor}
+          onIconColorChange={(i, c) => {
+            setNewListIcon(i);
+            setNewListColor(c);
+          }}
           onSubmit={createList}
           onClose={() => setShowCreate(false)}
           creating={creating}
         />
       )}
 
-      {/* Rename sheet */}
-      {showRename && (
-        <RenameListSheet
-          value={renameValue}
-          onChange={setRenameValue}
-          onSubmit={handleRenameSubmit}
-          onClose={() => setShowRename(false)}
-          renaming={renaming}
+      {/* Edit sheet */}
+      {showEdit && (
+        <EditListSheet
+          name={editName}
+          onNameChange={setEditName}
+          icon={editIcon}
+          color={editColor}
+          listType={editType}
+          onIconColorChange={(i, c) => {
+            setEditIcon(i);
+            setEditColor(c);
+          }}
+          onSubmit={handleEditSubmit}
+          onClose={() => setShowEdit(false)}
+          saving={editSaving}
         />
       )}
 
@@ -447,14 +504,20 @@ function CreateListSheet({
   onChange,
   listType,
   onTypeChange,
+  icon,
+  color,
+  onIconColorChange,
   onSubmit,
   onClose,
   creating,
 }: {
   value: string;
   onChange: (v: string) => void;
-  listType: "regular" | "reminders" | "grocery";
-  onTypeChange: (t: "regular" | "reminders" | "grocery") => void;
+  listType: ListType;
+  onTypeChange: (t: ListType) => void;
+  icon: ListIconName | null;
+  color: ListColor | null;
+  onIconColorChange: (icon: ListIconName, color: ListColor) => void;
   onSubmit: () => void;
   onClose: () => void;
   creating: boolean;
@@ -462,7 +525,7 @@ function CreateListSheet({
   const t = useTranslations();
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter" onClick={onClose}>
-      <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
         <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">
           {t('lists.newList')}
@@ -506,6 +569,7 @@ function CreateListSheet({
           maxLength={100}
           className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-base mb-4 focus:ring-2 focus:ring-tg-button/20"
         />
+        <IconColorPicker icon={icon} color={color} type={listType} onChange={onIconColorChange} />
         <div className="flex gap-3">
           <button
             onClick={onClose}
@@ -526,31 +590,39 @@ function CreateListSheet({
   );
 }
 
-function RenameListSheet({
-  value,
-  onChange,
+function EditListSheet({
+  name,
+  onNameChange,
+  icon,
+  color,
+  listType,
+  onIconColorChange,
   onSubmit,
   onClose,
-  renaming,
+  saving,
 }: {
-  value: string;
-  onChange: (v: string) => void;
+  name: string;
+  onNameChange: (v: string) => void;
+  icon: ListIconName | null;
+  color: ListColor | null;
+  listType: ListType;
+  onIconColorChange: (icon: ListIconName, color: ListColor) => void;
   onSubmit: () => void;
   onClose: () => void;
-  renaming: boolean;
+  saving: boolean;
 }) {
   const t = useTranslations();
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter" onClick={onClose}>
-      <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
         <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">
-          {t('lists.rename')}
+          {t('lists.editList')}
         </h2>
         <input
           type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") onSubmit();
           }}
@@ -558,6 +630,12 @@ function RenameListSheet({
           autoFocus
           maxLength={100}
           className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-base mb-4 focus:ring-2 focus:ring-tg-button/20"
+        />
+        <IconColorPicker
+          icon={icon}
+          color={color}
+          type={listType}
+          onChange={onIconColorChange}
         />
         <div className="flex gap-3">
           <button
@@ -568,7 +646,7 @@ function RenameListSheet({
           </button>
           <button
             onClick={onSubmit}
-            disabled={!value.trim() || renaming}
+            disabled={!name.trim() || saving}
             className="flex-1 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium disabled:opacity-40 active:scale-[0.98]"
           >
             {t('common.save')}

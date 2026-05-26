@@ -1,0 +1,3 @@
+ALTER TABLE lists
+  ADD COLUMN icon TEXT,
+  ADD COLUMN color TEXT;

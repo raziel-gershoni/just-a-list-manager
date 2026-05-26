@@ -45,7 +45,7 @@ export default function SkippedItemsSection({
         ) : (
           <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />
         )}
-        <CircleOff className="w-3.5 h-3.5" />
+        <CircleOff className="w-3.5 h-3.5" style={{ color: "var(--list-rose)" }} strokeWidth={2.5} />
         {t('items.skippedSection', { count: skippedItems.length })}
       </button>
       {showSkipped && (

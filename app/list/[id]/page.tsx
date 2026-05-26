@@ -42,7 +42,7 @@ function ListContent() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, fetchItems, refreshItems } =
+  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, fetchItems, refreshItems } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const isReminders = listType === "reminders";
@@ -187,6 +187,9 @@ function ListContent() {
     <div className="flex flex-col h-dvh overflow-hidden">
       <ListHeader
         listName={listName}
+        listType={listType}
+        listIcon={listIcon}
+        listColor={listColor}
         isShared={isShared}
         onRemind={handleRemind}
         onShare={() => setShowShare(true)}
@@ -419,7 +422,7 @@ function groupByDate(items: ItemData[], t: any) {
 
 import ItemRow from "@/components/ItemRow";
 import type { ItemData } from "@/src/types";
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 
 function ReminderItemsList({
   items,
@@ -499,6 +502,7 @@ function ReminderItemsList({
             className="sticky top-0 z-20 flex items-center gap-2.5 w-full px-5 py-3.5 text-[13px] font-medium tracking-wide text-tg-hint bg-tg-secondary-bg/80 backdrop-blur-md border-t border-separator"
           >
             {showCompleted ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />}
+            <CheckCircle2 className="w-3.5 h-3.5" style={{ color: "var(--list-emerald)" }} strokeWidth={2.5} />
             {t('items.completedSection', { count: completedItems.length })}
             <button
               onClick={(e) => { e.stopPropagation(); onClearCompleted(); }}
