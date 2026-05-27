@@ -336,20 +336,19 @@ export default function TelegramProvider({
               const serverLocale = resolveLocale(userData2.language);
               applyLocale(serverLocale);
             }
-            // Sync timezone and language if changed
+            // Sync timezone if changed. Language is user-controlled via the
+            // language sheet — never overwrite it from Telegram's language_code,
+            // since unsupported codes (e.g. "en-US") would be normalized to "en"
+            // by resolveLocale and clobber the user's explicit choice.
             try {
               const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-              const tgLang = resolveLocale(userData?.language_code);
-              const updates: Record<string, string> = {};
-              if (tz && userData2?.timezone !== tz) updates.timezone = tz;
-              if (tgLang && userData2?.language !== tgLang) updates.language = tgLang;
-              if (Object.keys(updates).length > 0) {
+              if (tz && userData2?.timezone !== tz) {
                 const currentToken = jwtRef.current;
                 if (currentToken) {
                   fetch("/api/user", {
                     method: "PATCH",
                     headers: { Authorization: `Bearer ${currentToken}`, "Content-Type": "application/json" },
-                    body: JSON.stringify(updates),
+                    body: JSON.stringify({ timezone: tz }),
                   }).catch(() => {});
                 }
               }
