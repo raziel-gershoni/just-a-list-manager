@@ -454,9 +454,10 @@ export function useItemHandlers({
       const tg = getTelegramWebApp();
       tg?.HapticFeedback?.notificationOccurred("warning");
 
-      // Find all non-deleted items matching text (case-insensitive)
+      // Find all non-deleted items matching text (normalized)
+      const normalized = normalizeForCompare(text);
       const matches = items
-        .filter((i) => !i.deleted_at && i.text.toLowerCase() === text.toLowerCase())
+        .filter((i) => !i.deleted_at && normalizeForCompare(i.text) === normalized)
         .sort((a, b) => b.position - a.position);
 
       if (matches.length <= 1) return;
