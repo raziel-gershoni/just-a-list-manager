@@ -5,6 +5,7 @@ import type { ItemData } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import { genMutId } from "@/src/utils/list-helpers";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
+import { sortForDedup } from "@/src/utils/duplicate-detection";
 
 interface UseItemHandlersParams {
   listId: string;
@@ -456,13 +457,13 @@ export function useItemHandlers({
 
       // Find all non-deleted items matching text (normalized)
       const normalized = normalizeForCompare(text);
-      const matches = items
-        .filter((i) => !i.deleted_at && normalizeForCompare(i.text) === normalized)
-        .sort((a, b) => b.position - a.position);
+      const matches = sortForDedup(
+        items.filter((i) => !i.deleted_at && normalizeForCompare(i.text) === normalized)
+      );
 
       if (matches.length <= 1) return;
 
-      // Keep the first (highest position = most recent), remove the rest
+      // Keep matches[0] (clean text wins; tie-break by highest position), remove the rest
       const duplicatesToRemove = matches.slice(1);
       const removeIds = new Set(duplicatesToRemove.map((i) => i.id));
 
