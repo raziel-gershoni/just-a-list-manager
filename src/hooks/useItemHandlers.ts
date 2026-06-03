@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import type { ItemData } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import { genMutId } from "@/src/utils/list-helpers";
+import { normalizeForCompare } from "@/src/utils/text-normalize";
 
 interface UseItemHandlersParams {
   listId: string;
@@ -105,8 +106,9 @@ export function useItemHandlers({
 
       // Check for duplicate (skip in reminders lists — duplicates are expected)
       if (listType !== "reminders") {
+        const normalized = normalizeForCompare(text);
         const existing = items.find(
-          (i) => !i.completed && !i.deleted_at && !i.skipped_at && i.text.toLowerCase() === text.toLowerCase()
+          (i) => !i.completed && !i.deleted_at && !i.skipped_at && normalizeForCompare(i.text) === normalized
         );
         if (existing) {
           const tg = getTelegramWebApp();
