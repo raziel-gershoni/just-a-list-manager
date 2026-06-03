@@ -4,6 +4,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import ItemRow from "@/components/ItemRow";
 import type { ItemData, CompletedGroup } from "@/src/types";
+import { normalizeForCompare } from "@/src/utils/text-normalize";
 
 interface CompletedItemsSectionProps {
   completedItems: ItemData[];
@@ -79,7 +80,7 @@ export default function CompletedItemsSection({
                   id={item.id}
                   text={item.text}
                   completed={true}
-                  isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+                  isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
                   creatorName={isShared ? item.creator_name : null}
                   isOwnItem={item.created_by === userId}
                   editorName={isShared ? item.editor_name : null}

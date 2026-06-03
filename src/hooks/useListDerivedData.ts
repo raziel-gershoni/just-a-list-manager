@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import type { ItemData } from "@/src/types";
 import { groupByCompletionTime } from "@/src/utils/list-helpers";
+import { computeDuplicateTexts } from "@/src/utils/duplicate-detection";
 
 export function useListDerivedData(
   items: ItemData[],
@@ -53,18 +54,7 @@ export function useListDerivedData(
     [completedItems, t]
   );
 
-  const duplicateTexts = useMemo(() => {
-    const result = new Set<string>();
-    const seenTexts = new Map<string, number>();
-    for (const item of items.filter((i) => !i.deleted_at)) {
-      const key = item.text.toLowerCase();
-      seenTexts.set(key, (seenTexts.get(key) || 0) + 1);
-    }
-    for (const [key, count] of seenTexts) {
-      if (count > 1) result.add(key);
-    }
-    return result;
-  }, [items]);
+  const duplicateTexts = useMemo(() => computeDuplicateTexts(items), [items]);
 
   return { activeItems, skippedItems, recurringItems, completedItems, completedGroups, duplicateTexts };
 }

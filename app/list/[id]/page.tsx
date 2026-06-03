@@ -21,6 +21,7 @@ import { useItemHandlers } from "@/src/hooks/useItemHandlers";
 import { useListDragDrop } from "@/src/hooks/useListDragDrop";
 import { useListRealtime } from "@/src/hooks/useListRealtime";
 import { useListDerivedData } from "@/src/hooks/useListDerivedData";
+import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
 import { DragDropProvider } from "@dnd-kit/react";
 
@@ -240,7 +241,7 @@ function ListContent() {
                   index={index}
                   text={item.text}
                   isPending={item._pending}
-                  isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+                  isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
                   creatorName={isShared ? item.creator_name : null}
                   isOwnItem={item.created_by === userId}
                   editorName={isShared ? item.editor_name : null}

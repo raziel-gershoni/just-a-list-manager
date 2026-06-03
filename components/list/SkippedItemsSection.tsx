@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, CircleOff } from "lucide-react";
 import { useTranslations } from "next-intl";
 import ItemRow from "@/components/ItemRow";
 import type { ItemData } from "@/src/types";
+import { normalizeForCompare } from "@/src/utils/text-normalize";
 
 interface SkippedItemsSectionProps {
   skippedItems: ItemData[];
@@ -57,7 +58,7 @@ export default function SkippedItemsSection({
               text={item.text}
               completed={false}
               skipped={true}
-              isDuplicate={duplicateTexts.has(item.text.toLowerCase())}
+              isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
               creatorName={isShared ? item.creator_name : null}
               isOwnItem={item.created_by === userId}
               editorName={isShared ? item.editor_name : null}
