@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeForCompare } from "@/src/utils/text-normalize";
+import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 
 describe("normalizeForCompare", () => {
   it("treats curly double quote (U+201D) and Hebrew gershayim (U+05F4) as equal — production case", () => {
@@ -36,5 +36,35 @@ describe("normalizeForCompare", () => {
   it("does NOT fold Hebrew final letters into their medial form", () => {
     // mem sofit (ם U+05DD) is semantically distinct from medial mem (מ U+05DE)
     expect(normalizeForCompare("שלום")).not.toBe(normalizeForCompare("שלומ"));
+  });
+});
+
+describe("normalizeForStorage", () => {
+  it("folds curly U+201D and Hebrew gershayim U+05F4 both to ASCII straight quote", () => {
+    const curly = 'קערות חד"פ';
+    const gershayim = 'קערות חד״פ';
+    const expected = 'קערות חד"פ';
+    expect(normalizeForStorage(curly)).toBe(expected);
+    expect(normalizeForStorage(gershayim)).toBe(expected);
+  });
+
+  it("strips a leading RLM mark (U+200F)", () => {
+    expect(normalizeForStorage("‏בצל מיובש")).toBe("בצל מיובש");
+  });
+
+  it("collapses runs of whitespace and trims edges", () => {
+    expect(normalizeForStorage("  קמח   לחם  ")).toBe("קמח לחם");
+  });
+
+  it("preserves case (key difference from normalizeForCompare)", () => {
+    expect(normalizeForStorage("Milk")).toBe("Milk");
+  });
+
+  it("folds Latin smart apostrophe (U+2019) to ASCII", () => {
+    expect(normalizeForStorage("O’Brien")).toBe("O'Brien");
+  });
+
+  it("leaves genuinely different texts different (no typo tolerance)", () => {
+    expect(normalizeForStorage("חלב")).not.toBe(normalizeForStorage("חלבב"));
   });
 });

@@ -25,3 +25,12 @@ export function normalizeForCompare(s: string): string {
     .trim()
     .toLocaleLowerCase();
 }
+
+export function normalizeForStorage(s: string): string {
+  return s
+    .normalize("NFC")
+    .replace(BIDI_MARKS, "")
+    .replace(QUOTE_FOLD_RE, (c) => QUOTE_FOLD[c])
+    .replace(WHITESPACE_RUN, " ")
+    .trim();
+}
