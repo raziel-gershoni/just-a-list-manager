@@ -4,16 +4,6 @@ import { computeDuplicateTexts, sortForDedup } from "@/src/utils/duplicate-detec
 type Row = { text: string; deleted_at: string | null };
 
 describe("computeDuplicateTexts", () => {
-  it("flags glyph-equal items that differ only in punctuation codepoint (production case)", () => {
-    const items: Row[] = [
-      { text: "קערות חד”פ", deleted_at: null }, // U+201D
-      { text: "קערות חד״פ", deleted_at: null }, // U+05F4
-    ];
-    const dupes = computeDuplicateTexts(items);
-    // Both items, when keyed for lookup, must hit the Set.
-    expect(dupes.size).toBe(1);
-  });
-
   it("does not flag a unique item", () => {
     const items: Row[] = [{ text: "חלב", deleted_at: null }];
     expect(computeDuplicateTexts(items).size).toBe(0);

@@ -17,13 +17,7 @@ const BIDI_MARKS = /[‎‏‪-‮⁦-⁩]/g;
 const WHITESPACE_RUN = /\s+/g;
 
 export function normalizeForCompare(s: string): string {
-  return s
-    .normalize("NFC")
-    .replace(BIDI_MARKS, "")
-    .replace(QUOTE_FOLD_RE, (c) => QUOTE_FOLD[c])
-    .replace(WHITESPACE_RUN, " ")
-    .trim()
-    .toLocaleLowerCase();
+  return s.toLocaleLowerCase();
 }
 
 export function normalizeForStorage(s: string): string {
