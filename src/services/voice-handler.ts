@@ -435,6 +435,7 @@ async function processRemoveItem(
   listName: string
 ) {
   const { getMsg } = await import("./bot");
+  const canonical = normalizeForStorage(voiceItem.text);
   // Search active items by exact match first
   const { data: exactMatches } = await supabase
     .from("items")
@@ -442,7 +443,7 @@ async function processRemoveItem(
     .eq("list_id", listId)
     .eq("completed", false)
     .is("deleted_at", null)
-    .ilike("text", escapeIlike(voiceItem.text))
+    .ilike("text", escapeIlike(canonical))
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -494,7 +495,7 @@ async function processRemoveItem(
     .eq("list_id", listId)
     .eq("completed", true)
     .is("deleted_at", null)
-    .ilike("text", escapeIlike(voiceItem.text))
+    .ilike("text", escapeIlike(canonical))
     .limit(1);
 
   if (completedMatch && completedMatch.length > 0) {

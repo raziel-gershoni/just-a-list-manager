@@ -6,7 +6,7 @@ import { findRecyclableItems, recycleItem } from "@/src/services/item-recycler";
 import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
 import { parseBody } from "@/src/lib/api-validation";
 import { cancelItemReminders } from "@/src/services/reminders";
-import { normalizeForStorage } from "@/src/utils/text-normalize";
+import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
@@ -219,7 +219,7 @@ export async function POST(
     // Check for recyclable items
     const recyclable = await findRecyclableItems(listId, text);
     const exactMatch = recyclable.find(
-      (r) => r.text.toLowerCase() === text.toLowerCase()
+      (r) => normalizeForCompare(r.text) === normalizeForCompare(text)
     );
 
     if (exactMatch && parsedCreate.data.recycleId) {
