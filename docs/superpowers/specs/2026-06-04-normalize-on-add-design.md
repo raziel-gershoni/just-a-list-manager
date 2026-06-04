@@ -122,11 +122,11 @@ The PR contains, in order:
 
 1. Add `normalizeForStorage` + tests.
 2. Apply at the 4 write sites + 2 search sites.
-3. Add `scripts/normalize-items.mjs` (committed but not yet run).
+3. Add `scripts/normalize-items.ts` (committed but not yet run).
 4. Simplify `normalizeForCompare` body to `s.toLocaleLowerCase()`.
 5. Delete `sortForDedup` + its tests; revert `handleRemoveDuplicates` to position-only sort.
 
-Deploy lands. Run `npx tsx scripts/normalize-items.mjs --dry-run` against prod; review the count and samples. Run without `--dry-run`. Verify with a query that no `items.text` row contains any character in the noisy set (`[‎‏‪-‮⁦-⁩“”‘’״׳]`). Follow-up commit deletes `scripts/normalize-items.mjs`.
+Deploy lands. Run `npx tsx scripts/normalize-items.ts --dry-run` against prod; review the count and samples. Run without `--dry-run`. Verify with a query that no `items.text` row contains any character in the noisy set (`[‎‏‪-‮⁦-⁩“”‘’״׳]`). Follow-up commit deletes `scripts/normalize-items.ts`.
 
 ## Risks
 
