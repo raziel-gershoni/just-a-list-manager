@@ -4,6 +4,7 @@
  */
 
 import { createServerClient } from "@/src/lib/supabase";
+import { normalizeForStorage } from "@/src/utils/text-normalize";
 
 /** Escape ILIKE special characters to prevent wildcard injection */
 function escapeIlike(input: string): string {
@@ -29,13 +30,14 @@ export async function findRecyclableItems(
   searchText: string
 ): Promise<RecyclableItem[]> {
   const supabase = createServerClient();
+  const canonical = normalizeForStorage(searchText);
 
   // Search completed items (not deleted)
   const { data: completedItems } = await supabase
     .from("items")
     .select("id, text, completed, completed_at, deleted_at, position")
     .eq("list_id", listId)
-    .ilike("text", `%${escapeIlike(searchText)}%`)
+    .ilike("text", `%${escapeIlike(canonical)}%`)
     .eq("completed", true)
     .is("deleted_at", null)
     .order("completed_at", { ascending: false, nullsFirst: false })
@@ -101,18 +103,19 @@ export async function findFuzzyMatch(
   text: string
 ): Promise<RecyclableItem[]> {
   const supabase = createServerClient();
+  const canonical = normalizeForStorage(text);
 
   // Use RPC for pg_trgm similarity search
   const { data, error } = await supabase.rpc("find_fuzzy_items", {
     p_list_id: listId,
-    p_search_text: text,
+    p_search_text: canonical,
     p_threshold: 0.3,
   });
 
   if (error) {
     console.error("[ItemRecycler] Fuzzy search error:", error);
     // Fallback to ILIKE
-    return findRecyclableItems(listId, text);
+    return findRecyclableItems(listId, canonical);
   }
 
   return (data || []) as RecyclableItem[];
