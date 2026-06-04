@@ -6,6 +6,7 @@ import { findRecyclableItems, recycleItem } from "@/src/services/item-recycler";
 import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
 import { parseBody } from "@/src/lib/api-validation";
 import { cancelItemReminders } from "@/src/services/reminders";
+import { normalizeForStorage } from "@/src/utils/text-normalize";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
@@ -83,7 +84,7 @@ export async function POST(
     const parsed = parseBody(createItemIdempotentSchema, body);
     if (!parsed.success) return parsed.response;
 
-    const text = parsed.data.text.trim();
+    const text = normalizeForStorage(parsed.data.text);
     if (!text) {
       return NextResponse.json(
         { error: "Item text is required (max 500 chars)" },
@@ -180,11 +181,11 @@ export async function POST(
   if (parsedCreate.data.text) {
     itemTexts = parsedCreate.data.text
       .split(",")
-      .map((t: string) => t.trim())
+      .map((t: string) => normalizeForStorage(t))
       .filter((t: string) => t.length > 0 && t.length <= 500);
   } else if (Array.isArray(parsedCreate.data.items)) {
     itemTexts = parsedCreate.data.items
-      .map((item) => item.text.trim())
+      .map((item) => normalizeForStorage(item.text))
       .filter((t: string) => t.length > 0 && t.length <= 500);
   }
 
@@ -295,9 +296,12 @@ export async function PATCH(
       : null;
   }
 
-  if (typeof updates.text === "string" && updates.text.trim().length > 0 && updates.text.trim().length <= 500) {
-    patchData.text = updates.text.trim();
-    patchData.edited_by = auth.userId;
+  if (typeof updates.text === "string") {
+    const canonical = normalizeForStorage(updates.text);
+    if (canonical.length > 0 && canonical.length <= 500) {
+      patchData.text = canonical;
+      patchData.edited_by = auth.userId;
+    }
   }
 
   if (typeof updates.position === "number" && Number.isFinite(updates.position) && updates.position > 0 && updates.position <= MAX_SAFE_POSITION) {

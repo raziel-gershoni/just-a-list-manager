@@ -12,6 +12,7 @@ import { voiceRateLimiter } from "@/src/lib/rate-limit";
 import { checkRateLimit } from "@/src/lib/rate-limit";
 import { getVoiceProcessor, type VoiceItem } from "./voice-processor";
 import { findFuzzyMatch, recycleItem } from "./item-recycler";
+import { normalizeForStorage } from "@/src/utils/text-normalize";
 
 /** Escape ILIKE special characters */
 function escapeIlike(input: string): string {
@@ -414,7 +415,7 @@ async function processAddItem(
 
   const { data: created } = await supabase.from("items").insert({
     list_id: listId,
-    text: voiceItem.text,
+    text: normalizeForStorage(voiceItem.text),
     position: nextPosition,
     created_by: userId,
   }).select("id").single();
