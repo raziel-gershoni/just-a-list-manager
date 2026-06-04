@@ -16,18 +16,3 @@ export function computeDuplicateTexts(
   return result;
 }
 
-// Bidi marks + Latin curly quotes — characters that normalizeForCompare strips or folds.
-// A text containing any of these is "noisy" and is a worse dedup-survivor candidate
-// than a text without them.
-const NOISY_CHARS_RE = /[‎‏‪-‮⁦-⁩“”‘’]/;
-
-export function sortForDedup<T extends { text: string; position: number }>(
-  items: T[]
-): T[] {
-  return [...items].sort((a, b) => {
-    const aNoisy = NOISY_CHARS_RE.test(a.text) ? 1 : 0;
-    const bNoisy = NOISY_CHARS_RE.test(b.text) ? 1 : 0;
-    if (aNoisy !== bNoisy) return aNoisy - bNoisy;
-    return b.position - a.position;
-  });
-}
