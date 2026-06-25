@@ -24,6 +24,8 @@ interface SortableItemProps {
   onDelete: (id: string) => void;
   onEdit?: (id: string, newText: string) => void;
   onSkip?: (id: string, skipped: boolean) => void;
+  ordered?: boolean;
+  onOrder?: (id: string, ordered: boolean) => void;
   recurring?: boolean;
   onToggleRecurring?: (id: string, recurring: boolean) => void;
   onRemoveDuplicates?: (text: string) => void;
@@ -47,6 +49,8 @@ export default function SortableItem({
   onDelete,
   onEdit,
   onSkip,
+  ordered,
+  onOrder,
   recurring,
   onToggleRecurring,
   onRemoveDuplicates,
@@ -80,6 +84,8 @@ export default function SortableItem({
         onDelete={onDelete}
         onEdit={onEdit}
         onSkip={onSkip}
+        ordered={ordered}
+        onOrder={onOrder}
         recurring={recurring}
         onToggleRecurring={onToggleRecurring}
         onRemoveDuplicates={onRemoveDuplicates}

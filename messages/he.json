@@ -77,6 +77,11 @@
     "editedBy": "נערך ע\"י {name}",
     "reminderSent": "תזכורת נשלחה!",
     "skippedSection": "לא זמין ({count})",
+    "orderedSection": "בדרך ({count})",
+    "ordered": {
+      "toggleOn": "סמן כהוזמן",
+      "restore": "החזר לרשימה"
+    },
     "recurring": {
       "section": "חוזר ({count})",
       "toggleOn": "סמן כחוזר",

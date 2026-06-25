@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Bell, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, X } from "lucide-react";
+import { Bell, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, Truck, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
 function formatShortTime(iso: string, tomLabel: string): string {
@@ -34,6 +34,8 @@ interface ItemRowProps {
   onEdit?: (id: string, newText: string) => void;
   skipped?: boolean;
   onSkip?: (id: string, skipped: boolean) => void;
+  ordered?: boolean;
+  onOrder?: (id: string, ordered: boolean) => void;
   recurring?: boolean;
   onToggleRecurring?: (id: string, recurring: boolean) => void;
   onRemoveDuplicates?: (text: string) => void;
@@ -60,6 +62,8 @@ export default function ItemRow({
   onEdit,
   skipped,
   onSkip,
+  ordered,
+  onOrder,
   recurring,
   onToggleRecurring,
   onRemoveDuplicates,
@@ -208,6 +212,25 @@ export default function ItemRow({
             <RotateCcw className="w-[18px] h-[18px] text-tg-link" />
           ) : (
             <CircleOff className="w-[18px] h-[18px] text-tg-hint" />
+          )}
+        </button>
+      )}
+
+      {onOrder && !completed && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const tg = getTelegramWebApp();
+            tg?.HapticFeedback?.impactOccurred("light");
+            onOrder(id, !ordered);
+          }}
+          className="p-1.5 rounded-full shrink-0"
+          aria-label={ordered ? t("ordered.restore") : t("ordered.toggleOn")}
+        >
+          {ordered ? (
+            <RotateCcw className="w-[18px] h-[18px] text-tg-link" />
+          ) : (
+            <Truck className="w-[18px] h-[18px] text-tg-hint" />
           )}
         </button>
       )}
