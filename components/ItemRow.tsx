@@ -190,11 +190,6 @@ export default function ItemRow({
                 )}
               </p>
             )}
-            {ordered && (
-              <p className="text-[11px] text-amber-500 tracking-wide">
-                {t("ordered.label")}
-              </p>
-            )}
           </div>
         )}
       </div>
