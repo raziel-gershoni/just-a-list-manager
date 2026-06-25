@@ -82,6 +82,8 @@ export async function recycleItem(
       completed: false,
       completed_at: null,
       deleted_at: null,
+      skipped_at: null,
+      ordered_at: null,
       position: nextPosition,
       created_by: userId,
     })

@@ -94,6 +94,48 @@ export const createExecutorFactory = (): ExecutorFactory => {
           });
           if (!res.ok) throw new Error(`Skip failed: ${res.status}`);
         };
+      case "order":
+        return async () => {
+          const jwt = getJwt();
+          const res = await fetch(`/api/lists/${payload.listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId: payload.itemId, ordered: payload.ordered }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Order failed: ${res.status}`);
+        };
+      case "set-recurring":
+        return async () => {
+          const jwt = getJwt();
+          const res = await fetch(`/api/lists/${payload.listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId: payload.itemId, recurring: payload.recurring }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Set recurring failed: ${res.status}`);
+        };
+      case "restore-recurring":
+        return async () => {
+          const jwt = getJwt();
+          const res = await fetch(`/api/lists/${payload.listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId: payload.itemId, restoreRecurring: true }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Restore recurring failed: ${res.status}`);
+        };
       case "recycle":
         return async () => {
           const jwt = getJwt();
