@@ -12,7 +12,6 @@ import ShareDialog from "@/components/ShareDialog";
 import ReminderSheet from "@/components/ReminderSheet";
 import ListHeader from "@/components/list/ListHeader";
 import SkippedItemsSection from "@/components/list/SkippedItemsSection";
-import OrderedItemsSection from "@/components/list/OrderedItemsSection";
 import RecurringItemsSection from "@/components/list/RecurringItemsSection";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
 import ToastContainer from "@/components/list/ToastContainer";
@@ -57,11 +56,6 @@ function ListContent() {
   const [showSkipped, setShowSkipped] = useState(() => {
     if (typeof window === "undefined") return false;
     const v = localStorage.getItem("panel_skipped");
-    return v === null ? false : v === "true";
-  });
-  const [showOrdered, setShowOrdered] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const v = localStorage.getItem("panel_ordered");
     return v === null ? false : v === "true";
   });
   const [showRecurring, setShowRecurring] = useState(() => {
@@ -158,7 +152,7 @@ function ListContent() {
     if (isReady) fetchItems();
   }, [isReady, fetchItems]);
 
-  const { activeItems, orderedItems, skippedItems, recurringItems, completedItems, completedGroups, duplicateTexts } =
+  const { activeItems, skippedItems, recurringItems, completedItems, completedGroups, duplicateTexts } =
     useListDerivedData(items, t as (key: string) => string);
 
   if (loading) {
@@ -269,18 +263,6 @@ function ListContent() {
 
             {listType === "grocery" && (
               <>
-                <OrderedItemsSection
-                  orderedItems={orderedItems}
-                  showOrdered={showOrdered}
-                  setShowOrdered={setShowOrdered}
-                  duplicateTexts={duplicateTexts}
-                  isShared={isShared}
-                  userId={userId}
-                  onToggle={handleToggle}
-                  onDelete={handleDelete}
-                  onEdit={handleEditItem}
-                  onOrder={handleOrder}
-                />
                 <SkippedItemsSection
                   skippedItems={skippedItems}
                   showSkipped={showSkipped}
@@ -319,7 +301,7 @@ function ListContent() {
           </>
         )}
 
-        {activeItems.length === 0 && orderedItems.length === 0 && skippedItems.length === 0 && recurringItems.length === 0 && completedItems.length === 0 && (
+        {activeItems.length === 0 && skippedItems.length === 0 && recurringItems.length === 0 && completedItems.length === 0 && (
           <div className="text-center text-tg-hint py-16">
             <p className="text-lg mb-1">{t('items.emptyTitle')}</p>
             <p className="text-sm">{t('items.emptyDescription')}</p>

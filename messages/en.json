@@ -77,10 +77,9 @@
     "editedBy": "edited by {name}",
     "reminderSent": "Reminder sent!",
     "skippedSection": "Not available ({count})",
-    "orderedSection": "On the way ({count})",
     "ordered": {
       "toggleOn": "Mark as ordered",
-      "restore": "Add back to list"
+      "label": "on the way"
     },
     "recurring": {
       "section": "Recurring ({count})",

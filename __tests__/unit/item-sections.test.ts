@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isActiveItem, isSkippedItem, isOrderedItem } from "@/src/utils/list-helpers";
+import { isActiveItem, isSkippedItem } from "@/src/utils/list-helpers";
 import type { ItemData } from "@/src/types";
 
 function makeItem(overrides: Partial<ItemData> = {}): ItemData {
@@ -12,28 +12,27 @@ function makeItem(overrides: Partial<ItemData> = {}): ItemData {
 }
 
 describe("item section predicates", () => {
-  it("ordered item is ordered, not active, not skipped", () => {
+  it("an ordered item stays active (shown in the list, not a separate section)", () => {
     const i = makeItem({ ordered_at: "2026-06-26T00:00:00Z" });
-    expect(isOrderedItem(i)).toBe(true);
+    expect(isActiveItem(i)).toBe(true);
+    expect(isSkippedItem(i)).toBe(false);
+  });
+
+  it("a skipped item is skipped, not active", () => {
+    const i = makeItem({ skipped_at: "2026-06-26T00:00:00Z" });
+    expect(isSkippedItem(i)).toBe(true);
     expect(isActiveItem(i)).toBe(false);
-    expect(isSkippedItem(i)).toBe(false);
   });
 
-  it("ordered takes precedence over a stray skipped_at", () => {
-    const i = makeItem({ ordered_at: "2026-06-26T00:00:00Z", skipped_at: "2026-06-26T00:00:00Z" });
-    expect(isOrderedItem(i)).toBe(true);
-    expect(isSkippedItem(i)).toBe(false);
-  });
-
-  it("plain item is active only", () => {
+  it("a plain item is active", () => {
     const i = makeItem();
     expect(isActiveItem(i)).toBe(true);
-    expect(isOrderedItem(i)).toBe(false);
     expect(isSkippedItem(i)).toBe(false);
   });
 
-  it("completed/deleted ordered item is not in the ordered group", () => {
-    expect(isOrderedItem(makeItem({ ordered_at: "x", completed: true }))).toBe(false);
-    expect(isOrderedItem(makeItem({ ordered_at: "x", deleted_at: "x" }))).toBe(false);
+  it("completed/deleted items are neither active nor skipped", () => {
+    expect(isActiveItem(makeItem({ completed: true }))).toBe(false);
+    expect(isActiveItem(makeItem({ deleted_at: "x" }))).toBe(false);
+    expect(isSkippedItem(makeItem({ skipped_at: "x", completed: true }))).toBe(false);
   });
 });

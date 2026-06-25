@@ -77,10 +77,9 @@
     "editedBy": "изменено {name}",
     "reminderSent": "Напоминание отправлено!",
     "skippedSection": "Нет в наличии ({count})",
-    "orderedSection": "В пути ({count})",
     "ordered": {
       "toggleOn": "Отметить как заказанное",
-      "restore": "Вернуть в список"
+      "label": "в пути"
     },
     "recurring": {
       "section": "Повторяющиеся ({count})",

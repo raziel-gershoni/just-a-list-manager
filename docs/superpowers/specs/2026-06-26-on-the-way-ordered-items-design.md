@@ -96,3 +96,13 @@ Add keys following the existing flat-dotted + ICU convention:
 - Delivery dates, tracking numbers, ETAs.
 - Non-grocery lists.
 - Ordering directly from the "Not available" section.
+
+## Update (2026-06-26): ordered items stay in the list
+
+After shipping the "On the way" section, we changed the presentation: **ordered items now stay in the active list** with an in-row marker instead of moving into a separate collapsed section. Rationale: in a shared list, a collapsed section hides ordered items, so a second person doesn't see them as handled and re-adds them as duplicates. Keeping them visible solves that.
+
+Changes from the original design:
+- Removed the "On the way" section, the `orderedItems` derived group, the `isOrderedItem` predicate, the `OrderedItemsSection` component, and the `panel_ordered` state. `isActiveItem` no longer excludes `ordered_at`.
+- The truck row button now marks the item in place and turns **amber + bold** when ordered (the app's attention color, reusing the recurring-toggle on-state recipe), plus a small amber **"on the way"** caption under the item text.
+- i18n: dropped `items.orderedSection`; `items.ordered` is now `{ toggleOn, label }`.
+- Unchanged: `ordered_at` column, PATCH `ordered` flag, `handleOrder`, executor-factory `order` case, recycle clearing, ordered/skipped mutual exclusion, received = done, no auto-reset, grocery-only.

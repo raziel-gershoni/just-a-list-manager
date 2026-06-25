@@ -190,6 +190,11 @@ export default function ItemRow({
                 )}
               </p>
             )}
+            {ordered && (
+              <p className="text-[11px] text-amber-500 tracking-wide">
+                {t("ordered.label")}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -224,14 +229,13 @@ export default function ItemRow({
             tg?.HapticFeedback?.impactOccurred("light");
             onOrder(id, !ordered);
           }}
-          className="p-1.5 rounded-full shrink-0"
-          aria-label={ordered ? t("ordered.restore") : t("ordered.toggleOn")}
+          className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
+          aria-label={ordered ? t("ordered.label") : t("ordered.toggleOn")}
         >
-          {ordered ? (
-            <RotateCcw className="w-[18px] h-[18px] text-tg-link" />
-          ) : (
-            <Truck className="w-[18px] h-[18px] text-tg-hint" />
-          )}
+          <Truck
+            className={`w-[18px] h-[18px] transition-colors ${ordered ? "text-amber-500" : "text-tg-hint"}`}
+            strokeWidth={ordered ? 3 : 2}
+          />
         </button>
       )}
 
