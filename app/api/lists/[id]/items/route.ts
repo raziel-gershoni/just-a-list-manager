@@ -36,7 +36,7 @@ export async function GET(
   // so the client can auto-respawn deleted recurring items past the 4-hour threshold.
   let query = supabase
     .from("items")
-    .select("id, text, completed, completed_at, deleted_at, skipped_at, recurring, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
+    .select("id, text, completed, completed_at, deleted_at, skipped_at, ordered_at, recurring, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
     .eq("list_id", listId)
     .or("deleted_at.is.null,recurring.eq.true")
     .order("position", { ascending: false })
@@ -310,6 +310,12 @@ export async function PATCH(
 
   if (typeof updates.skipped === "boolean") {
     patchData.skipped_at = updates.skipped ? new Date().toISOString() : null;
+    if (updates.skipped) patchData.ordered_at = null; // mutually exclusive states
+  }
+
+  if (typeof updates.ordered === "boolean") {
+    patchData.ordered_at = updates.ordered ? new Date().toISOString() : null;
+    if (updates.ordered) patchData.skipped_at = null; // mutually exclusive states
   }
 
   if (typeof updates.recurring === "boolean") {
@@ -322,6 +328,7 @@ export async function PATCH(
     patchData.completed_at = null;
     patchData.deleted_at = null;
     patchData.skipped_at = null;
+    patchData.ordered_at = null;
     patchData.position = Date.now();
   }
 

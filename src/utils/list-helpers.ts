@@ -59,3 +59,14 @@ export function groupByCompletionTime(
       items: grouped.get(b.key)!,
     }));
 }
+
+// Secondary item-state predicates. Mutually exclusive over non-completed,
+// non-deleted items; "ordered" takes precedence over a stray "skipped".
+export const isOrderedItem = (i: ItemData): boolean =>
+  !i.completed && !i.deleted_at && !!i.ordered_at;
+
+export const isSkippedItem = (i: ItemData): boolean =>
+  !i.completed && !i.deleted_at && !!i.skipped_at && !i.ordered_at;
+
+export const isActiveItem = (i: ItemData): boolean =>
+  !i.completed && !i.deleted_at && !i.skipped_at && !i.ordered_at;

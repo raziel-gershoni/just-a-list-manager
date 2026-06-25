@@ -12,6 +12,7 @@ function makeItem(overrides: Partial<ItemData> = {}): ItemData {
     completed_at: new Date().toISOString(),
     deleted_at: null,
     skipped_at: null,
+    ordered_at: null,
     recurring: false,
     position: 1,
     created_by: null,

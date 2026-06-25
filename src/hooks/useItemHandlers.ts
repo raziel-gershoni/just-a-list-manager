@@ -50,6 +50,7 @@ export function useItemHandlers({
         completed_at: null,
         deleted_at: null,
         skipped_at: null,
+        ordered_at: null,
         recurring: false,
         position,
         created_by: userId,
@@ -123,7 +124,7 @@ export function useItemHandlers({
         setItems((prev) =>
           prev.map((i) =>
             i.id === recycleId
-              ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, created_by: userId, creator_name: null }
+              ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, created_by: userId, creator_name: null }
               : i
           )
         );
@@ -222,6 +223,7 @@ export function useItemHandlers({
                 completed_at: null,
                 deleted_at: null,
                 skipped_at: null,
+                ordered_at: null,
                 recurring: false,
                 position: Date.now(),
                 created_by: null,
@@ -381,6 +383,43 @@ export function useItemHandlers({
     [jwtRef, listId, addMutation, setItems]
   );
 
+  const handleOrder = useCallback(
+    (itemId: string, ordered: boolean) => {
+      const tg = getTelegramWebApp();
+      tg?.HapticFeedback?.impactOccurred("light");
+
+      // Optimistic update — ordered and skipped are mutually exclusive
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId
+            ? { ...i, ordered_at: ordered ? new Date().toISOString() : null, skipped_at: ordered ? null : i.skipped_at }
+            : i
+        )
+      );
+
+      const mutId = genMutId();
+      addMutation({
+        id: mutId,
+        type: "order",
+        payload: { listId, itemId, ordered },
+        execute: async () => {
+          const jwt = jwtRef.current;
+          const res = await fetch(`/api/lists/${listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId, ordered }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Order failed: ${res.status}`);
+        },
+      });
+    },
+    [jwtRef, listId, addMutation, setItems]
+  );
+
   const handleSetRecurring = useCallback(
     (itemId: string, recurring: boolean) => {
       const tg = getTelegramWebApp();
@@ -421,7 +460,7 @@ export function useItemHandlers({
       setItems((prev) =>
         prev.map((i) =>
           i.id === itemId
-            ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, position: Date.now() }
+            ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, position: Date.now() }
             : i
         )
       );
@@ -668,5 +707,5 @@ export function useItemHandlers({
     [jwtRef, listId, setItems, setReminderToast]
   );
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder };
 }

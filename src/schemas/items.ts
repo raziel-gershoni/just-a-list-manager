@@ -21,6 +21,7 @@ export const updateItemSchema = z.object({
   text: z.string().min(1).max(500).optional(),
   position: z.number().optional(),
   skipped: z.boolean().optional(),
+  ordered: z.boolean().optional(),
   recurring: z.boolean().optional(),
   restoreRecurring: z.boolean().optional(),
   deleted_at: z.null().optional(),

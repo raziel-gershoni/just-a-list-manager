@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { ItemData } from "@/src/types";
-import { groupByCompletionTime } from "@/src/utils/list-helpers";
+import { groupByCompletionTime, isActiveItem, isSkippedItem, isOrderedItem } from "@/src/utils/list-helpers";
 import { computeDuplicateTexts } from "@/src/utils/duplicate-detection";
 
 export function useListDerivedData(
@@ -10,18 +10,17 @@ export function useListDerivedData(
   t: (key: string) => string
 ) {
   const activeItems = useMemo(
-    () =>
-      items
-        .filter((i) => !i.completed && !i.deleted_at && !i.skipped_at)
-        .sort((a, b) => b.position - a.position),
+    () => items.filter(isActiveItem).sort((a, b) => b.position - a.position),
+    [items]
+  );
+
+  const orderedItems = useMemo(
+    () => items.filter(isOrderedItem).sort((a, b) => b.position - a.position),
     [items]
   );
 
   const skippedItems = useMemo(
-    () =>
-      items
-        .filter((i) => !i.completed && !i.deleted_at && !!i.skipped_at)
-        .sort((a, b) => b.position - a.position),
+    () => items.filter(isSkippedItem).sort((a, b) => b.position - a.position),
     [items]
   );
 
@@ -56,5 +55,5 @@ export function useListDerivedData(
 
   const duplicateTexts = useMemo(() => computeDuplicateTexts(items), [items]);
 
-  return { activeItems, skippedItems, recurringItems, completedItems, completedGroups, duplicateTexts };
+  return { activeItems, orderedItems, skippedItems, recurringItems, completedItems, completedGroups, duplicateTexts };
 }

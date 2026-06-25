@@ -121,7 +121,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
               },
               body: JSON.stringify({ itemId: base.id, restoreRecurring: true }),
             }).catch(() => {});
-            return { ...base, completed: false, completed_at: null, deleted_at: null, skipped_at: null, position: Date.now() };
+            return { ...base, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
           }
           return base;
         });
