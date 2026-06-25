@@ -292,4 +292,10 @@
     background: var(--tg-theme-bg-color, oklch(1 0 0));
     border-radius: 0.5rem;
   }
+  /* Today's date in the day wheel — accent color so it stands out from the
+     gray options and the dark selected/centered item. */
+  .time-picker-today {
+    color: var(--tg-theme-link-color, oklch(0.55 0.18 247.86));
+    font-weight: 600;
+  }
 }

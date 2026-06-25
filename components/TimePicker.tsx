@@ -68,18 +68,31 @@ export default function DateTimePicker({
     }));
   }, [locale]);
 
+  const today = useMemo(() => {
+    const t = new Date();
+    return { year: t.getFullYear(), month: t.getMonth() + 1, day: t.getDate() };
+  }, []);
+
   const dayOptions = useMemo(() => {
     const max = daysInMonth(year, month);
     const fmt = new Intl.DateTimeFormat(locale, { weekday: "short" });
+    const isCurrentMonth = year === today.year && month === today.month;
     return Array.from({ length: max }, (_, i) => {
       const n = i + 1;
       const wd = fmt.format(new Date(year, month - 1, n));
-      return {
-        value: String(n),
-        label: `${wd} ${pad(n)}`,
-      };
+      const text = `${wd} ${pad(n)}`;
+      // Highlight today's date, but only when the selected month/year match
+      // the current ones (day "15" in another month isn't today).
+      if (isCurrentMonth && n === today.day) {
+        return {
+          value: String(n),
+          label: <span className="time-picker-today">{text}</span>,
+          textValue: text,
+        };
+      }
+      return { value: String(n), label: text };
     });
-  }, [year, month, locale]);
+  }, [year, month, locale, today]);
 
   const haptic = () => {
     try { (window as any).Telegram?.WebApp?.HapticFeedback?.selectionChanged(); } catch {}
