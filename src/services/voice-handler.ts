@@ -249,7 +249,7 @@ export async function handleVoiceMessage(
           try {
             await bot.sendMessage(
               chatId,
-              getMsg(lang, "voice.listNotFound").replace("{listName}", voiceItem.targetList || "")
+              getMsg(lang, "voice.listNotFound").replace("{listName}", () => voiceItem.targetList || "")
             );
           } catch {}
           continue;
@@ -321,22 +321,22 @@ export async function handleVoiceMessage(
       const lines: string[] = [];
 
       if (receipt.added.length > 0 && receipt.removed.length === 0) {
-        lines.push(getMsg(lang, "voice.added").replace("{listName}", receipt.listName));
+        lines.push(getMsg(lang, "voice.added").replace("{listName}", () => receipt.listName));
         for (const item of receipt.added) {
           lines.push(`- ${item}`);
         }
       } else if (receipt.removed.length > 0 && receipt.added.length === 0) {
-        lines.push(getMsg(lang, "voice.removed").replace("{listName}", receipt.listName));
+        lines.push(getMsg(lang, "voice.removed").replace("{listName}", () => receipt.listName));
         for (const item of receipt.removed) {
           lines.push(`- ${item}`);
         }
       } else {
-        lines.push(getMsg(lang, "voice.updated").replace("{listName}", receipt.listName));
+        lines.push(getMsg(lang, "voice.updated").replace("{listName}", () => receipt.listName));
         if (receipt.added.length > 0) {
-          lines.push(getMsg(lang, "voice.addedInline").replace("{items}", receipt.added.join(", ")));
+          lines.push(getMsg(lang, "voice.addedInline").replace("{items}", () => receipt.added.join(", ")));
         }
         if (receipt.removed.length > 0) {
-          lines.push(getMsg(lang, "voice.removedInline").replace("{items}", receipt.removed.join(", ")));
+          lines.push(getMsg(lang, "voice.removedInline").replace("{items}", () => receipt.removed.join(", ")));
         }
       }
 
@@ -503,8 +503,8 @@ async function processRemoveItem(
       await bot.sendMessage(
         chatId,
         getMsg(lang, "voice.alreadyCheckedOff")
-          .replace("{item}", completedMatch[0].text)
-          .replace("{listName}", listName)
+          .replace("{item}", () => completedMatch[0].text)
+          .replace("{listName}", () => listName)
       );
     } catch {}
     return;
@@ -514,8 +514,8 @@ async function processRemoveItem(
     await bot.sendMessage(
       chatId,
       getMsg(lang, "voice.notFound")
-        .replace("{item}", voiceItem.text)
-        .replace("{listName}", listName)
+        .replace("{item}", () => voiceItem.text)
+        .replace("{listName}", () => listName)
     );
   } catch {}
 }

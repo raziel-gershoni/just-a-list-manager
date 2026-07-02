@@ -163,8 +163,8 @@ export async function sendApprovalRequest(
     await bot.sendMessage(
       ownerTelegramId,
       getMsg(ownerLanguage, "bot.approvalRequest")
-        .replace("{userName}", requesterName)
-        .replace("{listName}", listName),
+        .replace("{userName}", () => requesterName)
+        .replace("{listName}", () => listName),
       {
         reply_markup: {
           inline_keyboard: [
@@ -262,9 +262,9 @@ export async function sendItemReminder(
 ) {
   const msgKey = senderName ? "bot.itemReminderShared" : "bot.itemReminder";
   let text = getMsg(language, msgKey)
-    .replace("{itemText}", itemText)
-    .replace("{listName}", listName);
-  if (senderName) text = text.replace("{senderName}", senderName);
+    .replace("{itemText}", () => itemText)
+    .replace("{listName}", () => listName);
+  if (senderName) text = text.replace("{senderName}", () => senderName);
 
   await bot.sendMessage(telegramId, text, {
     reply_markup: {
@@ -363,7 +363,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         if (isApprove) {
           await bot.sendMessage(
             requesterTgId,
-            getMsg(requesterLang, "share.approvedMessage").replace("{listName}", listName),
+            getMsg(requesterLang, "share.approvedMessage").replace("{listName}", () => listName),
             {
               reply_markup: {
                 inline_keyboard: [
@@ -375,7 +375,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         } else {
           await bot.sendMessage(
             requesterTgId,
-            getMsg(requesterLang, "share.declinedMessage").replace("{listName}", listName)
+            getMsg(requesterLang, "share.declinedMessage").replace("{listName}", () => listName)
           );
         }
       } catch (e) {
@@ -392,8 +392,8 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     try {
       await bot.editMessageText(
         isApprove
-          ? getMsg(ownerLang, "bot.approved").replace("{userName}", requesterName).replace("{listName}", listName)
-          : getMsg(ownerLang, "bot.declined").replace("{userName}", requesterName).replace("{listName}", listName),
+          ? getMsg(ownerLang, "bot.approved").replace("{userName}", () => requesterName).replace("{listName}", () => listName)
+          : getMsg(ownerLang, "bot.declined").replace("{userName}", () => requesterName).replace("{listName}", () => listName),
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,
@@ -471,7 +471,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
 
     try {
       await bot.editMessageText(
-        getMsg(lang, "reminder.doneItem").replace("{itemText}", itemText),
+        getMsg(lang, "reminder.doneItem").replace("{itemText}", () => itemText),
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,
@@ -596,12 +596,12 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     }
 
     await bot.answerCallbackQuery(query.id, {
-      text: getMsg(lang, "reminder.snoozed").replace("{time}", formattedTime),
+      text: getMsg(lang, "reminder.snoozed").replace("{time}", () => formattedTime),
     });
 
     try {
       await bot.editMessageText(
-        getMsg(lang, "reminder.snoozedItem").replace("{itemText}", itemText).replace("{time}", formattedTime),
+        getMsg(lang, "reminder.snoozedItem").replace("{itemText}", () => itemText).replace("{time}", () => formattedTime),
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,
