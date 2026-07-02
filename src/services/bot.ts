@@ -198,8 +198,8 @@ export async function sendListReminder(
     await bot.sendMessage(
       telegramId,
       getMsg(language, "bot.listReminder")
-        .replace("{senderName}", senderName)
-        .replace("{listName}", listName),
+        .replace("{senderName}", () => senderName)
+        .replace("{listName}", () => listName),
       {
         reply_markup: {
           inline_keyboard: [
@@ -230,8 +230,8 @@ export async function sendListReady(
     await bot.sendMessage(
       telegramId,
       getMsg(language, "bot.listReady")
-        .replace("{senderName}", senderName)
-        .replace("{listName}", listName),
+        .replace("{senderName}", () => senderName)
+        .replace("{listName}", () => listName),
       {
         reply_markup: {
           inline_keyboard: [

@@ -3,6 +3,22 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type JoinedUser = { id: string; telegram_id: number | null; language: string | null };
 export type Recipient = { telegramId: number; language: string };
 
+// Supabase to-one embeds — owner via lists.owner_id, user via collaborators.user_id —
+// return a SINGLE OBJECT per row, not an array. Access `.users` directly (NOT `.users[0]`).
+// Same embed is read as an object in src/services/bot.ts and components/ShareDialog.tsx.
+type OwnerRow = { users: JoinedUser | null } | null;
+type CollaboratorRow = { users: JoinedUser | null };
+
+/** Pure: flatten owner + collaborator query rows into a flat candidate user list. */
+export function candidatesFromRows(
+  ownerRow: OwnerRow,
+  collabRows: CollaboratorRow[] | null
+): (JoinedUser | null)[] {
+  const owner = ownerRow?.users ?? null;
+  const collabUsers = (collabRows ?? []).map((c) => c.users ?? null);
+  return [owner, ...collabUsers];
+}
+
 /**
  * Pure: turn a flat candidate list into send targets.
  * Drops the sender, null entries, and users without a telegram_id; dedupes by user id.
@@ -40,10 +56,10 @@ export async function resolveListRecipients(
     .eq("list_id", listId)
     .eq("status", "approved");
 
-  const owner = (listWithOwner as { users: JoinedUser | null } | null)?.users ?? null;
-  const collabUsers = (collaborators ?? []).map(
-    (c) => (c as unknown as { users: JoinedUser[] | null }).users?.[0] ?? null
+  const candidates = candidatesFromRows(
+    listWithOwner as unknown as OwnerRow,
+    collaborators as unknown as CollaboratorRow[] | null
   );
 
-  return buildRecipientList([owner, ...collabUsers], senderUserId);
+  return buildRecipientList(candidates, senderUserId);
 }
