@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
-import { sendListReminder } from "@/src/services/bot";
+import { sendListReady } from "@/src/services/bot";
 import { resolveListRecipients } from "@/src/lib/list-notify";
 
 export async function POST(
@@ -10,7 +10,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: listId } = await params;
-  const auth = await verifyUserAuth(request, apiRateLimiter, "list-remind");
+  const auth = await verifyUserAuth(request, apiRateLimiter, "list-ready");
   if (!auth.success) return auth.response;
 
   const perm = await verifyListPermission(auth.userId, listId, "view");
@@ -23,7 +23,6 @@ export async function POST(
 
   const supabase = createServerClient();
 
-  // Get list name
   const { data: list } = await supabase
     .from("lists")
     .select("name")
@@ -34,10 +33,9 @@ export async function POST(
     return NextResponse.json({ error: "List not found" }, { status: 404 });
   }
 
-  // Get sender info
   const { data: sender } = await supabase
     .from("users")
-    .select("name, telegram_id")
+    .select("name")
     .eq("id", auth.userId)
     .single();
 
@@ -46,11 +44,10 @@ export async function POST(
   // Owner + approved collaborators, excluding sender (see src/lib/list-notify.ts)
   const recipients = await resolveListRecipients(supabase, listId, auth.userId);
 
-  // Send reminders
   let sent = 0;
   for (const recipient of recipients) {
     try {
-      await sendListReminder(
+      await sendListReady(
         recipient.telegramId,
         recipient.language,
         senderName,
@@ -59,7 +56,7 @@ export async function POST(
       );
       sent++;
     } catch (e) {
-      console.error("[Remind] Failed to send to", recipient.telegramId, e);
+      console.error("[Ready] Failed to send to", recipient.telegramId, e);
     }
   }
 

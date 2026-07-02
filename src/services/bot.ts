@@ -219,6 +219,38 @@ export async function sendListReminder(
   }
 }
 
+export async function sendListReady(
+  telegramId: number,
+  language: string,
+  senderName: string,
+  listName: string,
+  listId: string
+) {
+  try {
+    await bot.sendMessage(
+      telegramId,
+      getMsg(language, "bot.listReady")
+        .replace("{senderName}", senderName)
+        .replace("{listName}", listName),
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: getMsg(language, "bot.openList"),
+                web_app: { url: `${getAppUrl()}/list/${listId}` },
+              },
+            ],
+          ],
+        },
+      }
+    );
+  } catch (error) {
+    console.error("[Bot] Failed to send list ready:", error);
+    throw error;
+  }
+}
+
 export async function sendItemReminder(
   telegramId: number,
   language: string,
