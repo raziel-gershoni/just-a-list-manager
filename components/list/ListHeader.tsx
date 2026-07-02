@@ -17,7 +17,7 @@ interface ListHeaderProps {
   listIcon: ListIconName | null;
   listColor: ListColor | null;
   isShared: boolean;
-  onRemind: () => void;
+  onSignal: () => void;
   onShare: () => void;
   onSettings: () => void;
 }
@@ -28,7 +28,7 @@ export default function ListHeader({
   listIcon,
   listColor,
   isShared,
-  onRemind,
+  onSignal,
   onShare,
   onSettings,
 }: ListHeaderProps) {
@@ -62,8 +62,8 @@ export default function ListHeader({
       <button onClick={onSettings} className="p-2 rounded-full active:bg-tg-secondary-bg">
         <Settings className="w-5 h-5 text-tg-hint/80" />
       </button>
-      {isShared && (
-        <button onClick={onRemind} className="p-2 rounded-full active:bg-tg-secondary-bg">
+      {isShared && listType === "grocery" && (
+        <button onClick={onSignal} className="p-2 rounded-full active:bg-tg-secondary-bg">
           <Send className="w-5 h-5 text-tg-hint/80" />
         </button>
       )}

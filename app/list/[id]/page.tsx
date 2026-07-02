@@ -11,6 +11,7 @@ import OfflineIndicator from "@/components/OfflineIndicator";
 import ShareDialog from "@/components/ShareDialog";
 import ReminderSheet from "@/components/ReminderSheet";
 import ListHeader from "@/components/list/ListHeader";
+import SignalSheet from "@/components/list/SignalSheet";
 import SkippedItemsSection from "@/components/list/SkippedItemsSection";
 import RecurringItemsSection from "@/components/list/RecurringItemsSection";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
@@ -64,6 +65,7 @@ function ListContent() {
     return v === null ? false : v === "true";
   });
   const [showShare, setShowShare] = useState(false);
+  const [showSignals, setShowSignals] = useState(false);
   const [reminderItem, setReminderItem] = useState<string | null>(null);
   const [pendingReminderText, setPendingReminderText] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<{
@@ -99,7 +101,7 @@ function ListContent() {
     jwtRef,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -110,6 +112,7 @@ function ListContent() {
       setUndoAction,
       setDuplicateWarning,
       setReminderToast,
+      setErrorToast,
       listType,
       t: t as (key: string, values?: Record<string, unknown>) => string,
     });
@@ -192,7 +195,7 @@ function ListContent() {
         listIcon={listIcon}
         listColor={listColor}
         isShared={isShared}
-        onRemind={handleRemind}
+        onSignal={() => setShowSignals(true)}
         onShare={() => setShowShare(true)}
         onSettings={() => setShowSettings(true)}
       />
@@ -321,6 +324,13 @@ function ListContent() {
         listName={listName}
         isOpen={showShare}
         onClose={() => setShowShare(false)}
+      />
+
+      <SignalSheet
+        isOpen={showSignals}
+        onClose={() => setShowSignals(false)}
+        onRemind={handleRemind}
+        onReady={handleReady}
       />
 
       {showSettings && (

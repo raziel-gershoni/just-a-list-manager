@@ -20,6 +20,7 @@ interface UseItemHandlersParams {
   } | null>>;
   setDuplicateWarning: React.Dispatch<React.SetStateAction<string | null>>;
   setReminderToast: React.Dispatch<React.SetStateAction<string | null>>;
+  setErrorToast: React.Dispatch<React.SetStateAction<string | null>>;
   listType?: "regular" | "reminders" | "grocery";
   t: (key: string, values?: Record<string, unknown>) => string;
 }
@@ -34,6 +35,7 @@ export function useItemHandlers({
   setUndoAction,
   setDuplicateWarning,
   setReminderToast,
+  setErrorToast,
   listType,
   t,
 }: UseItemHandlersParams) {
@@ -598,20 +600,43 @@ export function useItemHandlers({
     });
   }, [jwtRef, listId, items, t, setItems, setUndoAction]);
 
-  const handleRemind = useCallback(async () => {
-    const jwt = jwtRef.current;
-    if (!jwt) return;
-    try {
-      await fetch(`/api/lists/${listId}/remind`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
-      setReminderToast(t("items.reminderSent"));
-      setTimeout(() => setReminderToast(null), 2500);
-    } catch (e) {
-      console.error("[List] Remind error:", e);
-    }
-  }, [jwtRef, listId, t, setReminderToast]);
+  const sendSignal = useCallback(
+    async (endpoint: "remind" | "ready", successKey: string) => {
+      const jwt = jwtRef.current;
+      if (!jwt) return;
+      const tg = getTelegramWebApp();
+      tg?.HapticFeedback?.impactOccurred("light");
+      try {
+        const res = await fetch(`/api/lists/${listId}/${endpoint}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+        if (!res.ok) {
+          setErrorToast(t("items.signalError"));
+          setTimeout(() => setErrorToast(null), 3000);
+          return;
+        }
+        const data = await res.json().catch(() => ({ sent: 0 }));
+        setReminderToast(t(data.sent === 0 ? "items.signalNoRecipients" : successKey));
+        setTimeout(() => setReminderToast(null), 2500);
+      } catch (e) {
+        console.error(`[List] ${endpoint} error:`, e);
+        setErrorToast(t("items.signalError"));
+        setTimeout(() => setErrorToast(null), 3000);
+      }
+    },
+    [jwtRef, listId, t, setReminderToast, setErrorToast]
+  );
+
+  const handleRemind = useCallback(
+    () => sendSignal("remind", "items.reminderSent"),
+    [sendSignal]
+  );
+
+  const handleReady = useCallback(
+    () => sendSignal("ready", "items.readySent"),
+    [sendSignal]
+  );
 
   const handleSetReminder = useCallback(
     async (itemId: string, remindAt: string, isSharedReminder: boolean, recurrence?: string) => {
@@ -707,5 +732,5 @@ export function useItemHandlers({
     [jwtRef, listId, setItems, setReminderToast]
   );
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleSetReminder, handleUpdateReminder, handleCancelReminder };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder };
 }
