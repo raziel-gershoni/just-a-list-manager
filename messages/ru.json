@@ -76,6 +76,16 @@
     "removedDuplicates": "Удалено дубликатов: {count}",
     "editedBy": "изменено {name}",
     "reminderSent": "Напоминание отправлено!",
+    "readySent": "Они знают, что список готов!",
+    "signalError": "Не удалось отправить — попробуйте снова.",
+    "signalNoRecipients": "Пока некого уведомлять.",
+    "signal": {
+      "title": "Уведомить партнёра",
+      "remind": "Напомнить обновить",
+      "remindHint": "Попросить проверить список",
+      "ready": "Готово для вас",
+      "readyHint": "Сообщить, что список готов"
+    },
     "skippedSection": "Нет в наличии ({count})",
     "ordered": {
       "toggleOn": "Отметить как заказанное",
@@ -180,6 +190,7 @@
     "approved": "✅ {userName} добавлен в \"{listName}\"",
     "declined": "❌ Запрос от {userName} для \"{listName}\" отклонён",
     "listReminder": "{senderName} напоминает вам обновить \"{listName}\"",
+    "listReady": "«{listName}» готов! ✅ Ваша очередь — {senderName}.",
     "itemReminder": "Напоминание: \"{itemText}\" в списке \"{listName}\"",
     "itemReminderShared": "{senderName} напоминает: \"{itemText}\" в \"{listName}\"",
     "openList": "Открыть список",

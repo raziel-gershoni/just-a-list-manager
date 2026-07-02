@@ -76,6 +76,16 @@
     "removedDuplicates": "Removed {count} duplicates",
     "editedBy": "edited by {name}",
     "reminderSent": "Reminder sent!",
+    "readySent": "They know it's ready!",
+    "signalError": "Couldn't send — try again.",
+    "signalNoRecipients": "No one to notify yet.",
+    "signal": {
+      "title": "Notify partner",
+      "remind": "Remind to update",
+      "remindHint": "Ask them to go over the list",
+      "ready": "Ready for you",
+      "readyHint": "Tell them the list is done"
+    },
     "skippedSection": "Not available ({count})",
     "ordered": {
       "toggleOn": "Mark as ordered",
@@ -180,6 +190,7 @@
     "approved": "✅ {userName} has been added to \"{listName}\"",
     "declined": "❌ Request from {userName} for \"{listName}\" was declined",
     "listReminder": "{senderName} is reminding you to update \"{listName}\"",
+    "listReady": "\"{listName}\" is ready! ✅ Over to you — {senderName}.",
     "itemReminder": "Reminder: \"{itemText}\" on your list \"{listName}\"",
     "itemReminderShared": "{senderName} reminds you: \"{itemText}\" on \"{listName}\"",
     "openList": "Open List",

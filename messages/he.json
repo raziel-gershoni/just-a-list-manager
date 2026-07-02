@@ -76,6 +76,16 @@
     "removedDuplicates": "הוסרו {count} כפולים",
     "editedBy": "נערך ע\"י {name}",
     "reminderSent": "תזכורת נשלחה!",
+    "readySent": "הם יודעים שהרשימה מוכנה!",
+    "signalError": "השליחה נכשלה — נסה שוב.",
+    "signalNoRecipients": "אין עדיין את מי לעדכן.",
+    "signal": {
+      "title": "עדכון שותף",
+      "remind": "תזכורת לעדכן",
+      "remindHint": "בקש לעבור על הרשימה",
+      "ready": "מוכן בשבילך",
+      "readyHint": "עדכן שהרשימה מוכנה"
+    },
     "skippedSection": "לא זמין ({count})",
     "ordered": {
       "toggleOn": "סמן כהוזמן",
@@ -180,6 +190,7 @@
     "approved": "✅ {userName} נוסף לרשימה \"{listName}\"",
     "declined": "❌ הבקשה של {userName} לרשימה \"{listName}\" נדחתה",
     "listReminder": "{senderName} מזכיר לך לעדכן את \"{listName}\"",
+    "listReady": "»{listName}« מוכנה! ✅ תורך — {senderName}.",
     "itemReminder": "תזכורת: \"{itemText}\" ברשימה \"{listName}\"",
     "itemReminderShared": "{senderName} מזכיר לך: \"{itemText}\" ברשימה \"{listName}\"",
     "openList": "פתח רשימה",
