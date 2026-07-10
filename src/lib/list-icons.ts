@@ -15,6 +15,44 @@ import {
   DollarSign,
   Wrench,
   Sparkles,
+  // Food & drink
+  Coffee,
+  Wine,
+  Cake,
+  Apple,
+  // Travel & outdoors
+  Car,
+  MapPin,
+  Mountain,
+  Tent,
+  Fuel,
+  // Pets & family
+  Dog,
+  Cat,
+  Baby,
+  // Health
+  HeartPulse,
+  Stethoscope,
+  // Work & study
+  GraduationCap,
+  Laptop,
+  Calendar,
+  // Home & garden
+  Shirt,
+  Leaf,
+  Flower2,
+  Hammer,
+  // Deliveries & goals
+  Package,
+  Truck,
+  Rocket,
+  // Hobbies
+  Music,
+  Camera,
+  Gamepad2,
+  Palette,
+  Star,
+  Lightbulb,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,19 +73,65 @@ export const LIST_ICONS = {
   DollarSign,
   Wrench,
   Sparkles,
+  // Food & drink
+  Coffee,
+  Wine,
+  Cake,
+  Apple,
+  // Travel & outdoors
+  Car,
+  MapPin,
+  Mountain,
+  Tent,
+  Fuel,
+  // Pets & family
+  Dog,
+  Cat,
+  Baby,
+  // Health
+  HeartPulse,
+  Stethoscope,
+  // Work & study
+  GraduationCap,
+  Laptop,
+  Calendar,
+  // Home & garden
+  Shirt,
+  Leaf,
+  Flower2,
+  Hammer,
+  // Deliveries & goals
+  Package,
+  Truck,
+  Rocket,
+  // Hobbies
+  Music,
+  Camera,
+  Gamepad2,
+  Palette,
+  Star,
+  Lightbulb,
 } as const satisfies Record<string, LucideIcon>;
 
 export type ListIconName = keyof typeof LIST_ICONS;
 export const LIST_ICON_NAMES = Object.keys(LIST_ICONS) as ListIconName[];
 
 export const LIST_COLORS = [
-  "blue",
-  "emerald",
-  "cyan",
-  "violet",
-  "rose",
+  "red",
+  "orange",
+  "amber",
+  "yellow",
   "lime",
+  "emerald",
+  "teal",
+  "cyan",
+  "blue",
+  "indigo",
+  "violet",
+  "fuchsia",
+  "rose",
   "slate",
+  "stone",
 ] as const;
 export type ListColor = (typeof LIST_COLORS)[number];
 
