@@ -5,7 +5,6 @@ import type { ItemData } from "@/src/types";
 // Full-shape ItemData factory so the fixtures stay valid if the interface grows.
 function item(over: Partial<ItemData> & { id: string }): ItemData {
   return {
-    id: over.id,
     text: "x",
     completed: false,
     completed_at: null,
