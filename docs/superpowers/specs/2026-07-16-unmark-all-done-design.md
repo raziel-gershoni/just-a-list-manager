@@ -57,7 +57,7 @@ Mirrors `handleClearCompleted`:
 1. Light haptic (not the warning haptic clear-completed uses — unmarking is less destructive).
 2. Optimistic: `const { next, affectedIds } = computeUnmarkCompleted(items); setItems(next);`. Bail early if `affectedIds.length === 0`.
 3. `setUndoAction`: undo re-checks the affected items — optimistically flips them back to `completed: true` in local state and restores each on the server via per-item PATCH `{ itemId, completed: true }` (the same restore mechanism clear-completed's undo uses). Toast copy `items.unmarkedCount` = "Unmarked {count} items".
-4. Single `await fetch("/api/lists/${listId}/items/unmark-completed", { method: "POST", headers: { "x-telegram-init-data": jwt } })`. No `addMutation`, no `executor-factory.ts` case.
+4. Single `await fetch("/api/lists/${listId}/items/unmark-completed", { method: "POST", headers: { Authorization: `Bearer ${jwt}` } })` — the auth header shape used by `handleClearCompleted`. No `addMutation`, no `executor-factory.ts` case.
 
 Return `handleUnmarkAllDone` from the hook.
 
