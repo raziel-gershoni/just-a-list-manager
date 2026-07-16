@@ -65,9 +65,9 @@ export default function CompletedItemsSection({
                 e.stopPropagation();
                 onUnmarkAllDone();
               }}
-              className="text-tg-hint text-[12px] font-medium tracking-wide flex items-center gap-1"
+              className="shrink-0 whitespace-nowrap text-tg-hint text-[12px] font-medium tracking-wide flex items-center gap-1"
             >
-              <RotateCcw className="w-3 h-3" />
+              <RotateCcw className="w-3 h-3 shrink-0" />
               {t('items.unmarkAllDone')}
             </button>
           )}
@@ -76,7 +76,7 @@ export default function CompletedItemsSection({
               e.stopPropagation();
               onClearCompleted();
             }}
-            className="text-tg-destructive/80 text-[12px] font-medium tracking-wide flex items-center gap-1"
+            className="shrink-0 whitespace-nowrap text-tg-destructive/80 text-[12px] font-medium tracking-wide flex items-center gap-1"
           >
             <Trash2 className="w-3 h-3" />
             {t('items.clearCompleted')}
