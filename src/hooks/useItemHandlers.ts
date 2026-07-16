@@ -5,6 +5,7 @@ import type { ItemData } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import { genMutId } from "@/src/utils/list-helpers";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
+import { computeUnmarkCompleted } from "@/src/utils/unmark-completed";
 
 interface UseItemHandlersParams {
   listId: string;
@@ -600,6 +601,56 @@ export function useItemHandlers({
     });
   }, [jwtRef, listId, items, t, setItems, setUndoAction]);
 
+  const handleUnmarkAllDone = useCallback(async () => {
+    const jwt = jwtRef.current;
+    if (!jwt) return;
+
+    const { affectedIds } = computeUnmarkCompleted(items);
+    if (affectedIds.length === 0) return;
+
+    const tg = getTelegramWebApp();
+    tg?.HapticFeedback?.impactOccurred("light");
+
+    // Optimistic: flip completed -> active
+    setItems((prev) => computeUnmarkCompleted(prev).next);
+
+    const idSet = new Set(affectedIds);
+    const timeout = setTimeout(() => setUndoAction(null), 4000);
+    setUndoAction({
+      message: t('items.unmarkedCount', { count: affectedIds.length }),
+      undo: () => {
+        clearTimeout(timeout);
+        setUndoAction(null);
+        // Re-check optimistically
+        setItems((prev) =>
+          prev.map((i) =>
+            idSet.has(i.id)
+              ? { ...i, completed: true, completed_at: new Date().toISOString() }
+              : i
+          )
+        );
+        // Restore on server
+        const currentJwt = jwtRef.current;
+        for (const id of affectedIds) {
+          fetch(`/api/lists/${listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${currentJwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId: id, completed: true }),
+          });
+        }
+      },
+      timeout,
+    });
+
+    await fetch(`/api/lists/${listId}/items/unmark-completed`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+  }, [jwtRef, listId, items, t, setItems, setUndoAction]);
+
   const sendSignal = useCallback(
     async (endpoint: "remind" | "ready", successKey: string) => {
       const jwt = jwtRef.current;
@@ -732,5 +783,5 @@ export function useItemHandlers({
     [jwtRef, listId, setItems, setReminderToast]
   );
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder };
 }
