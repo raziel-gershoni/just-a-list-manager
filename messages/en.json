@@ -68,6 +68,8 @@
     "emptyTitle": "This list is empty",
     "emptyDescription": "Add items above or send a voice message",
     "clearedCount": "Cleared {count} items",
+    "unmarkAllDone": "Unmark all",
+    "unmarkedCount": "Unmarked {count} items",
     "maxItems": "This list has a 500-item limit.",
     "partialAdd": "Added {added} items. {skipped} items skipped — this list has a 500-item limit.",
     "dragHandle": "Drag to reorder",
