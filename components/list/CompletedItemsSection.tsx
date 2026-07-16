@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, RotateCcw, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import ItemRow from "@/components/ItemRow";
 import type { ItemData, CompletedGroup } from "@/src/types";
@@ -18,6 +18,7 @@ interface CompletedItemsSectionProps {
   onDelete: (id: string) => void;
   onEdit: (id: string, newText: string) => void;
   onClearCompleted: () => void;
+  onUnmarkAllDone?: () => void;
 }
 
 export default function CompletedItemsSection({
@@ -32,6 +33,7 @@ export default function CompletedItemsSection({
   onDelete,
   onEdit,
   onClearCompleted,
+  onUnmarkAllDone,
 }: CompletedItemsSectionProps) {
   const t = useTranslations();
 
@@ -56,16 +58,30 @@ export default function CompletedItemsSection({
         )}
         <CheckCircle2 className="w-3.5 h-3.5" style={{ color: "var(--list-emerald)" }} strokeWidth={2.5} />
         {t('items.completedSection', { count: completedItems.length })}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onClearCompleted();
-          }}
-          className="ms-auto text-tg-destructive/80 text-[12px] font-medium tracking-wide flex items-center gap-1"
-        >
-          <Trash2 className="w-3 h-3" />
-          {t('items.clearCompleted')}
-        </button>
+        <span className="ms-auto flex items-center gap-3">
+          {onUnmarkAllDone && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onUnmarkAllDone();
+              }}
+              className="text-tg-hint text-[12px] font-medium tracking-wide flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" />
+              {t('items.unmarkAllDone')}
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClearCompleted();
+            }}
+            className="text-tg-destructive/80 text-[12px] font-medium tracking-wide flex items-center gap-1"
+          >
+            <Trash2 className="w-3 h-3" />
+            {t('items.clearCompleted')}
+          </button>
+        </span>
       </button>
       {showCompleted && (
         <div className="item-enter">

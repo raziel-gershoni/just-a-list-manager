@@ -101,7 +101,7 @@ function ListContent() {
     jwtRef,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -300,6 +300,7 @@ function ListContent() {
               onDelete={handleDelete}
               onEdit={handleEditItem}
               onClearCompleted={handleClearCompleted}
+              onUnmarkAllDone={listType === "regular" ? handleUnmarkAllDone : undefined}
             />
           </>
         )}
