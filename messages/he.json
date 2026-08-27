@@ -56,7 +56,8 @@
     "typeReminders": "תזכורות",
     "editList": "ערוך רשימה",
     "icon": "סמל",
-    "color": "צבע"
+    "color": "צבע",
+    "reorderFailed": "לא הצלחנו לשמור את הסדר החדש"
   },
   "items": {
     "addPlaceholder": "הוסף פריט...",

@@ -56,7 +56,8 @@
     "typeReminders": "Reminders",
     "editList": "Edit list",
     "icon": "Icon",
-    "color": "Color"
+    "color": "Color",
+    "reorderFailed": "Couldn't save the new order"
   },
   "items": {
     "addPlaceholder": "Add item...",
