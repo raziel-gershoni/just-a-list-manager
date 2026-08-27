@@ -20,3 +20,10 @@ export const updateListSchema = z.object({
   icon: listIconEnum.nullable().optional(),
   color: listColorEnum.nullable().optional(),
 });
+
+// POST /api/lists/reorder
+// .uuid() rather than the items schema's .min(1): list creation on the home
+// screen is server-first, so there are no optimistic `temp-` ids to accept.
+export const reorderListsSchema = z.object({
+  orderedIds: z.array(z.string().uuid()).min(1).max(500),
+});
