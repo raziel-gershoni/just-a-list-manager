@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { PointerSensor, PointerActivationConstraints } from "@dnd-kit/dom";
 import ListCard from "./ListCard";
@@ -44,15 +45,32 @@ export default function SortableListCard({
   onEdit,
   onDelete,
 }: SortableListCardProps) {
-  const { ref, isDragSource } = useSortable({
+  const { ref, handleRef, isDragSource } = useSortable({
     id,
     index,
     sensors: [longPressSensor],
   });
 
+  // The handle must be set, and must cover the whole card. ListCard's root is
+  // a <button>, and @dnd-kit's default preventActivation ends in
+  // isInteractiveElement(target) — `target.closest("... button ...")` — so
+  // every pointerdown inside a card resolves to that button and the drag
+  // silently never activates. The check preventActivation makes first is
+  // `source.handle?.contains(target)`, which short-circuits it.
+  //
+  // Pointing the handle at the same element as `ref` costs nothing: the sensor
+  // binds its pointerdown listener to `source.handle ?? source.element`.
+  const setCardRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      ref(node);
+      handleRef(node);
+    },
+    [ref, handleRef]
+  );
+
   return (
     <div
-      ref={ref}
+      ref={setCardRef}
       className={`touch-pan-y select-none transition-transform duration-150 ${isDragSource ? "opacity-50 scale-[1.02] shadow-lg rounded-2xl" : ""}`}
     >
       <ListCard
