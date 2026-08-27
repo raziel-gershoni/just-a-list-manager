@@ -4,6 +4,7 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { createListSchema, updateListSchema } from "@/src/schemas/lists";
 import { parseBody } from "@/src/lib/api-validation";
+import { sortListsByUserOrder } from "@/src/utils/list-order";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "lists-get");
@@ -76,6 +77,20 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // The caller's manual order. Sparse — only lists they have dragged appear.
+  const positions = new Map<string, number>();
+  if (listIds.length > 0) {
+    const { data: orderRows } = await supabase
+      .from("list_order")
+      .select("list_id, position")
+      .eq("user_id", auth.userId)
+      .in("list_id", listIds);
+    for (const row of orderRows || []) {
+      // BIGINT arrives from PostgREST as a string.
+      positions.set(row.list_id, Number(row.position));
+    }
+  }
+
   const listsWithCounts = uniqueLists.map((list) => {
     const counts = countsMap.get(list.id) || { active_count: 0, completed_count: 0 };
     const role =
@@ -92,7 +107,9 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  return NextResponse.json(listsWithCounts);
+  return NextResponse.json(
+    sortListsByUserOrder(listsWithCounts, positions, auth.userId)
+  );
 }
 
 export async function POST(request: NextRequest) {
