@@ -4,8 +4,10 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Plus, Globe, Check, RefreshCw, X, Smartphone, LogOut } from "lucide-react";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useListsDragDrop } from "@/src/hooks/useListsDragDrop";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
-import ListCard from "@/components/ListCard";
+import SortableListCard from "@/components/SortableListCard";
 import EmptyState from "@/components/EmptyState";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import IconColorPicker from "@/components/IconColorPicker";
@@ -46,9 +48,10 @@ function HomeContent() {
   const [editColor, setEditColor] = useState<ListColor | null>(null);
   const [editType, setEditType] = useState<ListType>("regular");
   const [editSaving, setEditSaving] = useState(false);
-  const [undoAction, setUndoAction] = useState<{
+  // Bottom toast. `undo` is optional — reorder failures show a message only.
+  const [toast, setToast] = useState<{
     message: string;
-    undo: () => void;
+    undo?: () => void;
     timeout: NodeJS.Timeout;
   } | null>(null);
 
@@ -114,6 +117,24 @@ function HomeContent() {
   useEffect(() => {
     if (isReady) fetchLists();
   }, [isReady, fetchLists]);
+
+  const handleReorderFailed = useCallback(() => {
+    setToast((prev) => {
+      if (prev) clearTimeout(prev.timeout);
+      return {
+        message: t('lists.reorderFailed'),
+        timeout: setTimeout(() => setToast(null), 4000),
+      };
+    });
+    fetchLists();
+  }, [t, fetchLists]);
+
+  const { handleDragStart, handleDragEnd, suppressClickRef } = useListsDragDrop({
+    lists,
+    setLists,
+    jwtRef,
+    onReorderFailed: handleReorderFailed,
+  });
 
   // Register with orchestrator for reconnect refresh
   useEffect(() => {
@@ -212,24 +233,33 @@ function HomeContent() {
     const doDelete = () => {
       tg?.HapticFeedback?.notificationOccurred("warning");
 
-      // Optimistic removal
+      // Optimistic removal — remember the slot so undo restores it in place
+      const deletedIndex = lists.findIndex((l) => l.id === listToDelete.id);
       setLists((prev) => prev.filter((l) => l.id !== listToDelete.id));
 
       // Clear any existing undo
-      setUndoAction((prev) => {
+      setToast((prev) => {
         if (prev) clearTimeout(prev.timeout);
         return null;
       });
 
-      const timeout = setTimeout(() => setUndoAction(null), 4000);
+      const timeout = setTimeout(() => setToast(null), 4000);
 
-      setUndoAction({
+      setToast({
         message: t('lists.deleted'),
         undo: () => {
           clearTimeout(timeout);
-          setUndoAction(null);
-          // Restore optimistically
-          setLists((prev) => [...prev, listToDelete]);
+          setToast(null);
+          // Restore optimistically, back at the position it was removed from
+          setLists((prev) => {
+            const next = [...prev];
+            next.splice(
+              deletedIndex === -1 ? next.length : deletedIndex,
+              0,
+              listToDelete
+            );
+            return next;
+          });
           // Restore on server
           const currentJwt = jwtRef.current;
           fetch("/api/lists", {
@@ -261,7 +291,7 @@ function HomeContent() {
         doDelete();
       }
     }
-  }, [jwtRef, t]);
+  }, [lists, jwtRef, t]);
 
   if (loading) {
     return (
@@ -404,23 +434,31 @@ function HomeContent() {
         )}
 
       <div className="flex-1 px-5 pt-3 pb-24 space-y-3">
-        {lists.map((list) => (
-          <ListCard
-            key={list.id}
-            id={list.id}
-            name={list.name}
-            type={list.type}
-            icon={list.icon}
-            color={list.color}
-            activeCount={list.active_count}
-            completedCount={list.completed_count}
-            isShared={list.is_shared}
-            role={list.role}
-            onClick={() => router.push(`/list/${list.id}`)}
-            onEdit={list.role === "owner" ? () => handleEditList(list) : undefined}
-            onDelete={list.role === "owner" ? () => handleDeleteList(list) : undefined}
-          />
-        ))}
+        <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          {lists.map((list, index) => (
+            <SortableListCard
+              key={list.id}
+              id={list.id}
+              index={index}
+              name={list.name}
+              type={list.type}
+              icon={list.icon}
+              color={list.color}
+              activeCount={list.active_count}
+              completedCount={list.completed_count}
+              isShared={list.is_shared}
+              role={list.role}
+              onClick={() => {
+                // A long-press that started a drag still fires a click on
+                // release — don't navigate on it.
+                if (suppressClickRef.current) return;
+                router.push(`/list/${list.id}`);
+              }}
+              onEdit={list.role === "owner" ? () => handleEditList(list) : undefined}
+              onDelete={list.role === "owner" ? () => handleDeleteList(list) : undefined}
+            />
+          ))}
+        </DragDropProvider>
       </div>
 
       {/* FAB to create new list */}
@@ -483,16 +521,18 @@ function HomeContent() {
         />
       )}
 
-      {/* Undo toast */}
-      {undoAction && (
+      {/* Bottom toast */}
+      {toast && (
         <div className="fixed bottom-8 start-5 end-5 bg-foreground text-background rounded-2xl py-3.5 px-5 flex items-center justify-between z-30 shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <span className="text-sm">{undoAction.message}</span>
-          <button
-            onClick={undoAction.undo}
-            className="text-sm font-semibold ms-4"
-          >
-            {t('common.undo')}
-          </button>
+          <span className="text-sm">{toast.message}</span>
+          {toast.undo && (
+            <button
+              onClick={toast.undo}
+              className="text-sm font-semibold ms-4"
+            >
+              {t('common.undo')}
+            </button>
+          )}
         </div>
       )}
     </div>
