@@ -79,11 +79,15 @@ function HomeContent() {
   // Track the edit target ID separately so it persists through sheet open
   const editTargetRef = useRef<string>("");
 
-  const fetchLists = useCallback(async () => {
+  // `silent`: a background resync that must never replace the screen with the
+  // full-page load-error state. Used after a failed reorder, where the lists
+  // on screen are already correct (rolled back) and the user just needs the
+  // toast.
+  const fetchLists = useCallback(async ({ silent = false } = {}) => {
     const jwt = jwtRef.current;
     if (!jwt) return;
     try {
-      setError(false);
+      if (!silent) setError(false);
       const res = await fetch("/api/lists", {
         headers: { Authorization: `Bearer ${jwt}` },
       });
@@ -103,12 +107,12 @@ function HomeContent() {
           // Clear flag when list count changes so auto-open works again
           sessionStorage.removeItem("autoOpenedSingleList");
         }
-      } else {
+      } else if (!silent) {
         setError(true);
       }
     } catch (e) {
       console.error("[Home] Fetch lists error:", e);
-      setError(true);
+      if (!silent) setError(true);
     } finally {
       setLoading(false);
     }
@@ -126,10 +130,10 @@ function HomeContent() {
         timeout: setTimeout(() => setToast(null), 4000),
       };
     });
-    fetchLists();
+    fetchLists({ silent: true });
   }, [t, fetchLists]);
 
-  const { handleDragStart, handleDragEnd, suppressClickRef } = useListsDragDrop({
+  const { handleDragStart, handleDragEnd, shouldSuppressClick } = useListsDragDrop({
     lists,
     setLists,
     jwtRef,
@@ -311,7 +315,7 @@ function HomeContent() {
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
         <button
-          onClick={fetchLists}
+          onClick={() => fetchLists()}
           className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium active:scale-[0.98]"
         >
           <RefreshCw className="w-4 h-4" />
@@ -451,7 +455,7 @@ function HomeContent() {
               onClick={() => {
                 // A long-press that started a drag still fires a click on
                 // release — don't navigate on it.
-                if (suppressClickRef.current) return;
+                if (shouldSuppressClick()) return;
                 router.push(`/list/${list.id}`);
               }}
               onEdit={list.role === "owner" ? () => handleEditList(list) : undefined}

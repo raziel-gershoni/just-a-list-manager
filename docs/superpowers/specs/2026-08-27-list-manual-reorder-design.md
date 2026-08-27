@@ -251,3 +251,17 @@ The repo has no jsdom environment and no component tests (`vitest.config.ts` mat
 - Grouping, pinning, archiving, or filtering lists.
 - Reordering from anywhere other than the home screen.
 - Backfilling `list_order` rows for existing lists.
+
+## Post-review amendments
+
+An adversarial review of the implementation raised 20 candidate defects; 4 distinct ones survived verification and were fixed. The changes below deviate from the design above, and this section is the record of why.
+
+**1. A failed reorder must not replace the home screen with the load-error page.** §4 specified "revert + refetch + toast". The refetch went through `fetchLists`, which sets the page-level `error` state on failure — and `app/page.tsx` early-returns a full-screen "Couldn't load your lists / Retry" view when `error` is set, *before* the toast is ever rendered. So an offline drag destroyed the whole home screen instead of showing a toast, and the Retry button kept failing while offline. `fetchLists` now takes `{ silent }`; the post-failure resync passes it and never touches `error`. The lists on screen are already correct at that point (the snapshot was restored), so there is nothing for the error page to recover.
+
+**2. The click guard must not latch when the OS steals the gesture.** §7 used a boolean ref set on `dragstart` and cleared on `dragend`. `@dnd-kit/dom` 0.2.4's `PointerSensor` binds `pointerup` but **not** `pointercancel`, so a gesture taken over by Telegram's swipe-to-minimise or an Android edge-back never produces a `dragend` — leaving the ref `true` and every list card untappable until the page remounted. The guard is now a `{ active, endedAt }` ref exposed as `shouldSuppressClick()`, suppressing clicks while a drag is active and for 250 ms after it ends, with window-level `pointercancel`/`pointerup` listeners clearing `active` regardless of what dnd-kit does. The time window also removes the original design's unstated dependency on a `setTimeout(0)` macrotask winning a race against click dispatch.
+
+**3. The endpoint must not read a failed query as "this user sees nothing".** §4's visibility lookup destructured only `data`. postgrest-js resolves rather than rejects on failure, so a failed query yielded `data: null` — indistinguishable from an empty result — and the route would renumber only the surviving subset (or write nothing) and still return 200. The client checks `res.ok` only, so it would neither roll back nor warn. Both queries' `error` values are now checked and produce a 500.
+
+**4. Two lists can legitimately share a position.** Delete a list (soft delete — its `list_order` row survives), reorder the rest (renumbering reuses its position), then Undo the delete. §2 resolved that collision with an arbitrary `a.id` compare. Equal positions now fall through to the same owned-first / `updated_at` rules used for unpositioned lists, and the next drag renumbers them apart. The comparator is tested for antisymmetry under collisions, since an inconsistent comparator makes `Array.sort`'s output undefined.
+
+**Also hardened:** `orderedIds` is de-duplicated in the endpoint. A single upsert statement cannot touch the same `(user_id, list_id)` twice — PostgreSQL raises *"ON CONFLICT DO UPDATE cannot affect row a second time"* — and the schema does not enforce uniqueness.

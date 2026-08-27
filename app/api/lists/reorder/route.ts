@@ -14,14 +14,22 @@ export async function POST(request: NextRequest) {
   const parsed = parseBody(reorderListsSchema, body);
   if (!parsed.success) return parsed.response;
 
-  const orderedIds: string[] = parsed.data.orderedIds;
+  // De-duplicate: a single upsert statement cannot touch the same
+  // (user_id, list_id) twice — PostgreSQL raises "ON CONFLICT DO UPDATE
+  // cannot affect row a second time". Keep the first occurrence.
+  const orderedIds: string[] = Array.from(
+    new Set<string>(parsed.data.orderedIds)
+  );
   const supabase = createServerClient();
 
   // Deliberately NOT verifyListPermission(..., "edit"): reordering your own
   // home screen is not editing anyone's list, so a view-only collaborator
   // may reorder. Instead, filter down to lists this user can actually see —
   // the same visibility rule GET /api/lists uses.
-  const [{ data: owned }, { data: collab }] = await Promise.all([
+  const [
+    { data: owned, error: ownedError },
+    { data: collab, error: collabError },
+  ] = await Promise.all([
     supabase
       .from("lists")
       .select("id")
@@ -35,6 +43,17 @@ export async function POST(request: NextRequest) {
       .eq("status", "approved")
       .in("list_id", orderedIds),
   ]);
+
+  // postgrest-js resolves rather than rejects on failure, so an unchecked
+  // error would look identical to "this user can see nothing" and silently
+  // write a wrong order under a 200.
+  if (ownedError || collabError) {
+    console.error("[lists-reorder] Visibility query failed:", ownedError || collabError);
+    return NextResponse.json(
+      { error: "Failed to save list order" },
+      { status: 500 }
+    );
+  }
 
   const visible = new Set<string>([
     ...(owned || []).map((l) => l.id),

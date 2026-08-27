@@ -117,6 +117,54 @@ describe("sortListsByUserOrder", () => {
     ]);
   });
 
+  // Delete a list, reorder the rest, then undo the delete: the restored row
+  // keeps a position the renumbering has since reused, so two lists can share
+  // one. Resolve that with the normal rules, not an arbitrary uuid compare.
+  it("breaks a shared position by owned-first, then updated_at descending", () => {
+    const lists = [
+      makeList({
+        id: "shared-restored",
+        owner_id: OTHER,
+        updated_at: "2026-09-01T00:00:00.000Z",
+      }),
+      makeList({
+        id: "owned",
+        owner_id: ME,
+        updated_at: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    const positions = new Map([
+      ["shared-restored", 2],
+      ["owned", 2],
+    ]);
+
+    expect(ids(sortListsByUserOrder(lists, positions, ME))).toEqual([
+      "owned",
+      "shared-restored",
+    ]);
+  });
+
+  it("keeps a valid total order when positions collide", () => {
+    // An inconsistent comparator makes Array.sort's output undefined, so
+    // check antisymmetry across every pair.
+    const lists = [
+      makeList({ id: "a", owner_id: ME, updated_at: "2026-03-01T00:00:00.000Z" }),
+      makeList({ id: "b", owner_id: OTHER, updated_at: "2026-03-01T00:00:00.000Z" }),
+      makeList({ id: "c", owner_id: ME, updated_at: "2026-05-01T00:00:00.000Z" }),
+      makeList({ id: "d", owner_id: OTHER, updated_at: "2026-01-01T00:00:00.000Z" }),
+    ];
+    const positions = new Map([
+      ["a", 2],
+      ["b", 2],
+      ["c", 1],
+    ]);
+
+    const forward = ids(sortListsByUserOrder(lists, positions, ME));
+    const reversed = ids(sortListsByUserOrder([...lists].reverse(), positions, ME));
+
+    expect(reversed).toEqual(forward);
+  });
+
   it("is deterministic for exact ties by falling back to id", () => {
     const lists = [makeList({ id: "b" }), makeList({ id: "a" })];
 

@@ -21,7 +21,11 @@ export interface OrderableList {
  * - Among unpositioned lists: owned before shared, then updated_at
  *   descending — exactly the ordering GET /api/lists produced before this
  *   feature, so a user who never drags sees no change.
- * - Exact ties fall back to id so the output is deterministic.
+ * - Two lists CAN share a position (delete a list, reorder the rest, then
+ *   undo the delete: the restored row keeps a position the renumbering has
+ *   since reused). Those fall through to the same owned/updated_at/id rules
+ *   rather than an arbitrary id compare, and the next drag renumbers them
+ *   apart.
  *
  * Returns a new array; the input is not mutated.
  */
@@ -34,19 +38,17 @@ export function sortListsByUserOrder<T extends OrderableList>(
     const pa = positions.get(a.id);
     const pb = positions.get(b.id);
 
-    if (pa != null && pb != null) {
-      if (pa !== pb) return pb - pa;
-    } else if (pa != null || pb != null) {
-      // Exactly one is positioned — the unpositioned one wins.
-      return pa == null ? -1 : 1;
-    } else {
-      const aOwned = a.owner_id === userId;
-      const bOwned = b.owner_id === userId;
-      if (aOwned !== bOwned) return aOwned ? -1 : 1;
+    // Exactly one is positioned — the unpositioned one wins.
+    if ((pa == null) !== (pb == null)) return pa == null ? -1 : 1;
 
-      if (a.updated_at !== b.updated_at) {
-        return a.updated_at < b.updated_at ? 1 : -1;
-      }
+    if (pa != null && pb != null && pa !== pb) return pb - pa;
+
+    const aOwned = a.owner_id === userId;
+    const bOwned = b.owner_id === userId;
+    if (aOwned !== bOwned) return aOwned ? -1 : 1;
+
+    if (a.updated_at !== b.updated_at) {
+      return a.updated_at < b.updated_at ? 1 : -1;
     }
 
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
