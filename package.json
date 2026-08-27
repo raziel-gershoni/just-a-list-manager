@@ -11,6 +11,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@dnd-kit/dom": "0.2.4",
     "@dnd-kit/react": "^0.2.4",
     "@google/generative-ai": "^0.24.1",
     "@ncdai/react-wheel-picker": "^1.2.2",
