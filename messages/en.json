@@ -57,6 +57,14 @@
     "editList": "Edit list",
     "icon": "Icon",
     "color": "Color",
+    "active": "Active",
+    "archived": "Archived",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "listArchived": "List archived",
+    "listUnarchived": "List unarchived",
+    "archiveFailed": "Couldn't archive the list",
+    "emptyArchived": "No archived lists",
     "reorderFailed": "Couldn't save the new order"
   },
   "items": {

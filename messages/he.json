@@ -57,6 +57,14 @@
     "editList": "ערוך רשימה",
     "icon": "סמל",
     "color": "צבע",
+    "active": "פעילות",
+    "archived": "בארכיון",
+    "archive": "העבר לארכיון",
+    "unarchive": "הוצא מהארכיון",
+    "listArchived": "הרשימה הועברה לארכיון",
+    "listUnarchived": "הרשימה הוצאה מהארכיון",
+    "archiveFailed": "לא הצלחנו להעביר את הרשימה לארכיון",
+    "emptyArchived": "אין רשימות בארכיון",
     "reorderFailed": "לא הצלחנו לשמור את הסדר החדש"
   },
   "items": {

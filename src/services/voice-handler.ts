@@ -129,9 +129,20 @@ export async function handleVoiceMessage(
     }
 
     const allLists = [...(ownedLists || []), ...collabLists];
-    const uniqueLists = Array.from(
+    const visibleLists = Array.from(
       new Map(allLists.map((l) => [l.id, l])).values()
     );
+
+    // Archive is per-user: a list this speaker archived should not be a target
+    // for "add milk to X", so its name never reaches Gemini. Note this makes
+    // the single-list default below more likely to fire as lists get archived.
+    const { data: archivedRows } = await supabase
+      .from("user_list_state")
+      .select("list_id")
+      .eq("user_id", user.id)
+      .not("archived_at", "is", null);
+    const archivedListIds = new Set((archivedRows || []).map((r) => r.list_id));
+    const uniqueLists = visibleLists.filter((l) => !archivedListIds.has(l.id));
 
     if (uniqueLists.length === 0) {
       try {
