@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
   const positions = new Map<string, number>();
   if (listIds.length > 0) {
     const { data: orderRows } = await supabase
-      .from("list_order")
+      .from("user_list_state")
       .select("list_id, position")
       .eq("user_id", auth.userId)
       .in("list_id", listIds);

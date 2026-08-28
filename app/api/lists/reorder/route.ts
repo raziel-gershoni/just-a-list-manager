@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
   // observable.
   const rows = buildListOrderRows(auth.userId, allowedIds);
   const { error } = await supabase
-    .from("list_order")
+    .from("user_list_state")
     .upsert(rows, { onConflict: "user_id,list_id" });
 
   if (error) {
