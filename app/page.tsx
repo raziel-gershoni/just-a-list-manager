@@ -7,6 +7,7 @@ import { Plus, Globe, Check, RefreshCw, X, Smartphone, LogOut } from "lucide-rea
 import { DragDropProvider } from "@dnd-kit/react";
 import { useListsDragDrop } from "@/src/hooks/useListsDragDrop";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
+import ListCard from "@/components/ListCard";
 import SortableListCard from "@/components/SortableListCard";
 import EmptyState from "@/components/EmptyState";
 import OfflineIndicator from "@/components/OfflineIndicator";
@@ -32,6 +33,7 @@ function HomeContent() {
   const t = useTranslations();
   const router = useRouter();
   const [lists, setLists] = useState<ListData[]>([]);
+  const [view, setView] = useState<"active" | "archived">("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -88,15 +90,18 @@ function HomeContent() {
     if (!jwt) return;
     try {
       if (!silent) setError(false);
-      const res = await fetch("/api/lists", {
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
+      const res = await fetch(
+        view === "archived" ? "/api/lists?archived=1" : "/api/lists",
+        { headers: { Authorization: `Bearer ${jwt}` } }
+      );
       if (res.ok) {
         const data = await res.json();
         setLists(data);
 
-        // Auto-open single list — only on first visit to avoid back-navigation loop
-        if (data.length === 1) {
+        // Auto-open single list — only on first visit to avoid back-navigation
+        // loop, and never in the archived view (opening the Archived tab with
+        // one archived list would navigate straight back out of it).
+        if (view === "active" && data.length === 1) {
           const autoOpened = sessionStorage.getItem("autoOpenedSingleList");
           if (!autoOpened) {
             sessionStorage.setItem("autoOpenedSingleList", "true");
@@ -116,7 +121,7 @@ function HomeContent() {
     } finally {
       setLoading(false);
     }
-  }, [jwtRef, router]);
+  }, [jwtRef, router, view]);
 
   useEffect(() => {
     if (isReady) fetchLists();
@@ -132,6 +137,66 @@ function HomeContent() {
     });
     fetchLists({ silent: true });
   }, [t, fetchLists]);
+
+  const handleSetArchived = useCallback(
+    (list: ListData, archived: boolean) => {
+      const jwt = jwtRef.current;
+      if (!jwt) return;
+
+      const snapshot = lists;
+      const index = lists.findIndex((l) => l.id === list.id);
+
+      // The card leaves whichever view we are in either way.
+      setLists((prev) => prev.filter((l) => l.id !== list.id));
+
+      const post = (value: boolean, currentJwt: string | null) =>
+        fetch("/api/lists/archive", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${currentJwt}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ listId: list.id, archived: value }),
+          keepalive: true,
+        });
+
+      setToast((prev) => {
+        if (prev) clearTimeout(prev.timeout);
+        return {
+          message: t(archived ? "lists.listArchived" : "lists.listUnarchived"),
+          undo: () => {
+            setToast(null);
+            setLists((current) => {
+              const next = [...current];
+              next.splice(index === -1 ? next.length : index, 0, list);
+              return next;
+            });
+            void post(!archived, jwtRef.current);
+          },
+          timeout: setTimeout(() => setToast(null), 4000),
+        };
+      });
+
+      post(archived, jwt)
+        .then((res) => {
+          if (!res.ok) throw new Error(`Archive failed: ${res.status}`);
+        })
+        .catch((e) => {
+          console.error("[Home] Archive error:", e);
+          setLists(snapshot);
+          setToast((prev) => {
+            if (prev) clearTimeout(prev.timeout);
+            return {
+              message: t("lists.archiveFailed"),
+              timeout: setTimeout(() => setToast(null), 4000),
+            };
+          });
+          // silent: a failure must never swap in the full-page error view
+          fetchLists({ silent: true });
+        });
+    },
+    [lists, jwtRef, t, fetchLists]
+  );
 
   const { handleDragStart, handleDragEnd, shouldSuppressClick } = useListsDragDrop({
     lists,
@@ -325,7 +390,7 @@ function HomeContent() {
     );
   }
 
-  if (lists.length === 0) {
+  if (lists.length === 0 && view === "active") {
     return (
       <>
         <div className="absolute top-4 end-4 z-10 flex items-center gap-1">
@@ -404,6 +469,22 @@ function HomeContent() {
         </div>
       </header>
 
+      <div className="mx-5 mb-1 flex items-center gap-1 p-1 rounded-xl bg-tg-secondary-bg">
+        {(["active", "archived"] as const).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => setView(mode)}
+            className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              view === mode
+                ? "bg-tg-button text-tg-button-text"
+                : "text-tg-hint"
+            }`}
+          >
+            {t(`lists.${mode}`)}
+          </button>
+        ))}
+      </div>
+
       <OfflineIndicator />
 
       {/* Home screen shortcut banner */}
@@ -438,31 +519,60 @@ function HomeContent() {
         )}
 
       <div className="flex-1 px-5 pt-3 pb-24 space-y-3">
-        <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          {lists.map((list, index) => (
-            <SortableListCard
-              key={list.id}
-              id={list.id}
-              index={index}
-              name={list.name}
-              type={list.type}
-              icon={list.icon}
-              color={list.color}
-              activeCount={list.active_count}
-              completedCount={list.completed_count}
-              isShared={list.is_shared}
-              role={list.role}
-              onClick={() => {
-                // A long-press that started a drag still fires a click on
-                // release — don't navigate on it.
-                if (shouldSuppressClick()) return;
-                router.push(`/list/${list.id}`);
-              }}
-              onEdit={list.role === "owner" ? () => handleEditList(list) : undefined}
-              onDelete={list.role === "owner" ? () => handleDeleteList(list) : undefined}
-            />
-          ))}
-        </DragDropProvider>
+        {view === "archived" ? (
+          lists.length === 0 ? (
+            <p className="text-center text-tg-hint text-sm pt-12">
+              {t('lists.emptyArchived')}
+            </p>
+          ) : (
+            // No drag provider here: the archived view is not reorderable, and
+            // the item screen likewise just omits the provider for sections
+            // that cannot be dragged.
+            lists.map((list) => (
+              <ListCard
+                key={list.id}
+                id={list.id}
+                name={list.name}
+                type={list.type}
+                icon={list.icon}
+                color={list.color}
+                activeCount={list.active_count}
+                completedCount={list.completed_count}
+                isShared={list.is_shared}
+                role={list.role}
+                onClick={() => router.push(`/list/${list.id}`)}
+                onUnarchive={() => handleSetArchived(list, false)}
+              />
+            ))
+          )
+        ) : (
+          <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            {lists.map((list, index) => (
+              <SortableListCard
+                key={list.id}
+                id={list.id}
+                index={index}
+                name={list.name}
+                type={list.type}
+                icon={list.icon}
+                color={list.color}
+                activeCount={list.active_count}
+                completedCount={list.completed_count}
+                isShared={list.is_shared}
+                role={list.role}
+                onClick={() => {
+                  // A long-press that started a drag still fires a click on
+                  // release — don't navigate on it.
+                  if (shouldSuppressClick()) return;
+                  router.push(`/list/${list.id}`);
+                }}
+                onArchive={() => handleSetArchived(list, true)}
+                onEdit={list.role === "owner" ? () => handleEditList(list) : undefined}
+                onDelete={list.role === "owner" ? () => handleDeleteList(list) : undefined}
+              />
+            ))}
+          </DragDropProvider>
+        )}
       </div>
 
       {/* FAB to create new list */}
