@@ -27,3 +27,9 @@ export const updateListSchema = z.object({
 export const reorderListsSchema = z.object({
   orderedIds: z.array(z.string().uuid()).min(1).max(500),
 });
+
+// POST /api/lists/archive
+export const archiveListSchema = z.object({
+  listId: z.string().uuid(),
+  archived: z.boolean(),
+});
