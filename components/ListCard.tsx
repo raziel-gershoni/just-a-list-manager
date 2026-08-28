@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { ChevronRight, Users, Pencil, Trash2 } from "lucide-react";
+import { ChevronRight, Users, Pencil, Trash2, Archive, ArchiveRestore } from "lucide-react";
 import ListIcon from "@/components/ListIcon";
 import {
   listAccentVar,
@@ -23,6 +23,8 @@ interface ListCardProps {
   onClick: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onArchive?: () => void;
+  onUnarchive?: () => void;
 }
 
 export default function ListCard({
@@ -36,6 +38,8 @@ export default function ListCard({
   onClick,
   onEdit,
   onDelete,
+  onArchive,
+  onUnarchive,
 }: ListCardProps) {
   const t = useTranslations('lists');
   const total = activeCount + completedCount;
@@ -64,6 +68,26 @@ export default function ListCard({
         </p>
       </div>
       <div className="flex items-center gap-2">
+        {onArchive && (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onArchive(); }}
+            className="p-2 rounded-full active:bg-tg-secondary-bg transition-colors"
+            title={t('archive')}
+          >
+            <Archive className="w-4 h-4 text-tg-hint" />
+          </span>
+        )}
+        {onUnarchive && (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onUnarchive(); }}
+            className="p-2 rounded-full active:bg-tg-secondary-bg transition-colors"
+            title={t('unarchive')}
+          >
+            <ArchiveRestore className="w-4 h-4 text-tg-hint" />
+          </span>
+        )}
         {onEdit && (
           <span
             role="button"

@@ -28,6 +28,7 @@ interface SortableListCardProps {
   onClick: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onArchive?: () => void;
 }
 
 export default function SortableListCard({
@@ -44,6 +45,7 @@ export default function SortableListCard({
   onClick,
   onEdit,
   onDelete,
+  onArchive,
 }: SortableListCardProps) {
   const { ref, handleRef, isDragSource } = useSortable({
     id,
@@ -86,6 +88,7 @@ export default function SortableListCard({
         onClick={onClick}
         onEdit={onEdit}
         onDelete={onDelete}
+        onArchive={onArchive}
       />
     </div>
   );
