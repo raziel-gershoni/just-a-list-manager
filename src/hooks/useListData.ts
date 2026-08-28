@@ -41,20 +41,38 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       setError(false);
       // Fetch list info
       let currentListType: string = "regular";
-      const listsRes = await fetch("/api/lists", {
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
-      if (listsRes.ok) {
-        const allLists = await listsRes.json();
-        const currentList = allLists.find((l: { id: string; name: string; is_shared?: boolean; type?: string; icon?: string | null; color?: string | null }) => l.id === listId);
-        if (currentList) {
-          setListName(currentList.name);
-          setIsShared(currentList.is_shared ?? false);
-          currentListType = currentList.type ?? "regular";
-          setListType(currentListType as "regular" | "reminders" | "grocery");
-          setListIcon((currentList.icon ?? null) as ListIconName | null);
-          setListColor((currentList.color ?? null) as ListColor | null);
-        }
+      type ListSummary = {
+        id: string;
+        name: string;
+        is_shared?: boolean;
+        type?: string;
+        icon?: string | null;
+        color?: string | null;
+      };
+
+      const findList = async (url: string): Promise<ListSummary | undefined> => {
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+        if (!res.ok) return undefined;
+        const all: ListSummary[] = await res.json();
+        return all.find((l) => l.id === listId);
+      };
+
+      // The archived view is excluded from the default response, so a list
+      // opened from the Archived tab or a Telegram deep link needs a second
+      // look. Only on a miss — firing both would double every list open.
+      const currentList =
+        (await findList("/api/lists")) ??
+        (await findList("/api/lists?archived=1"));
+
+      if (currentList) {
+        setListName(currentList.name);
+        setIsShared(currentList.is_shared ?? false);
+        currentListType = currentList.type ?? "regular";
+        setListType(currentListType as "regular" | "reminders" | "grocery");
+        setListIcon((currentList.icon ?? null) as ListIconName | null);
+        setListColor((currentList.color ?? null) as ListColor | null);
       }
 
       // Fetch items

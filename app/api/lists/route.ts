@@ -5,10 +5,14 @@ import { createServerClient } from "@/src/lib/supabase";
 import { createListSchema, updateListSchema } from "@/src/schemas/lists";
 import { parseBody } from "@/src/lib/api-validation";
 import { sortListsByUserOrder } from "@/src/utils/list-order";
+import { filterListsByView, type ListView } from "@/src/utils/list-archive";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "lists-get");
   if (!auth.success) return auth.response;
+
+  const view: ListView =
+    request.nextUrl.searchParams.get("archived") === "1" ? "archived" : "active";
 
   const supabase = createServerClient();
 
@@ -77,17 +81,21 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // The caller's manual order. Sparse — only lists they have dragged appear.
+  // The caller's per-user state. Sparse — a row exists only once they have
+  // dragged or archived the list.
   const positions = new Map<string, number>();
+  const archivedIds = new Set<string>();
   if (listIds.length > 0) {
-    const { data: orderRows } = await supabase
+    const { data: stateRows } = await supabase
       .from("user_list_state")
-      .select("list_id, position")
+      .select("list_id, position, archived_at")
       .eq("user_id", auth.userId)
       .in("list_id", listIds);
-    for (const row of orderRows || []) {
-      // BIGINT arrives from PostgREST as a string.
-      positions.set(row.list_id, Number(row.position));
+    for (const row of stateRows || []) {
+      // position is nullable: a list archived without ever being dragged has
+      // a row with no position. BIGINT arrives from PostgREST as a string.
+      if (row.position != null) positions.set(row.list_id, Number(row.position));
+      if (row.archived_at) archivedIds.add(row.list_id);
     }
   }
 
@@ -108,7 +116,11 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json(
-    sortListsByUserOrder(listsWithCounts, positions, auth.userId)
+    sortListsByUserOrder(
+      filterListsByView(listsWithCounts, archivedIds, view),
+      positions,
+      auth.userId
+    )
   );
 }
 
