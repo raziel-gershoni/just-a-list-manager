@@ -183,3 +183,19 @@ Repo convention: no jsdom, no component tests, `__tests__/**/*.test.ts` only. Pu
 - Bulk archive, auto-archive by inactivity, or an archive retention policy.
 - Archiving individual items.
 - Realtime sync of archive state across a user's devices — it propagates on the next focus/refetch, like ordering.
+
+## Post-review amendments
+
+An adversarial review of the implementation raised 24 candidate defects; 7 distinct ones survived verification and were fixed.
+
+**1. An empty active view stranded the archive.** The spec called for an always-visible toggle, but the implementation kept the pre-existing `lists.length === 0` early return (narrowed to the active view), and that branch renders neither the toggle nor the toast. Archiving your last active list — or opening the app with everything archived — showed "create your first list" with no way to reach the Archived tab and no Undo. `EmptyState` now renders inside the main layout, so the header, toggle and toast are always mounted.
+
+**2. Visiting Archived re-armed the auto-open redirect.** `fetchLists` cleared `sessionStorage.autoOpenedSingleList` in its `else` branch, which the archived view always took. Switching back to Active with exactly one list then force-navigated into it, on every round trip. The flag is now only touched in the active view.
+
+**3. A view switch had no request guard.** Nothing tied a response to the view that asked for it, so two switches in flight could resolve out of order, and the outgoing view's cards rendered under the incoming view's affordances (an Archive icon on an already-archived card). Added a generation counter that drops superseded responses, and a `loadedView` marker so the body shows a skeleton until the rows match the tab.
+
+**4. The cron could destroy reminders inside the delete-undo window.** Delete is optimistic with a 4s undo, `PATCH { restore: true }` clears only `deleted_at` and never un-cancels, and the cron runs every minute — so a tick landing in that window cancelled the reminders permanently. The spec's claim that this approach "leaves undo intact" was wrong. Cancellation now waits out a `DELETE_CANCEL_GRACE_MS` (60s) grace period.
+
+**5. The archive toast never cleared its own timer.** The 4s timeout was created inline in the object literal, so `undo` could not reference it; it kept running and dismissed whatever toast was showing later. `handleDeleteList` already hoists its timer — the archive path now does too.
+
+**6. Undo could re-insert a row into the wrong view**, and **7. the failure rollback could repopulate the wrong view** through a `fetchLists` closure bound to the old `view`. Both are now guarded by a `viewRef` check, and a pending toast is dropped when the view changes.

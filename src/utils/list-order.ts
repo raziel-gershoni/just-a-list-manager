@@ -56,7 +56,7 @@ export function sortListsByUserOrder<T extends OrderableList>(
 }
 
 /**
- * Rows for the bulk upsert into list_order. The first id (top of the
+ * Rows for the bulk upsert into user_list_state. The first id (top of the
  * screen) gets the highest position, the last gets 1.
  */
 export function buildListOrderRows(

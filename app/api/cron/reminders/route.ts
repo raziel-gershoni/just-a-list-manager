@@ -110,6 +110,7 @@ export async function GET(request: NextRequest) {
 
       const decision = decideReminderDelivery({
         listDeletedAt: list.deleted_at,
+        now: Date.now(),
         recipients,
         archivedBy: new Set((archivedRows || []).map((r) => r.user_id)),
       });

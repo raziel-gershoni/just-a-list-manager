@@ -34,6 +34,23 @@ function HomeContent() {
   const router = useRouter();
   const [lists, setLists] = useState<ListData[]>([]);
   const [view, setView] = useState<"active" | "archived">("active");
+  // Which view the rows in `lists` actually belong to. Until it catches up,
+  // the body must not render cards, or the outgoing view's rows appear under
+  // the incoming view's affordances (an Archive icon on an archived card).
+  const [loadedView, setLoadedView] = useState<"active" | "archived">("active");
+  // Only the most recently started fetch may write state; two view switches in
+  // flight can otherwise resolve out of order.
+  const fetchGenRef = useRef(0);
+  // Read by async callbacks that must not act after a tab switch.
+  const viewRef = useRef<"active" | "archived">(view);
+  useEffect(() => {
+    viewRef.current = view;
+    // A pending undo belongs to the view it was raised in; drop it on switch.
+    setToast((prev) => {
+      if (prev) clearTimeout(prev.timeout);
+      return null;
+    });
+  }, [view]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -88,35 +105,45 @@ function HomeContent() {
   const fetchLists = useCallback(async ({ silent = false } = {}) => {
     const jwt = jwtRef.current;
     if (!jwt) return;
+    const gen = ++fetchGenRef.current;
+    const requestedView = view;
     try {
       if (!silent) setError(false);
       const res = await fetch(
-        view === "archived" ? "/api/lists?archived=1" : "/api/lists",
+        requestedView === "archived" ? "/api/lists?archived=1" : "/api/lists",
         { headers: { Authorization: `Bearer ${jwt}` } }
       );
+      // A newer fetch started while this one was in flight — drop this result.
+      if (gen !== fetchGenRef.current) return;
       if (res.ok) {
         const data = await res.json();
+        if (gen !== fetchGenRef.current) return;
         setLists(data);
+        setLoadedView(requestedView);
 
         // Auto-open single list — only on first visit to avoid back-navigation
-        // loop, and never in the archived view (opening the Archived tab with
-        // one archived list would navigate straight back out of it).
-        if (view === "active" && data.length === 1) {
-          const autoOpened = sessionStorage.getItem("autoOpenedSingleList");
-          if (!autoOpened) {
-            sessionStorage.setItem("autoOpenedSingleList", "true");
-            router.push(`/list/${data[0].id}`);
-            return;
+        // loop, and only in the active view. The archived view must not touch
+        // the flag either: clearing it there re-arms the redirect, so merely
+        // visiting Archived would bounce the user out of Active afterwards.
+        if (requestedView === "active") {
+          if (data.length === 1) {
+            const autoOpened = sessionStorage.getItem("autoOpenedSingleList");
+            if (!autoOpened) {
+              sessionStorage.setItem("autoOpenedSingleList", "true");
+              router.push(`/list/${data[0].id}`);
+              return;
+            }
+          } else {
+            // Clear flag when list count changes so auto-open works again
+            sessionStorage.removeItem("autoOpenedSingleList");
           }
-        } else {
-          // Clear flag when list count changes so auto-open works again
-          sessionStorage.removeItem("autoOpenedSingleList");
         }
       } else if (!silent) {
         setError(true);
       }
     } catch (e) {
       console.error("[Home] Fetch lists error:", e);
+      if (gen !== fetchGenRef.current) return;
       if (!silent) setError(true);
     } finally {
       setLoading(false);
@@ -145,6 +172,11 @@ function HomeContent() {
 
       const snapshot = lists;
       const index = lists.findIndex((l) => l.id === list.id);
+      // Everything below only makes sense for the view this happened in. If the
+      // user switches tabs first, restoring a row or rolling back would write
+      // the wrong view's data into `lists`.
+      const actionView = view;
+      const stillSameView = () => viewRef.current === actionView;
 
       // The card leaves whichever view we are in either way.
       setLists((prev) => prev.filter((l) => l.id !== list.id));
@@ -160,20 +192,28 @@ function HomeContent() {
           keepalive: true,
         });
 
+      // Hoisted so undo can clear it. Left inline, the timer keeps running and
+      // later dismisses whatever toast happens to be showing — the bug
+      // handleDeleteList already avoids.
+      const timeout = setTimeout(() => setToast(null), 4000);
+
       setToast((prev) => {
         if (prev) clearTimeout(prev.timeout);
         return {
           message: t(archived ? "lists.listArchived" : "lists.listUnarchived"),
           undo: () => {
+            clearTimeout(timeout);
             setToast(null);
-            setLists((current) => {
-              const next = [...current];
-              next.splice(index === -1 ? next.length : index, 0, list);
-              return next;
-            });
+            if (stillSameView()) {
+              setLists((current) => {
+                const next = [...current];
+                next.splice(index === -1 ? next.length : index, 0, list);
+                return next;
+              });
+            }
             void post(!archived, jwtRef.current);
           },
-          timeout: setTimeout(() => setToast(null), 4000),
+          timeout,
         };
       });
 
@@ -183,7 +223,7 @@ function HomeContent() {
         })
         .catch((e) => {
           console.error("[Home] Archive error:", e);
-          setLists(snapshot);
+          clearTimeout(timeout);
           setToast((prev) => {
             if (prev) clearTimeout(prev.timeout);
             return {
@@ -191,11 +231,13 @@ function HomeContent() {
               timeout: setTimeout(() => setToast(null), 4000),
             };
           });
+          if (!stillSameView()) return;
+          setLists(snapshot);
           // silent: a failure must never swap in the full-page error view
           fetchLists({ silent: true });
         });
     },
-    [lists, jwtRef, t, fetchLists]
+    [lists, view, jwtRef, t, fetchLists]
   );
 
   const { handleDragStart, handleDragEnd, shouldSuppressClick } = useListsDragDrop({
@@ -390,62 +432,6 @@ function HomeContent() {
     );
   }
 
-  if (lists.length === 0 && view === "active") {
-    return (
-      <>
-        <div className="absolute top-4 end-4 z-10 flex items-center gap-1">
-          <button
-            onClick={() => setShowLanguage(true)}
-            className="p-2.5 rounded-full text-tg-hint active:bg-tg-secondary-bg active:scale-95"
-          >
-            <Globe className="w-5 h-5" />
-          </button>
-          {isWebApp && (
-            <button
-              onClick={handleLogout}
-              className="p-2.5 rounded-full text-tg-hint active:bg-tg-secondary-bg active:scale-95"
-              title={t("common.logout")}
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-        <EmptyState onCreateList={() => setShowCreate(true)} />
-        {showCreate && (
-          <CreateListSheet
-            value={newListName}
-            onChange={setNewListName}
-            listType={newListType}
-            onTypeChange={(t) => {
-              setNewListType(t);
-              setNewListIcon(null);
-              setNewListColor(null);
-            }}
-            icon={newListIcon}
-            color={newListColor}
-            onIconColorChange={(i, c) => {
-              setNewListIcon(i);
-              setNewListColor(c);
-            }}
-            onSubmit={createList}
-            onClose={() => setShowCreate(false)}
-            creating={creating}
-          />
-        )}
-        {showLanguage && (
-          <LanguageSheet
-            currentLocale={locale}
-            onSelect={async (lang) => {
-              await setLanguage(lang);
-              setShowLanguage(false);
-            }}
-            onClose={() => setShowLanguage(false)}
-          />
-        )}
-      </>
-    );
-  }
-
   return (
     <div className="flex flex-col min-h-screen">
       <header className="px-5 py-5 pb-3 flex items-center justify-between">
@@ -519,7 +505,16 @@ function HomeContent() {
         )}
 
       <div className="flex-1 px-5 pt-3 pb-24 space-y-3">
-        {view === "archived" ? (
+        {loadedView !== view ? (
+          // Mid-switch: the rows still in state belong to the outgoing view.
+          // Rendering them here would put the wrong action icon on each card.
+          [1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-[72px] bg-tg-secondary-bg rounded-2xl skeleton-shimmer"
+            />
+          ))
+        ) : view === "archived" ? (
           lists.length === 0 ? (
             <p className="text-center text-tg-hint text-sm pt-12">
               {t('lists.emptyArchived')}
@@ -545,6 +540,8 @@ function HomeContent() {
               />
             ))
           )
+        ) : lists.length === 0 ? (
+          <EmptyState onCreateList={() => setShowCreate(true)} />
         ) : (
           <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             {lists.map((list, index) => (
