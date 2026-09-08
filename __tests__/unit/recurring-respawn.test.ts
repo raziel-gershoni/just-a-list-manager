@@ -77,4 +77,11 @@ describe("shouldRespawn", () => {
   it("exports the four-hour window", () => {
     expect(RESPAWN_AFTER_MS).toBe(4 * 60 * 60 * 1000);
   });
+
+  it("does not respawn when the anchor is exactly the respawn window old (pins > over >=)", () => {
+    const exactlyAtWindow = new Date(NOW - RESPAWN_AFTER_MS).toISOString();
+    expect(shouldRespawn({ recurring: true, completed_at: exactlyAtWindow }, NOW)).toBe(
+      false
+    );
+  });
 });
