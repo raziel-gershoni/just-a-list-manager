@@ -5,7 +5,7 @@ import { Check, ChevronDown, ChevronRight, Repeat } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import type { ItemData } from "@/src/types";
-import { respawnAnchor } from "@/src/utils/recurring-respawn";
+import { respawnAnchor, RESPAWN_AFTER_MS } from "@/src/utils/recurring-respawn";
 
 interface RecurringItemsSectionProps {
   recurringItems: ItemData[];
@@ -14,8 +14,6 @@ interface RecurringItemsSectionProps {
   onRestoreRecurring: (id: string) => void;
   onToggleRecurring: (id: string, recurring: boolean) => void;
 }
-
-const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 
 export default function RecurringItemsSection({
   recurringItems,
@@ -35,7 +33,7 @@ export default function RecurringItemsSection({
   const formatReturnsIn = (anchorIso: string | null): string => {
     if (!anchorIso) return "";
     const elapsed = now - new Date(anchorIso).getTime();
-    const remainingMs = FOUR_HOURS_MS - elapsed;
+    const remainingMs = RESPAWN_AFTER_MS - elapsed;
     if (remainingMs <= 0) return t("items.recurring.returningSoon");
     const minutes = Math.ceil(remainingMs / 60000);
     if (minutes < 60) return t("items.recurring.returnsInMinutes", { count: minutes });
