@@ -22,12 +22,18 @@ export async function POST(
 
   const supabase = createServerClient();
 
-  // Soft-delete all completed items (for undo support)
+  // Soft-delete all completed items (for undo support). Recurring staples are
+  // excluded: they stay parked in the Recurring drawer on their completion
+  // clock rather than being retired — delete-is-final vetoes respawn on
+  // deleted_at (src/utils/recurring-respawn.ts), so soft-deleting a parked
+  // recurring row here would destroy it permanently instead of just clearing
+  // it. See docs/superpowers/specs/2026-09-08-delete-is-final-design.md.
   const { data: cleared, error } = await supabase
     .from("items")
     .update({ deleted_at: new Date().toISOString() })
     .eq("list_id", listId)
     .eq("completed", true)
+    .eq("recurring", false)
     .is("deleted_at", null)
     .select("id");
 

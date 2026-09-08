@@ -6,6 +6,7 @@ import { getTelegramWebApp } from "@/src/types/telegram";
 import { genMutId } from "@/src/utils/list-helpers";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { computeUnmarkCompleted } from "@/src/utils/unmark-completed";
+import { computeClearCompleted } from "@/src/utils/clear-completed";
 
 interface UseItemHandlersParams {
   listId: string;
@@ -566,11 +567,10 @@ export function useItemHandlers({
     const tg = getTelegramWebApp();
     tg?.HapticFeedback?.notificationOccurred("warning");
 
-    const completedItems = items.filter(
-      (i) => i.completed && !i.deleted_at
-    );
-    // Optimistic
-    setItems((prev) => prev.filter((i) => !i.completed));
+    const { cleared: completedItems } = computeClearCompleted(items);
+    // Optimistic — recurring staples stay parked, not cleared (see
+    // src/utils/clear-completed.ts)
+    setItems((prev) => computeClearCompleted(prev).remaining);
 
     const timeout = setTimeout(() => setUndoAction(null), 4000);
     setUndoAction({

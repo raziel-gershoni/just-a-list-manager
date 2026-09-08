@@ -86,6 +86,11 @@ button, autocomplete recycle, list-undo) are all direct user gestures and are un
 - The Recurring drawer lists only completion-parked rows.
 - `restoreRecurring` stops clearing `deleted_at` server-side, so the existing
   `.is("deleted_at", null)` guard protects deleted rows for free.
+- "Clear completed" excludes recurring rows, server and client, so it cannot silently
+  retire a parked staple — see Finding 1 of the fix wave
+  (`.superpowers/sdd/2026-09-08-delete-is-final/fix-wave-report.md`). Clearing a
+  grocery list leaves recurring staples parked in the Recurring drawer on their
+  completion clock; it does not touch them at all.
 
 **Out (tracked separately, needs its own decision):**
 - The duplicate-creation half: the add-time check never blocks, and voice add cannot see
@@ -94,9 +99,8 @@ button, autocomplete recycle, list-undo) are all direct user gestures and are un
   superseding the copy in `008_security_fixes.sql`).
 - `POST /items` passes a client-supplied `recycleId` straight into `recycleItem`
   (`items/route.ts:225`), which has no `deleted_at` guard and **no `list_id` scoping**
-  (`item-recycler.ts:79-92`) — a cross-list write vector.
-- Mutation-queue replay of `restore-recurring` / `recycle` can resurrect a row a peer
-  deleted in the meantime.
+  (`item-recycler.ts:79-92`) — a cross-list write vector. This half of the queued-replay
+  hole is still open; the other half (`restoreRecurring`) was closed above.
 - Grocery lists get only the destructive "Clear completed"; the non-destructive
   "Unmark all done" is gated to `listType === "regular"` (`app/list/[id]/page.tsx:303`).
 
@@ -118,3 +122,8 @@ Undo sends an explicit `deleted_at: null`.
 Deleting a recurring item behaves like deleting anything else: gone, undoable for 4
 seconds, purged after 7 days. To retire a staple permanently: toggle 🔁 off while it is
 active, then delete.
+
+"Clear completed" only ever soft-deletes non-recurring completed rows. Clearing a grocery
+list's Done section leaves recurring staples parked in the Recurring drawer, untouched, on
+their normal 4-hour-after-`completed_at` clock — it does not retire them, and it does not
+count them in the "cleared N items" undo toast.

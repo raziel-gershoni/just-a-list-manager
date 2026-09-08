@@ -634,6 +634,8 @@ Expected: empty. This change needs no schema change and no backfill — existing
 2. Delete a *different* recurring item from the active list. Confirm it does **not** appear in the Recurring drawer, and does not come back after a reload.
 3. Delete one and immediately tap **Undo**. Confirm it returns, still marked recurring.
 4. Confirm the previously stuck "olive oil" row is gone from the list and does not return.
+5. Complete a recurring item and a non-recurring one, tap **Clear completed**, and confirm
+   the staple survives in the Recurring drawer while the non-recurring one is cleared.
 
 ---
 
