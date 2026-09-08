@@ -641,9 +641,9 @@ Expected: empty. This change needs no schema change and no backfill — existing
 
 ## Follow-up, not in this plan
 
-Recorded in the spec's Scope section; each needs its own decision before any code:
+Recorded in the spec's Scope section. Item 1 is **already decided**; the rest need their own decision before any code.
 
-1. **The duplicate-creation half.** `useItemHandlers.ts:114-116` inspects only active rows and never blocks the insert; voice add cannot see active rows at all, because `find_fuzzy_items` filters `completed = true AND deleted_at IS NULL` (live definition: `supabase/migrations/010_position_bigint.sql:56-76`). This is the other half of the original bug report.
+1. **The duplicate-creation half — DECIDED, do not re-litigate.** Ruled on in `docs/superpowers/specs/2026-06-04-text-normalize-for-active-dupes-design.md`. That `useItemHandlers.ts:114-116` warns without blocking is that spec's stated behavior, not a defect: *"Behavior on match stays as today: warning toast for 2.5s, item still gets added. No hard block, no 'add anyway' button."* That voice-add cannot see active rows is documented in the same spec's Motivation and deliberately punted, together with "a pg_trgm-based active-vs-active fuzzy check on the server." If that deferral is ever revisited, that spec's punt list already scopes the work.
 2. **`recycleId` is unvalidated.** `items/route.ts:225` passes a client-supplied id into `recycleItem`, which has no `deleted_at` guard and no `list_id` scoping (`item-recycler.ts:79-92`) — a cross-list write vector.
 3. **Grocery lists have no non-destructive clear.** "Unmark all done" is gated to `listType === "regular"` (`app/list/[id]/page.tsx:303`), so a grocery list's only completed-section action is the destructive one.
 4. **The 🔁 toggle has no undo and no label** (`components/ItemRow.tsx:236-255`) — the likeliest way an item gets marked recurring by accident.

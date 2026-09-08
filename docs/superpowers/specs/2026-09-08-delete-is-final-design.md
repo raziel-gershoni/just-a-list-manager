@@ -92,11 +92,23 @@ button, autocomplete recycle, list-undo) are all direct user gestures and are un
   grocery list leaves recurring staples parked in the Recurring drawer on their
   completion clock; it does not touch them at all.
 
+**Already decided elsewhere — do not re-litigate:**
+- The duplicate-creation half was ruled on in
+  `docs/superpowers/specs/2026-06-04-text-normalize-for-active-dupes-design.md`.
+  - **Settled.** "Behavior on match stays as today: warning toast for 2.5s, item still gets
+    added. No hard block, no 'add anyway' button." The add-time check is advisory *by
+    design*; it is not a weak guard.
+  - **Deliberately deferred**, on that spec's punt list: voice-add going through the same
+    normalizer, and "a pg_trgm-based active-vs-active fuzzy check on the server (would
+    require a new or extended RPC and a sensible threshold)."
+  - That spec's Motivation already documents the limitation: `find_fuzzy_items` "only
+    matches against completed / recently-deleted items, so it never sees active-vs-active"
+    (live definition `supabase/migrations/010_position_bigint.sql:56-76`, superseding the
+    copy in `008_security_fixes.sql`). Partial follow-through since: the
+    `2026-06-04-normalize-on-add` work touched `voice-handler.ts:417`, but only to
+    canonicalize stored text — voice's duplicate *matching* is unchanged.
+
 **Out (tracked separately, needs its own decision):**
-- The duplicate-creation half: the add-time check never blocks, and voice add cannot see
-  active rows (`find_fuzzy_items` 3-param overload filters `completed = true AND
-  deleted_at IS NULL` — live definition is `supabase/migrations/010_position_bigint.sql:56-76`,
-  superseding the copy in `008_security_fixes.sql`).
 - `POST /items` passes a client-supplied `recycleId` straight into `recycleItem`
   (`items/route.ts:225`), which has no `deleted_at` guard and **no `list_id` scoping**
   (`item-recycler.ts:79-92`) — a cross-list write vector. This half of the queued-replay
