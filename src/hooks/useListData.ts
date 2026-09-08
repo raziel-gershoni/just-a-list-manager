@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import type { ItemData } from "@/src/types";
 import type { ListColor, ListIconName } from "@/src/lib/list-icons";
+import { shouldRespawn } from "@/src/utils/recurring-respawn";
 
 type Reminder = {
   id: string;
@@ -127,9 +128,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
             }).catch(() => {});
             return { ...base, skipped_at: null };
           }
-          // Auto-respawn recurring items past the same 4-hour threshold
-          const respawnAnchor = base.completed_at ?? base.deleted_at ?? null;
-          if (base.recurring && respawnAnchor && now - new Date(respawnAnchor).getTime() > FOUR_HOURS) {
+          // Auto-respawn recurring items past the same 4-hour threshold.
+          // Deleting is final — shouldRespawn refuses any row carrying deleted_at.
+          if (shouldRespawn(base, now)) {
             const currentJwt = jwtRef.current;
             fetch(`/api/lists/${listId}/items`, {
               method: "PATCH",
@@ -139,7 +140,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
               },
               body: JSON.stringify({ itemId: base.id, restoreRecurring: true }),
             }).catch(() => {});
-            return { ...base, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
+            return { ...base, completed: false, completed_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
           }
           return base;
         });
