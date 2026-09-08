@@ -15,7 +15,7 @@
 - Vitest `include` is `["__tests__/**/*.test.ts"]` (`vitest.config.ts:11`). **`.tsx` test files are silently skipped** — every test in this plan is `.ts`, testing pure functions or inspecting source text. There is no jsdom; do not try to render React.
 - Path alias `@/` resolves to the repo root (`vitest.config.ts:6-8`).
 - Run the full suite with `npx vitest run`. A single file: `npx vitest run __tests__/unit/<name>.test.ts`.
-- `npx tsc --noEmit` must stay clean. `npx eslint .` must report **exactly** the 6 pre-existing problems (3 errors, 3 warnings, in `app/login/callback/page.tsx`, `components/TimePicker.tsx`, `components/ReminderSheet.tsx`, `src/hooks/useItemHandlers.ts`) — no new ones.
+- `npx tsc --noEmit` must stay clean. `npx eslint .` must report **exactly** the 6 pre-existing problems (3 errors, 3 warnings). Measured baseline, in 5 files: `app/list/[id]/page.tsx` (2), `app/login/callback/page.tsx`, `components/ReminderSheet.tsx`, `components/TimePicker.tsx`, `src/hooks/useItemHandlers.ts`. No new ones.
 - Migrations are append-only and applied at build time; **this plan adds none**.
 - Do not connect to a database. `.env.local` `DATABASE_URL` points at production.
 - Do not touch the duplicate-creation half (add-time check, voice fuzzy match, `recycleId` validation). Those are listed as out-of-scope in the spec and need their own decision.
@@ -621,7 +621,7 @@ Expected: no output.
 - [ ] **Step 3: Lint**
 
 Run: `npx eslint .`
-Expected: exactly 6 problems (3 errors, 3 warnings), all pre-existing, in `app/login/callback/page.tsx`, `components/TimePicker.tsx`, `components/ReminderSheet.tsx`, `src/hooks/useItemHandlers.ts`. Any other file appearing is a regression introduced by this plan.
+Expected: exactly 6 problems (3 errors, 3 warnings), all pre-existing, in these 5 files: `app/list/[id]/page.tsx` (2), `app/login/callback/page.tsx`, `components/ReminderSheet.tsx`, `components/TimePicker.tsx`, `src/hooks/useItemHandlers.ts`. Any other file appearing, or any change in the counts, is a regression introduced by this plan.
 
 - [ ] **Step 4: Confirm no migration was added**
 
