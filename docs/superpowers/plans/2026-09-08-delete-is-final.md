@@ -302,8 +302,17 @@ describe("GET /api/lists/[id]/items", () => {
     expect(source).not.toContain("recurring.eq.true");
   });
 
-  it("filters items to non-deleted rows", () => {
-    expect(source).toContain('.is("deleted_at", null)');
+  // Scoped to the GET body on purpose: `.is("deleted_at", null)` already exists
+  // elsewhere in this file (the PATCH guard), so an unscoped assertion would pass
+  // before the fix and catch no regression.
+  it("filters the item list query to non-deleted rows", () => {
+    const getFn = source.slice(
+      source.indexOf("export async function GET"),
+      source.indexOf("export async function POST")
+    );
+    expect(getFn.length).toBeGreaterThan(0);
+    expect(getFn).toContain('.is("deleted_at", null)');
+    expect(getFn).not.toContain(".or(");
   });
 });
 ```
@@ -536,7 +545,9 @@ Append to `__tests__/unit/no-deleted-item-leak.test.ts`, inside the existing `de
       source.indexOf("// Allow restoring soft-deleted items")
     );
     expect(branch.length).toBeGreaterThan(0);
-    expect(branch).not.toContain("deleted_at");
+    // Targets the assignment, not the word — the branch's explanatory comment
+    // mentions deleted_at deliberately.
+    expect(branch).not.toContain("patchData.deleted_at");
   });
 ```
 
