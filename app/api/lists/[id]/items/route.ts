@@ -32,13 +32,13 @@ export async function GET(
   const cursor = searchParams.get("cursor");
   const limit = Math.min(parseInt(searchParams.get("limit") || "200"), 500);
 
-  // Include active items (deleted_at IS NULL) and any recurring items even if soft-deleted,
-  // so the client can auto-respawn deleted recurring items past the 4-hour threshold.
+  // Active items only. Deleting is final — a soft-deleted row is never returned,
+  // never respawns, and is purged by the 7-day cleanup cron.
   let query = supabase
     .from("items")
     .select("id, text, completed, completed_at, deleted_at, skipped_at, ordered_at, recurring, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
     .eq("list_id", listId)
-    .or("deleted_at.is.null,recurring.eq.true")
+    .is("deleted_at", null)
     .order("position", { ascending: false })
     .limit(limit);
 
