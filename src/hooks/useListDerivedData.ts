@@ -2,8 +2,14 @@
 
 import { useMemo } from "react";
 import type { ItemData } from "@/src/types";
-import { groupByCompletionTime, isActiveItem, isSkippedItem } from "@/src/utils/list-helpers";
+import {
+  groupByCompletionTime,
+  isActiveItem,
+  isSkippedItem,
+  isParkedRecurringItem,
+} from "@/src/utils/list-helpers";
 import { computeDuplicateTexts } from "@/src/utils/duplicate-detection";
+import { respawnAnchor } from "@/src/utils/recurring-respawn";
 
 export function useListDerivedData(
   items: ItemData[],
@@ -34,10 +40,10 @@ export function useListDerivedData(
   const recurringItems = useMemo(
     () =>
       items
-        .filter((i) => i.recurring && (i.completed || !!i.deleted_at))
+        .filter(isParkedRecurringItem)
         .sort((a, b) => {
-          const aTime = new Date(a.completed_at ?? a.deleted_at ?? 0).getTime();
-          const bTime = new Date(b.completed_at ?? b.deleted_at ?? 0).getTime();
+          const aTime = new Date(respawnAnchor(a) ?? 0).getTime();
+          const bTime = new Date(respawnAnchor(b) ?? 0).getTime();
           return aTime - bTime;
         }),
     [items]

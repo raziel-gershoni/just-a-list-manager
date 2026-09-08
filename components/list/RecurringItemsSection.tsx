@@ -5,6 +5,7 @@ import { Check, ChevronDown, ChevronRight, Repeat } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import type { ItemData } from "@/src/types";
+import { respawnAnchor } from "@/src/utils/recurring-respawn";
 
 interface RecurringItemsSectionProps {
   recurringItems: ItemData[];
@@ -61,7 +62,7 @@ export default function RecurringItemsSection({
       {showRecurring && (
         <div className="item-enter">
           {recurringItems.map((item) => {
-            const anchor = item.completed_at ?? item.deleted_at ?? null;
+            const anchor = respawnAnchor(item);
             return (
               <div
                 key={item.id}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isActiveItem, isSkippedItem } from "@/src/utils/list-helpers";
+import { isActiveItem, isSkippedItem, isParkedRecurringItem } from "@/src/utils/list-helpers";
 import type { ItemData } from "@/src/types";
 
 function makeItem(overrides: Partial<ItemData> = {}): ItemData {
@@ -34,5 +34,38 @@ describe("item section predicates", () => {
     expect(isActiveItem(makeItem({ completed: true }))).toBe(false);
     expect(isActiveItem(makeItem({ deleted_at: "x" }))).toBe(false);
     expect(isSkippedItem(makeItem({ skipped_at: "x", completed: true }))).toBe(false);
+  });
+});
+
+describe("isParkedRecurringItem", () => {
+  it("parks a completed recurring item", () => {
+    const i = makeItem({ recurring: true, completed: true, completed_at: "2026-09-08T00:00:00Z" });
+    expect(isParkedRecurringItem(i)).toBe(true);
+  });
+
+  it("does not park a deleted recurring item — deleting is final", () => {
+    const i = makeItem({
+      recurring: true,
+      completed: true,
+      completed_at: "2026-09-08T00:00:00Z",
+      deleted_at: "2026-09-08T01:00:00Z",
+    });
+    expect(isParkedRecurringItem(i)).toBe(false);
+  });
+
+  it("does not park a deleted recurring item that was never completed", () => {
+    const i = makeItem({ recurring: true, deleted_at: "2026-09-08T01:00:00Z" });
+    expect(isParkedRecurringItem(i)).toBe(false);
+  });
+
+  it("does not park an active recurring item", () => {
+    const i = makeItem({ recurring: true });
+    expect(isParkedRecurringItem(i)).toBe(false);
+    expect(isActiveItem(i)).toBe(true);
+  });
+
+  it("does not park a completed non-recurring item", () => {
+    const i = makeItem({ completed: true, completed_at: "2026-09-08T00:00:00Z" });
+    expect(isParkedRecurringItem(i)).toBe(false);
   });
 });

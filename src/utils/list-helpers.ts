@@ -67,3 +67,8 @@ export const isSkippedItem = (i: ItemData): boolean =>
 
 export const isActiveItem = (i: ItemData): boolean =>
   !i.completed && !i.deleted_at && !i.skipped_at;
+
+// A recurring staple waiting to come back. Only completion parks an item here —
+// deleting is final, so a soft-deleted row is never listed.
+export const isParkedRecurringItem = (i: ItemData): boolean =>
+  !!i.recurring && i.completed && !i.deleted_at;
