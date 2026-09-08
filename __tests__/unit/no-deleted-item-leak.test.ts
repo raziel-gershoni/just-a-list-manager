@@ -29,4 +29,15 @@ describe("GET /api/lists/[id]/items", () => {
     expect(getFn).toContain('.is("deleted_at", null)');
     expect(getFn).not.toContain(".or(");
   });
+
+  it("restoreRecurring does not clear deleted_at", () => {
+    const branch = source.slice(
+      source.indexOf("if (updates.restoreRecurring === true)"),
+      source.indexOf("// Allow restoring soft-deleted items")
+    );
+    expect(branch.length).toBeGreaterThan(0);
+    // Targets the assignment, not the word — the branch's explanatory comment
+    // mentions deleted_at deliberately.
+    expect(branch).not.toContain("patchData.deleted_at");
+  });
 });

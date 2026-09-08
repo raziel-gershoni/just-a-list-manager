@@ -323,10 +323,12 @@ export async function PATCH(
   }
 
   // Bring a recurring item back to active: clear all "out-of-active" flags atomically.
+  // deleted_at is deliberately NOT cleared — deleting is final, and leaving it out
+  // means the `.is("deleted_at", null)` guard below still applies to this branch,
+  // so a stale queued restore can never resurrect a row someone has since deleted.
   if (updates.restoreRecurring === true) {
     patchData.completed = false;
     patchData.completed_at = null;
-    patchData.deleted_at = null;
     patchData.skipped_at = null;
     patchData.ordered_at = null;
     patchData.position = Date.now();
