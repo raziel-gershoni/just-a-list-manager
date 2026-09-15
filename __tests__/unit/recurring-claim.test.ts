@@ -10,7 +10,7 @@ type Recorded = {
 
 // Minimal stand-in for the PostgREST builder chain completeRecurringItem uses:
 // from(t).update(v)/.insert(v) then .eq/.neq/.is/.select/.single, awaited.
-function fakeSupabase(claimRows: unknown[]) {
+function fakeSupabase(claimRows: unknown[], opts: { itemsInsertFails?: boolean } = {}) {
   const calls: Recorded[] = [];
 
   const make = (table: string, op: Recorded["op"], values: Record<string, unknown>) => {
@@ -23,6 +23,9 @@ function fakeSupabase(claimRows: unknown[]) {
         return { data: claimRows, error: null };
       }
       if (table === "items" && op === "insert") {
+        if (opts.itemsInsertFails) {
+          return { data: null, error: { message: "insert boom" } };
+        }
         return { data: { id: "new-item-1" }, error: null };
       }
       return { data: null, error: null };
@@ -104,6 +107,25 @@ describe("completeRecurringItem claim", () => {
     await completeRecurringItem(client, PARAMS);
     expect(calls[0].table).toBe("items");
     expect(calls[0].values.completed).toBe(true);
+  });
+
+  it("releases the claim when creating the new item fails, so a retry can heal it", async () => {
+    // Regression: before this, a failed insert left the item permanently
+    // completed=true with no successor. A retry's CAS would then lose (the item
+    // is already completed), the route would answer 200 already-completed, and
+    // the queue would dequeue it as a success — the series would die silently
+    // with every layer reporting OK.
+    const { calls, client } = fakeSupabase([{ id: "item-1" }], { itemsInsertFails: true });
+    const out = await completeRecurringItem(client, PARAMS);
+
+    expect(out.status).toBe("error");
+
+    const release = calls.find(
+      (c) => c.table === "items" && c.op === "update" && c.values.completed === false
+    );
+    expect(release).toBeDefined();
+    expect(release!.filters).toContain("eq:id=item-1");
+    expect(release!.filters).toContain("eq:completed=true");
   });
 
   it("reports an error without inserting when the claim query fails", async () => {

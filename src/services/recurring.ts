@@ -86,11 +86,23 @@ export async function completeRecurringItem(
 
   if (createError || !newItem) {
     console.error("[Recurring] Failed to create new item:", createError);
+    // Release the claim so a retry can heal this. Without it the retry's CAS
+    // loses, the route answers 200 already-completed, the queue dequeues it as
+    // a success, and the series ends silently with every layer reporting OK.
+    await supabase
+      .from("items")
+      .update({ completed: false, completed_at: null })
+      .eq("id", itemId)
+      .eq("completed", true);
     return { status: "error" };
   }
 
-  // 5. Create reminder on the new item
-  await supabase.from("item_reminders").insert({
+  // 5. Create reminder on the new item. Failure here is logged, not surfaced as
+  // an error: the item is already completed and a successor already exists, so
+  // returning "error" would re-create the exact trap this function just closed
+  // (a retry's CAS would lose and silently report success). The cost of this
+  // path is an occurrence that never fires, not a dead series.
+  const { error: reminderError } = await supabase.from("item_reminders").insert({
     item_id: newItem.id,
     list_id: listId,
     created_by: userId,
@@ -98,6 +110,9 @@ export async function completeRecurringItem(
     is_shared: isShared,
     recurrence,
   });
+  if (reminderError) {
+    console.error("[Recurring] Failed to create reminder for new item:", newItem.id, reminderError);
+  }
 
   return {
     status: "created",
