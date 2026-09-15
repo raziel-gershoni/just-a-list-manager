@@ -117,8 +117,14 @@ this invariant must be revisited.
    `UPDATE items SET completed = true WHERE id = ? AND completed = false AND deleted_at IS NULL`.
    Under Postgres READ COMMITTED a concurrent second `UPDATE` blocks on the row lock, then
    re-evaluates its `WHERE` against the committed version — so exactly one caller gets a row
-   back. The loser does nothing. This closes every double-invocation path at once: the client
-   race, stale Telegram buttons, the shared fan-out, and queue retries.
+   back. The loser does nothing. This closes the **concurrent**-invocation paths — the client
+   race, a stale Telegram button or shared-fan-out tap racing a live completion, and queue
+   retries.
+   It does **not** close every double-invocation path. The claim's key is `items.completed`, a
+   mutable bit, so anything that flips it back to false re-arms it: a manual un-tick, a
+   `recycleItem` match, or the 4-hour `restoreRecurring` respawn. A stale ✅ tapped after one of
+   those can still mint a second successor. Closing that permanently needs a monotonic key
+   (e.g. `item_reminders.acknowledged_at`), which needs a migration — see Scope "Out".
    The `deleted_at IS NULL` term keeps this consistent with
    `specs/2026-09-08-delete-is-final-design.md` — a deleted item does not spawn a successor.
 2. **Stop the client replaying an in-flight mutation.** Track in-flight ids and skip them in
