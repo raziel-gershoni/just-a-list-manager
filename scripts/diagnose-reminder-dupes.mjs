@@ -37,20 +37,25 @@ for (const list of lists) {
     .eq('list_id', list.id)
     .eq('status', 'approved');
 
-  // group by case-folded text
+  // Group by case-folded text. A real duplicate is two or more rows that are BOTH
+  // live — uncompleted and undeleted. A completed parent sitting next to its live
+  // successor is normal recurring succession, not a duplicate; counting those was
+  // an early version of this script's own bug and it reported 8 false positives.
   const groups = new Map();
   for (const i of items) {
     const k = i.text.toLocaleLowerCase();
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(i);
   }
-  const dupes = [...groups.entries()].filter(([, v]) => v.length > 1);
+  const dupes = [...groups.entries()].filter(
+    ([, v]) => v.filter((i) => !i.completed).length > 1
+  );
   if (!dupes.length) { console.log(`\n=== ${list.name}: no active duplicates ===`); continue; }
 
   console.log(`\n=== ${list.name} (${list.id}) — ${dupes.length} duplicated text(s), ${collabCount ?? 0} approved collaborator(s) ===`);
 
   for (const [, rows] of dupes) {
-    console.log(`\n  TEXT: ${JSON.stringify(rows[0].text)}  (${rows.length} active rows)`);
+    console.log(`\n  TEXT: ${JSON.stringify(rows[0].text)}  (${rows.filter((r) => !r.completed).length} LIVE rows, ${rows.length} total incl. completed)`);
     const ids = rows.map((r) => r.id);
     const { data: rems } = await sb
       .from('item_reminders')
