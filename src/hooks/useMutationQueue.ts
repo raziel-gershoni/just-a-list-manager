@@ -48,6 +48,7 @@ export function useMutationQueue(
 
   const executeMutation = useCallback(
     async (id: string, type: string, payload: Record<string, unknown>, execute: () => Promise<string | void>): Promise<string | void> => {
+      queueRef.current.markInFlight(id);
       try {
         const result = await execute();
         queueRef.current.dequeue(id);
@@ -83,6 +84,8 @@ export function useMutationQueue(
         // 5xx server errors, 408, 429, or unknown — keep in queue for retry
         console.error("[MutationQueue] Error (will retry):", id, message);
         onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: false, payload });
+      } finally {
+        queueRef.current.clearInFlight(id);
       }
     },
     []
@@ -104,6 +107,11 @@ export function useMutationQueue(
           console.log("[MutationQueue] Dropping stale mutation (>24h):", mutation.id, mutation.type);
           queueRef.current.dequeue(mutation.id);
           pendingExecutors.current.delete(mutation.id);
+          continue;
+        }
+
+        // Skip anything already being sent — its caller will dequeue it on success.
+        if (queueRef.current.isInFlight(mutation.id)) {
           continue;
         }
 
@@ -171,8 +179,9 @@ export function useMutationQueue(
 
       pendingExecutors.current.set(mutation.id, mutation.execute);
 
-      // Always execute immediately — flushQueue operates on its own snapshot,
-      // so there is no double-execution risk for newly added mutations.
+      // Execute immediately. The queue entry stays until this succeeds, so a flush
+      // triggered while the request is in flight would otherwise replay the same
+      // executor — isInFlight is what prevents that.
       executeMutation(mutation.id, mutation.type, mutation.payload, mutation.execute);
     },
     [executeMutation]

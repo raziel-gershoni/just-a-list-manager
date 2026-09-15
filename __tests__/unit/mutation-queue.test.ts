@@ -111,3 +111,41 @@ describe("MutationQueue", () => {
     expect(queue.getQueue()).toHaveLength(1);
   });
 });
+
+describe("MutationQueue in-flight tracking", () => {
+  it("reports a mutation as not in flight by default", () => {
+    const q = new MutationQueue("list-1");
+    q.enqueue({ id: "m1", type: "toggle", payload: {} });
+    expect(q.isInFlight("m1")).toBe(false);
+  });
+
+  it("reports a marked mutation as in flight", () => {
+    const q = new MutationQueue("list-1");
+    q.enqueue({ id: "m1", type: "toggle", payload: {} });
+    q.markInFlight("m1");
+    expect(q.isInFlight("m1")).toBe(true);
+  });
+
+  it("stops reporting in flight once cleared", () => {
+    const q = new MutationQueue("list-1");
+    q.markInFlight("m1");
+    q.clearInFlight("m1");
+    expect(q.isInFlight("m1")).toBe(false);
+  });
+
+  it("keeps in-flight state out of the persisted queue", () => {
+    const q = new MutationQueue("list-1");
+    q.enqueue({ id: "m1", type: "toggle", payload: {} });
+    q.markInFlight("m1");
+    // A different instance for the same list reads the same localStorage, but
+    // in-flight is per-session: a reload must be free to replay the mutation.
+    expect(new MutationQueue("list-1").isInFlight("m1")).toBe(false);
+    expect(JSON.stringify(q.getQueue())).not.toContain("inFlight");
+  });
+
+  it("tracks in-flight state independently per mutation", () => {
+    const q = new MutationQueue("list-1");
+    q.markInFlight("m1");
+    expect(q.isInFlight("m2")).toBe(false);
+  });
+});
