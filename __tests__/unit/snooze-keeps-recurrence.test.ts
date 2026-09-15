@@ -2,10 +2,13 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
-// Snoozing used to clear `recurrence`, on the premise that "the next recurring
-// instance was already created when this reminder fired". That was never true —
-// the cron only stamps sent_at/cancelled_at; the next occurrence is created on
-// Done. So clearing it silently ended the series.
+// Snoozing used to clear `recurrence`. That was correct when written (46df943,
+// 2026-04-18): the cron then auto-advanced a recurring reminder on the same
+// item when it fired, so a snoozed one spawned a second chain (migration 018
+// cleaned that up). cebd7ca (2026-04-21) removed the auto-advance and moved
+// occurrence creation to Done, but the snooze branch was never revisited: from
+// then on, clearing the recurrence didn't prevent a duplicate chain, it just
+// ended the series.
 // See docs/superpowers/specs/2026-09-15-recurring-occurrence-integrity-design.md
 describe("reminder snooze", () => {
   const source = readFileSync(resolve(process.cwd(), "src/services/bot.ts"), "utf8");

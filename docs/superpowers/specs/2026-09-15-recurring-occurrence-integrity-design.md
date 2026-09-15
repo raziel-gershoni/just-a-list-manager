@@ -75,27 +75,40 @@ fix cannot touch:
 
 > the next recurring instance was already created when this reminder fired
 
-**That has never been true.** Every revision of `app/api/cron/reminders/route.ts` back to the
-original feature (`daa299f`) writes only `sent_at` and `cancelled_at` — it has never inserted
-an item. The next occurrence is created on *Done*, exactly as `cron/reminders/route.ts:159`
-says. The false premise entered in commit `46df943` (2026-04-18), which shipped migration
-`018`.
+**That was true when it was written.** Dumping every revision of
+`app/api/cron/reminders/route.ts`:
+
+| commit | date | cron behaviour |
+|---|---|---|
+| `daa299f` | 2026-04-16 | on firing a recurring reminder, inserts the next `item_reminders` row on the same item |
+| `46df943` | 2026-04-18 | still inserts (this commit does not touch `route.ts`) — it is the commit that added the snooze `recurrence: null` and shipped migration `018` |
+| `cebd7ca` | 2026-04-21 | insert removed ("Don't create next occurrence in cron — only when user taps Done"); occurrence creation moves to Done |
+| today | | no insert; cron only stamps `sent_at`/`cancelled_at` |
+
+On 2026-04-18 "instance" meant the next *reminder row* on the same item, not a new item — and
+the cron really did create one. Migration `018` was a **correct fix** for a then-live bug:
+snooze-keeps-recurrence plus the cron's auto-advance produced two live recurring reminders on
+one item, exactly the shape `018`'s `PARTITION BY item_id, created_by, recurrence` targets.
+`cebd7ca`, three days later, removed the auto-advance and moved occurrence creation to Done —
+but never revisited the snooze branch, so the comment went stale. From that point on, clearing
+`recurrence` on snooze didn't prevent a duplicate chain; it simply ended the series.
 
 Consequence: once `recurrence` is NULL, `bot.ts:447` takes the one-time branch and
 `useItemHandlers.ts:201` computes `isRecurringDone` as falsy (the reminders GET reads
 `recurrence`, `app/api/lists/[id]/reminders/route.ts:24`). Tapping Done on a snoozed recurring
 reminder completes the item and creates nothing. **The series dies.**
 
-### Why 018 over-corrected, and why reverting it is safe now
+### Why keeping `recurrence` on snooze is safe now
 
-Migration `018` cleaned up "duplicate recurrence chains" — multiple live recurring reminders
-on one item. Keeping `recurrence` across a snooze re-arms a message, which widens the window
-for `completeRecurringItem` to run twice; the duplicate chains were a *symptom of the missing
-idempotency*, not of snooze itself. `46df943` treated the symptom by disabling the feature.
-
-With root cause 2 fixed, a second invocation cannot create an occurrence, so the chain
-duplication cannot recur. **The snooze fix is only safe shipped together with the CAS**, which
-is why they are one change.
+Migration `018`'s cleanup targeted "duplicate recurrence chains" — multiple live recurring
+reminders on one item — a real, reachable shape as long as the cron auto-advanced on fire. That
+auto-advance is gone (`cebd7ca`, 2026-04-21): the cron only stamps `sent_at`/`cancelled_at`
+(`app/api/cron/reminders/route.ts`), and `completeRecurringItem` is the only code that mints a
+next occurrence, on Done. Keeping `recurrence` across a snooze can no longer reproduce that
+shape — this holds independently of the CAS claim decided below. **There is no dependency
+between the snooze fix and the CAS**; they address different problems (a stale premise vs. two
+concurrent Done taps on one live reminder). If the cron is ever changed to auto-advance again,
+this invariant must be revisited.
 
 ## Decision
 
@@ -135,7 +148,10 @@ is a larger change — recorded below as follow-up.
 **Out (needs its own decision):**
 - Preserving the series anchor across a snooze (needs a `series_anchor_at` column).
 - Cancelling or disarming stale Telegram reminder buttons. The CAS makes a stale tap
-  harmless, but the message still shows a button that now silently does nothing visible.
+  harmless *while the claim holds* — but the claim's key (`items.completed`) is a mutable
+  bit, so a manual un-tick, `recycleItem`, or the 4-hour recurring respawn re-arms it, and a
+  later stale tap can then win and mint a second successor. The message still shows a button
+  that ordinarily does nothing visible.
 - The missing membership check on `reminder_done` (`bot.ts:405`) — any Telegram user who
   knows a reminder id can act on it. The CAS limits the blast radius to one completion,
   but it is still an authorization gap.

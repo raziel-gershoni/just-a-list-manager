@@ -41,10 +41,18 @@ export async function completeRecurringItem(
   //    version and matches zero rows. Exactly one caller gets a row back; the loser
   //    returns without creating anything.
   //
-  //    This is what stops one Done tap producing two occurrences — whether the
-  //    repeat comes from a replayed client mutation, a stale Telegram button, or a
-  //    second recipient of a shared reminder. A time-window check cannot: it reads
-  //    and then writes, so two callers can both read "not completed" first.
+  //    This closes the CONCURRENT-invocation paths — a replayed client mutation,
+  //    a stale Telegram button, or a second recipient of a shared reminder, each
+  //    racing a completion that is already in flight. A time-window check cannot
+  //    do even this much: it reads and then writes, so two callers can both read
+  //    "not completed" first.
+  //
+  //    It does not close every double-invocation path: the claim's key is
+  //    `items.completed`, a mutable bit. Anything that flips it back to false
+  //    re-arms the claim — a manual un-tick, `recycleItem`, or the 4-hour
+  //    respawn window in useListData.ts. Nothing cancels a reminder on Done, so
+  //    a later, stale Telegram tap can still win the claim and mint a second
+  //    successor. See the design spec's Scope "Out" section.
   //
   //    `deleted_at IS NULL` keeps this consistent with the delete-is-final rule —
   //    a deleted item never spawns a successor.
