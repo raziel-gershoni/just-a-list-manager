@@ -217,7 +217,11 @@ export function useItemHandlers({
               keepalive: true,
             });
             if (!recurRes.ok) throw new Error(`Recurring complete failed: ${recurRes.status}`);
-            const { newItemId, nextRemindAt } = await recurRes.json();
+            const recurBody = await recurRes.json();
+            // Another caller already created this occurrence — its row arrives via
+            // Realtime. Inserting here would put a second copy in local state.
+            if (recurBody.alreadyCompleted || !recurBody.newItemId) return;
+            const { newItemId, nextRemindAt } = recurBody;
             // Add new occurrence to state immediately so Realtime INSERT skips it (ID match)
             setItems((prev) => [
               {

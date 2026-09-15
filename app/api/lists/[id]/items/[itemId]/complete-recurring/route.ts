@@ -55,9 +55,19 @@ export async function POST(
     isShared: isShared ?? false,
   });
 
-  if (!result) {
+  if (result.status === "error") {
     return NextResponse.json({ error: "Failed to create next occurrence" }, { status: 500 });
   }
 
-  return NextResponse.json(result, { status: 201 });
+  // Another caller (a replayed mutation, a stale Telegram button, a second recipient
+  // of a shared reminder) already completed this occurrence. Not an error — report it
+  // so the client skips its optimistic insert instead of duplicating the winner's row.
+  if (result.status === "already-completed") {
+    return NextResponse.json({ alreadyCompleted: true }, { status: 200 });
+  }
+
+  return NextResponse.json(
+    { newItemId: result.newItemId, nextRemindAt: result.nextRemindAt },
+    { status: 201 }
+  );
 }
