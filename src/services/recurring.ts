@@ -16,6 +16,11 @@ export function getNextOccurrence(remindAt: Date, recurrence: string): Date {
   return next;
 }
 
+export type CompleteRecurringOutcome =
+  | { status: "created"; newItemId: string; nextRemindAt: string }
+  | { status: "already-completed" }
+  | { status: "error" };
+
 export async function completeRecurringItem(
   supabase: SupabaseClient,
   params: {
@@ -27,10 +32,39 @@ export async function completeRecurringItem(
     recurrence: string;
     isShared: boolean;
   }
-): Promise<{ newItemId: string; nextRemindAt: string } | null> {
+): Promise<CompleteRecurringOutcome> {
   const { itemId, listId, userId, text, remindAt, recurrence, isShared } = params;
 
-  // 1. Soft-delete previous completed occurrences (same text, same list, not the current item)
+  // 1. Claim the occurrence. This single-statement compare-and-swap IS the
+  //    idempotency guard: under READ COMMITTED a concurrent second UPDATE blocks
+  //    on the row lock, then re-evaluates `completed = false` against the committed
+  //    version and matches zero rows. Exactly one caller gets a row back; the loser
+  //    returns without creating anything.
+  //
+  //    This is what stops one Done tap producing two occurrences — whether the
+  //    repeat comes from a replayed client mutation, a stale Telegram button, or a
+  //    second recipient of a shared reminder. A time-window check cannot: it reads
+  //    and then writes, so two callers can both read "not completed" first.
+  //
+  //    `deleted_at IS NULL` keeps this consistent with the delete-is-final rule —
+  //    a deleted item never spawns a successor.
+  const { data: claimed, error: claimError } = await supabase
+    .from("items")
+    .update({ completed: true, completed_at: new Date().toISOString() })
+    .eq("id", itemId)
+    .eq("completed", false)
+    .is("deleted_at", null)
+    .select("id");
+
+  if (claimError) {
+    console.error("[Recurring] Claim failed:", claimError);
+    return { status: "error" };
+  }
+  if (!claimed || claimed.length === 0) {
+    return { status: "already-completed" };
+  }
+
+  // 2. Soft-delete previous completed occurrences (same text, same list, not the current item)
   await supabase
     .from("items")
     .update({ deleted_at: new Date().toISOString() })
@@ -39,12 +73,6 @@ export async function completeRecurringItem(
     .eq("completed", true)
     .neq("id", itemId)
     .is("deleted_at", null);
-
-  // 2. Mark current item completed
-  await supabase
-    .from("items")
-    .update({ completed: true, completed_at: new Date().toISOString() })
-    .eq("id", itemId);
 
   // 3. Calculate next occurrence
   const nextRemindAt = getNextOccurrence(new Date(remindAt), recurrence);
@@ -58,7 +86,7 @@ export async function completeRecurringItem(
 
   if (createError || !newItem) {
     console.error("[Recurring] Failed to create new item:", createError);
-    return null;
+    return { status: "error" };
   }
 
   // 5. Create reminder on the new item
@@ -71,5 +99,9 @@ export async function completeRecurringItem(
     recurrence,
   });
 
-  return { newItemId: newItem.id, nextRemindAt: nextRemindAt.toISOString() };
+  return {
+    status: "created",
+    newItemId: newItem.id,
+    nextRemindAt: nextRemindAt.toISOString(),
+  };
 }
