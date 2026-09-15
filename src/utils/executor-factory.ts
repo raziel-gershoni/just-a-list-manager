@@ -28,6 +28,33 @@ export const createExecutorFactory = (): ExecutorFactory => {
       case "toggle":
         return async () => {
           const jwt = getJwt();
+          // A recurring completion must replay through complete-recurring, not a
+          // plain PATCH — otherwise the replay marks the item done and no next
+          // occurrence is ever created, silently ending the series. The inline
+          // closure in useItemHandlers.ts branches the same way; these two must
+          // not diverge.
+          if (payload.recurrence && payload.remindAt) {
+            const res = await fetch(
+              `/api/lists/${payload.listId}/items/${payload.itemId}/complete-recurring`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${jwt}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  remindAt: payload.remindAt,
+                  recurrence: payload.recurrence,
+                  isShared: payload.isShared ?? false,
+                }),
+                keepalive: true,
+              }
+            );
+            if (!res.ok) throw new Error(`Recurring complete failed: ${res.status}`);
+            // No optimistic insert on replay — the successor arrives via Realtime
+            // or the next refetch.
+            return;
+          }
           const res = await fetch(`/api/lists/${payload.listId}/items`, {
             method: "PATCH",
             headers: {

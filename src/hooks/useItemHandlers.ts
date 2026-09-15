@@ -191,14 +191,32 @@ export function useItemHandlers({
         )
       );
 
+      // Computed once and shared by the payload (below) and the execute closure:
+      // the payload carries the recurring context into localStorage so that an
+      // offline replay (which rebuilds its executor from the payload via
+      // executor-factory.ts, not this closure) still routes through
+      // complete-recurring instead of a plain PATCH — see FINDING 2 in
+      // docs/superpowers/specs/2026-09-15-recurring-occurrence-integrity-design.md.
+      const isRecurringDone = completed && listType === "reminders" && item?.my_reminder_recurrence && item?.my_remind_at;
+
       const mutId = genMutId();
       addMutation({
         id: mutId,
         type: "toggle",
-        payload: { listId, itemId, completed },
+        payload: {
+          listId,
+          itemId,
+          completed,
+          ...(isRecurringDone
+            ? {
+                remindAt: item.my_remind_at,
+                recurrence: item.my_reminder_recurrence,
+                isShared: item.my_reminder_shared ?? false,
+              }
+            : {}),
+        },
         execute: async () => {
           const jwt = jwtRef.current;
-          const isRecurringDone = completed && listType === "reminders" && item?.my_reminder_recurrence && item?.my_remind_at;
 
           if (isRecurringDone) {
             // Recurring completion: complete-recurring endpoint owns the full transition
