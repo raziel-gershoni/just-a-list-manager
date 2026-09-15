@@ -557,12 +557,21 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         newRemindAt = round5(new Date(originalTime.getTime() + 30 * 60 * 1000));
     }
 
-    // Update reminder: new remind_at, clear sent_at, and clear recurrence
-    // (the next recurring instance was already created when this reminder fired,
-    // so the snoozed copy should be one-time only)
+    // Update reminder: new remind_at, clear sent_at. The recurrence is KEPT.
+    //
+    // This used to null the recurrence, on the premise that "the next recurring
+    // instance was already created when this reminder fired". That was never true:
+    // the cron only stamps sent_at/cancelled_at (app/api/cron/reminders/route.ts),
+    // and the next occurrence is created when the user taps Done. Clearing the
+    // recurrence therefore ended the series — the snoozed reminder fired once more
+    // and Done took the one-time branch below.
+    //
+    // The duplicate chains that removal was meant to stop came from
+    // completeRecurringItem running twice; its compare-and-swap claim now prevents
+    // that at the source. Note the series re-anchors to the snoozed time.
     await supabase
       .from("item_reminders")
-      .update({ remind_at: newRemindAt.toISOString(), sent_at: null, recurrence: null })
+      .update({ remind_at: newRemindAt.toISOString(), sent_at: null })
       .eq("id", reminderId);
 
     // Get user timezone and language for display
