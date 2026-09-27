@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       // Fetch reminders in that range
       const { data: reminders } = await supabase
         .from("item_reminders")
-        .select("remind_at, items!inner(text, completed, deleted_at), lists!inner(id, name, deleted_at)")
+        .select("remind_at, items!inner(text, completed, deleted_at, list_id), lists!inner(id, name, deleted_at)")
         .eq("created_by", userId)
         .is("sent_at", null)
         .is("cancelled_at", null)
@@ -72,16 +72,24 @@ export async function GET(request: NextRequest) {
         (archivedRows || []).map((r) => r.list_id)
       );
 
-      // Exclude reminders whose item is completed or deleted, and whose list
-      // is deleted or archived by this user.
+      // Exclude reminders whose item is completed or deleted, whose list is
+      // deleted or archived by this user, or whose item.list_id disagrees with
+      // the reminder's own list_id — item_id and list_id are independent FKs
+      // (migration 014) with nothing binding them, so a mismatched row would
+      // otherwise leak another list's item text into this digest.
       const liveReminders = (reminders || []).filter((r) => {
-        const item = r.items as unknown as { completed: boolean; deleted_at: string | null };
+        const item = r.items as unknown as {
+          completed: boolean;
+          deleted_at: string | null;
+          list_id: string;
+        };
         const list = r.lists as unknown as { id: string; deleted_at: string | null };
         return (
           !item.completed &&
           !item.deleted_at &&
           !list.deleted_at &&
-          !archivedListIds.has(list.id)
+          !archivedListIds.has(list.id) &&
+          item.list_id === list.id
         );
       });
 

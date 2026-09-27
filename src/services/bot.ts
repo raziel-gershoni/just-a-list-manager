@@ -447,18 +447,32 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       return;
     }
 
-    // Get item text and current state for the confirmation message + idempotency guard
+    // Get item text and current state for the confirmation message + idempotency guard.
+    // Scoped by list_id too: item_id and list_id are independent FKs (migration
+    // 014) with nothing binding them, so a reminder row created while the
+    // create-route guard didn't exist yet could still point cross-list. An
+    // unscoped lookup would leak that other list's item text here.
     const { data: item } = await supabase
       .from("items")
       .select("text, completed, completed_at")
       .eq("id", reminder.item_id)
+      .eq("list_id", reminder.list_id)
       .single();
 
-    const itemText = item?.text || "Item";
+    // On a mismatch this comes back null. Bail through the same notFound path
+    // as every other denial above instead of falling back to a placeholder —
+    // the old optional-chained default masked the null and let the branch
+    // answer a false "done" confirmation for an item it never touched.
+    if (!item) {
+      await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.notFound") });
+      return;
+    }
+
+    const itemText = item.text;
 
     // Idempotency: if the item was just completed (within 30s), treat this as a duplicate tap
     // and skip running the flow again. Prevents double-tap from creating duplicate occurrences.
-    if (item?.completed && item.completed_at) {
+    if (item.completed && item.completed_at) {
       const completedAge = Date.now() - new Date(item.completed_at).getTime();
       if (completedAge < 30_000) {
         await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.done") });
@@ -585,10 +599,14 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .single();
     const senderLang = botUser?.language || "en";
 
-    // Look up the reminder, item text, list (for the permission check), and user timezone
+    // Look up the reminder, item text, list (for the permission check), and user timezone.
+    // Also fetch the item's own list_id so it can be compared to reminder.list_id
+    // below — the two are independent FKs (migration 014) with nothing binding
+    // them, so a mismatched row would otherwise let this read leak another
+    // list's item text into the snooze confirmation.
     const { data: reminder } = await supabase
       .from("item_reminders")
-      .select("id, remind_at, created_by, list_id, items!inner(text)")
+      .select("id, remind_at, created_by, list_id, items!inner(text, list_id)")
       .eq("id", reminderId)
       .single();
 
@@ -613,7 +631,12 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       return;
     }
 
-    const itemText = (reminder.items as unknown as { text: string }).text;
+    const itemRow = reminder.items as unknown as { text: string; list_id: string };
+    if (itemRow.list_id !== reminder.list_id) {
+      await bot.answerCallbackQuery(query.id, { text: getMsg(senderLang, "reminder.notFound") });
+      return;
+    }
+    const itemText = itemRow.text;
     // Note: lang for this handler is fetched below with timezone
     const originalTime = new Date(reminder.remind_at);
     const round5 = (d: Date) => { d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0); return d; };

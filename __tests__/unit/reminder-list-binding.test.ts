@@ -97,5 +97,137 @@ describe("item_reminders list binding", () => {
       expect(stmtSlice).toContain('.eq("id", reminder.item_id)');
       expect(stmtSlice).toContain('.eq("list_id", reminder.list_id)');
     });
+
+    // Finding 1(a): the item-text read for the confirmation message/idempotency
+    // guard used to look the item up by item_id alone. On a laundered
+    // (mismatched) row that silently returns another list's item, and the
+    // pre-existing `item?.text || "Item"` fallback masked the null instead of
+    // denying the request — so the branch went on to answer a false "done"
+    // confirmation for an item it never touched.
+    it("the item-text read is scoped by list_id, not item_id alone", () => {
+      const selectIdx = doneSlice.indexOf(
+        '.select("text, completed, completed_at")'
+      );
+      expect(selectIdx).toBeGreaterThan(0);
+      const selectSlice = doneSlice.slice(selectIdx, selectIdx + 200);
+      expect(selectSlice).toContain('.eq("id", reminder.item_id)');
+      expect(selectSlice).toContain('.eq("list_id", reminder.list_id)');
+    });
+
+    it("bails through reminder.notFound (not a silent fallback) when the scoped item read comes back empty", () => {
+      const selectIdx = doneSlice.indexOf(
+        '.select("text, completed, completed_at")'
+      );
+      expect(selectIdx).toBeGreaterThan(0);
+      const afterSelect = doneSlice.slice(selectIdx, selectIdx + 700);
+      expect(afterSelect).toMatch(
+        /if\s*\(!item\)[\s\S]{0,200}"reminder\.notFound"[\s\S]{0,80}return;/
+      );
+      // The old masking fallback must be gone — a mismatch must not silently
+      // render "Item" as if the completion actually happened.
+      expect(afterSelect).not.toMatch(/item\?\.text\s*\|\|\s*"Item"/);
+    });
+  });
+
+  describe("reminder_snooze apply branch item-text read (src/services/bot.ts)", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/services/bot.ts"),
+      "utf8"
+    );
+    // Last branch in the file — slicing to EOF is safe (same anchor used by
+    // reminder-callback-auth.test.ts).
+    const applyAnchor = "data.match(/^reminder_snooze:[^:]+:(30m";
+    const applyStart = source.indexOf(applyAnchor);
+    const applySlice = source.slice(applyStart);
+
+    it("branch anchor found", () => {
+      expect(applyStart).toBeGreaterThan(0);
+    });
+
+    it("widens the items join to also fetch the item's own list_id", () => {
+      const joinIdx = applySlice.indexOf("items!inner(");
+      expect(joinIdx).toBeGreaterThan(0);
+      const joinSlice = applySlice.slice(joinIdx, joinIdx + 40);
+      expect(joinSlice).toMatch(/items!inner\([^)]*text[^)]*list_id[^)]*\)/);
+    });
+
+    // Finding 1(b): a mismatched row let the snooze-apply branch read and
+    // echo back another list's item text in the confirmation message, with
+    // no write required — just tapping "Snooze 30m" on a laundered reminder.
+    it("bails through reminder.notFound on a list_id mismatch before the item text is used", () => {
+      const joinIdx = applySlice.indexOf("items!inner(");
+      const itemTextIdx = applySlice.indexOf("const itemText");
+      expect(joinIdx).toBeGreaterThan(0);
+      expect(itemTextIdx).toBeGreaterThan(joinIdx);
+
+      const between = applySlice.slice(joinIdx, itemTextIdx + 80);
+      expect(between).toMatch(/list_id\s*!==\s*reminder\.list_id/);
+      expect(between).toMatch(/"reminder\.notFound"/);
+      expect(between).toMatch(/return;/);
+    });
+  });
+
+  describe("cron reminders mismatch handling (app/api/cron/reminders/route.ts)", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "app/api/cron/reminders/route.ts"),
+      "utf8"
+    );
+
+    it("already selects the item's own list_id for comparison", () => {
+      expect(source).toMatch(/items!inner\([^)]*list_id[^)]*\)/);
+    });
+
+    // Finding 1(c): the select already fetched item.list_id but never
+    // compared it. Must run alongside the completed/deleted checks, before
+    // recipients are resolved, and — because this cron has a .limit(50) due
+    // window — an unstamped skip would occupy a slot forever and starve real
+    // reminders, so it must stamp cancelled_at rather than bare `continue`.
+    it("checks item.list_id against reminder.list_id before resolving creator/recipients", () => {
+      const mismatchIdx = source.search(/item\.list_id\s*!==\s*reminder\.list_id/);
+      expect(mismatchIdx).toBeGreaterThan(0);
+
+      const creatorCommentIdx = source.indexOf("// Get creator info");
+      expect(creatorCommentIdx).toBeGreaterThan(0);
+      expect(mismatchIdx).toBeLessThan(creatorCommentIdx);
+
+      const deletedCheckIdx = source.indexOf("if (item.deleted_at)");
+      expect(deletedCheckIdx).toBeGreaterThan(0);
+      expect(mismatchIdx).toBeGreaterThan(deletedCheckIdx);
+    });
+
+    it("stamps cancelled_at before continuing on a mismatch (never an unstamped skip)", () => {
+      const mismatchIdx = source.search(/item\.list_id\s*!==\s*reminder\.list_id/);
+      expect(mismatchIdx).toBeGreaterThan(0);
+      const afterMismatch = source.slice(mismatchIdx, mismatchIdx + 400);
+
+      const stampIdx = afterMismatch.search(
+        /cancelled_at:\s*new Date\(\)\.toISOString\(\)/
+      );
+      expect(stampIdx).toBeGreaterThan(0);
+      const continueIdx = afterMismatch.indexOf("continue;");
+      expect(continueIdx).toBeGreaterThan(stampIdx);
+    });
+  });
+
+  describe("cron digest mismatch handling (app/api/cron/digest/route.ts)", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "app/api/cron/digest/route.ts"),
+      "utf8"
+    );
+
+    // Finding 1(d): liveReminders already excludes completed/deleted items and
+    // archived lists. Widen the item select to include list_id and fold the
+    // same mismatch check into that filter so a laundered row never reaches
+    // the digest message either.
+    it("selects the item's own list_id alongside its other fields", () => {
+      expect(source).toMatch(/items!inner\([^)]*list_id[^)]*\)/);
+    });
+
+    it("the liveReminders filter excludes a list_id mismatch", () => {
+      const filterIdx = source.indexOf("const liveReminders =");
+      expect(filterIdx).toBeGreaterThan(0);
+      const filterSlice = source.slice(filterIdx, filterIdx + 700);
+      expect(filterSlice).toMatch(/item\.list_id\s*===\s*list\.id/);
+    });
   });
 });

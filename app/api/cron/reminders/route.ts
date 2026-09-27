@@ -62,6 +62,22 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
+      // item_id and list_id are independent FKs (migration 014) with nothing
+      // binding them, so a reminder row can point at an item that no longer
+      // belongs to the reminder's own list (a stale row from before the
+      // create-route guard, or any future data-integrity slip). Delivering it
+      // would leak another list's item text to this list's recipients. Must
+      // stamp cancelled_at rather than a bare `continue` — this cron has a
+      // .limit(50) due window, and an unstamped skip would occupy a slot
+      // forever and starve real reminders.
+      if (item.list_id !== reminder.list_id) {
+        await supabase
+          .from("item_reminders")
+          .update({ cancelled_at: new Date().toISOString() })
+          .eq("id", reminder.id);
+        continue;
+      }
+
       // Get creator info
       const { data: creator } = await supabase
         .from("users")
