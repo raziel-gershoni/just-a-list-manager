@@ -421,9 +421,12 @@ export async function DELETE(
   // undo and remove-duplicates undo) only ever PATCH deleted_at back to null,
   // never un-cancel anything — so cancelling here made undo lossy (identical
   // bug to the one 9551051 removed from clear-completed). It's safe to leave
-  // the reminder alone: the cron cancels a reminder whose item is soft-deleted
-  // once the reminder comes due (app/api/cron/reminders/route.ts), and the
-  // digest skips items with no live reminders, so nothing ever fires for a row
-  // that stays deleted.
+  // the reminder alone: if the item was completed first (deleting from the
+  // done section), the cron checks item.completed FIRST and silently stamps
+  // sent_at whenever the reminder comes due; its deleted_at branch right
+  // after is only the fallback for a row deleted without ever being
+  // completed, which cancels it instead (app/api/cron/reminders/route.ts).
+  // Either way the digest skips items with no live reminders, so nothing
+  // ever fires for a row that stays deleted.
   return NextResponse.json({ success: true });
 }
