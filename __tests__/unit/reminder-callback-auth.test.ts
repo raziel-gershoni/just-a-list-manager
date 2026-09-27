@@ -56,6 +56,13 @@ describe("handleCallbackQuery reminder_* branches require edit permission", () =
     expect(doneSlice).toContain("verifyListPermission");
     const permIdx = doneSlice.indexOf("verifyListPermission");
 
+    // Pin the argument, not just presence + ordering: indexOf("verifyListPermission")
+    // being before the write says nothing about which list_id it checked. A
+    // permission check on the WRONG list (e.g. the caller's own list, per
+    // Finding 1's laundering bug) would satisfy the ordering check while
+    // leaving the actual hole open.
+    expect(doneSlice).toMatch(/verifyListPermission\([^,]+,\s*reminder\.list_id,/);
+
     const recurringWriteIdx = doneSlice.indexOf("completeRecurringItem(supabase");
     const oneTimeWriteIdx = doneSlice.indexOf(".update({ completed: true");
     expect(recurringWriteIdx).toBeGreaterThan(0);
@@ -75,11 +82,16 @@ describe("handleCallbackQuery reminder_* branches require edit permission", () =
     // Read-only (just shows buttons), but a bare reminder id still lets an
     // attacker probe whether a given reminder id exists in ANY list — gate it too.
     expect(showSlice).toContain("verifyListPermission");
+    // Pin the argument (see the identical note on the reminder_done test above).
+    expect(showSlice).toMatch(/verifyListPermission\([^,]+,\s*reminder\.list_id,/);
   });
 
   it("reminder_snooze:<id>:<duration> (apply) verifies edit permission before writing to item_reminders", () => {
     expect(applySlice).toContain("verifyListPermission");
     const permIdx = applySlice.indexOf("verifyListPermission");
+
+    // Pin the argument (see the identical note on the reminder_done test above).
+    expect(applySlice).toMatch(/verifyListPermission\([^,]+,\s*reminder\.list_id,/);
 
     const writeIdx = applySlice.indexOf(".update({ remind_at: newRemindAt.toISOString()");
     expect(writeIdx).toBeGreaterThan(0);
