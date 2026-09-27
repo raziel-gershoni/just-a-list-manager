@@ -92,11 +92,13 @@ describe("POST /api/lists/[id]/items/clear-completed", () => {
   // carries a live reminder. This route used to cancel those reminders right
   // after soft-deleting, but the undo path (useItemHandlers.ts) only ever
   // PATCHes deleted_at back to null — nothing ever un-cancels — so undo silently
-  // destroyed the reminder. The cron already cancels a reminder whose item is
-  // soft-deleted when the reminder comes due (app/api/cron/reminders/route.ts),
-  // and the digest skips items with no live reminders, so nothing fires for a
-  // row that stays cleared. Cancelling here is therefore both unnecessary and
-  // lossy for undo — it must not come back.
+  // destroyed the reminder. A cleared item is always completed, and the cron
+  // checks item.completed FIRST (app/api/cron/reminders/route.ts), silently
+  // stamping the reminder's sent_at whenever it comes due — its deleted_at
+  // branch right after is only the fallback for a row deleted without ever
+  // being completed. Either way the digest skips items with no live reminders,
+  // so nothing fires for a row that stays cleared. Cancelling here is
+  // therefore both unnecessary and lossy for undo — it must not come back.
   it("does not cancel reminders when clearing completed items (cron owns that; doing it here made undo lossy)", () => {
     expect(source).not.toContain("cancelItemReminders");
   });
