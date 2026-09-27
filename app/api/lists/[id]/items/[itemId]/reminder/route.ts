@@ -37,6 +37,25 @@ export async function POST(
 
   const supabase = createServerClient();
 
+  // item_reminders.item_id and .list_id are independent FKs (migration 014) —
+  // nothing in the schema stops them from pointing at unrelated rows. Without
+  // this check, a caller with only "view" on some list of their own could name
+  // any item id (e.g. one they've seen in a list they can only view) and get
+  // back a reminder scoped, for permission purposes, to their list while it
+  // actually reads/completes an item in the other one — laundering a
+  // cross-list read and write through reminder creation.
+  const { data: target } = await supabase
+    .from("items")
+    .select("id")
+    .eq("id", itemId)
+    .eq("list_id", listId)
+    .is("deleted_at", null)
+    .single();
+
+  if (!target) {
+    return NextResponse.json({ error: "Item not found in this list" }, { status: 404 });
+  }
+
   // Cancel all existing reminders (sent or unsent) for this item/user before creating new one
   await supabase
     .from("item_reminders")

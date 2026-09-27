@@ -479,7 +479,8 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       await supabase
         .from("items")
         .update({ completed: true, completed_at: new Date().toISOString() })
-        .eq("id", reminder.item_id);
+        .eq("id", reminder.item_id)
+        .eq("list_id", reminder.list_id);
     }
 
     await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.done") });
