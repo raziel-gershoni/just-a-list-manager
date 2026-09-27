@@ -53,15 +53,21 @@ export async function findRecyclableItems(
  */
 export async function recycleItem(
   itemId: string,
-  userId: string
+  userId: string,
+  listId: string
 ): Promise<RecyclableItem | null> {
   const supabase = createServerClient();
 
-  // Get the item's list to find max position
+  // Get the item's list to find max position. Scoped to listId (defence in depth):
+  // callers are expected to have already validated itemId against a list-scoped
+  // lookup (see pickRecyclable), but this guard means a cross-list id can never
+  // reach the update below even if that validation is skipped or forgotten by a
+  // future caller.
   const { data: item } = await supabase
     .from("items")
     .select("list_id")
     .eq("id", itemId)
+    .eq("list_id", listId)
     .single();
 
   if (!item) return null;
@@ -88,6 +94,7 @@ export async function recycleItem(
       created_by: userId,
     })
     .eq("id", itemId)
+    .eq("list_id", listId)
     .select("id, text, completed, completed_at, deleted_at, position")
     .single();
 

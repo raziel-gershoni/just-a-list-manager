@@ -7,6 +7,7 @@ import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "
 import { parseBody } from "@/src/lib/api-validation";
 import { cancelItemReminders } from "@/src/services/reminders";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
+import { pickRecyclable } from "@/src/utils/pick-recyclable";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
@@ -222,9 +223,14 @@ export async function POST(
       (r) => normalizeForCompare(r.text) === normalizeForCompare(text)
     );
 
-    if (exactMatch && parsedCreate.data.recycleId) {
-      // Explicit recycle request from UI autocomplete
-      const recycled = await recycleItem(parsedCreate.data.recycleId, auth.userId);
+    // Explicit recycle request from UI autocomplete. The client-supplied recycleId is
+    // never trusted directly — it must resolve against `recyclable`, the set the server
+    // itself just looked up for this list (list-scoped, completed-only). Otherwise a
+    // client could pass any uuid and recycleItem would resurrect/re-attribute an
+    // arbitrary row in someone else's list.
+    const toRecycle = exactMatch && pickRecyclable(recyclable, parsedCreate.data.recycleId);
+    if (toRecycle) {
+      const recycled = await recycleItem(toRecycle.id, auth.userId, listId);
       if (recycled) {
         results.push({ ...recycled, recycled: true });
         continue;
