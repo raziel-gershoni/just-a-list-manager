@@ -60,6 +60,7 @@ export async function completeRecurringItem(
     .from("items")
     .update({ completed: true, completed_at: new Date().toISOString() })
     .eq("id", itemId)
+    .eq("list_id", listId)
     .eq("completed", false)
     .is("deleted_at", null)
     .select("id");
@@ -108,6 +109,7 @@ export async function completeRecurringItem(
       .from("items")
       .update({ completed: false, completed_at: null })
       .eq("id", itemId)
+      .eq("list_id", listId)
       .eq("completed", true);
     return { status: "error" };
   }

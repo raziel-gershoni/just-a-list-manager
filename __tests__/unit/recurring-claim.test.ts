@@ -116,6 +116,12 @@ describe("completeRecurringItem claim", () => {
     expect(claim!.filters).toContain("eq:completed=false");
     // Deleting is final — a deleted item must not spawn a successor.
     expect(claim!.filters).toContain("is:deleted_at=null");
+    // Scoped to the caller's own list — mirrors the guard just added to
+    // recycleItem (src/services/item-recycler.ts) for the same class of bug:
+    // an id-only WHERE clause lets a cross-list itemId reach the write.
+    // Not exploitable today (both callers pre-validate itemId against
+    // listId before calling in), but the claim should not rely on that.
+    expect(claim!.filters).toContain("eq:list_id=list-1");
   });
 
   it("claims before doing anything else", async () => {
@@ -142,6 +148,9 @@ describe("completeRecurringItem claim", () => {
     expect(release).toBeDefined();
     expect(release!.filters).toContain("eq:id=item-1");
     expect(release!.filters).toContain("eq:completed=true");
+    // Same list-scoping requirement as the claim above — the release is a
+    // write by item id and should carry the same defence-in-depth guard.
+    expect(release!.filters).toContain("eq:list_id=list-1");
   });
 
   it("reports an error without inserting when the claim query fails", async () => {
