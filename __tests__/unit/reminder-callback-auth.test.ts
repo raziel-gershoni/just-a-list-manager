@@ -102,13 +102,67 @@ describe("handleCallbackQuery reminder_* branches require edit permission", () =
     ).toBeLessThan(writeIdx);
   });
 
-  it("the permission-failure response reuses reminder.notFound rather than a new string (deliberately indistinguishable from 'reminder does not exist')", () => {
-    for (const slice of [doneSlice, showSlice, applySlice]) {
-      // Every early-return path in these branches (missing reminder, missing
-      // sender, missing permission) must resolve through getMsg(..., "reminder.notFound").
-      expect(slice).toContain('"reminder.notFound"');
-      expect(slice).not.toMatch(/not allowed|permission denied|forbidden/i);
+  it("the permission-denial guard's OWN early return resolves through reminder.notFound (not merely present somewhere in the branch)", () => {
+    // Scoped to a tight window around each guard's own `if (!may...) { ... return; }`,
+    // not the whole slice — the whole slice trivially contains "reminder.notFound"
+    // via the earlier `if (!reminder)` row-missing branch above it, which would
+    // make this assertion pass even if the permission guard used a different
+    // (or no) message. Pin it to the guard itself.
+    const doneGuard = doneSlice.match(/if\s*\(!mayComplete\)[\s\S]{0,200}?return;/);
+    const showGuard = showSlice.match(/if\s*\(!maySnooze\)[\s\S]{0,200}?return;/);
+    const applyGuard = applySlice.match(/if\s*\(!maySnooze\)[\s\S]{0,200}?return;/);
+
+    for (const guard of [doneGuard, showGuard, applyGuard]) {
+      expect(guard).toBeTruthy();
+      expect(guard![0]).toContain('"reminder.notFound"');
+      expect(guard![0]).not.toMatch(/not allowed|permission denied|forbidden/i);
     }
+  });
+
+  // The tests above (verifyListPermission called with the right args, role
+  // checks present) all pass even if the `if (!mayComplete) { ...; return; }`
+  // / `if (!maySnooze) { ...; return; }` blocks are deleted outright, leaving
+  // only the `const mayComplete =` / `const maySnooze =` declarations — an
+  // unused, dead computation. That reopens the exact hole this file exists to
+  // close: the sender's role is computed but never enforced. Assert the
+  // guard's early return actually exists and actually precedes the write it
+  // guards.
+  it("reminder_done's mayComplete guard early-returns before either completion write", () => {
+    const guardMatch = doneSlice.match(/if\s*\(!mayComplete\)[\s\S]{0,200}?return;/);
+    expect(guardMatch).toBeTruthy();
+    const guardIdx = doneSlice.indexOf(guardMatch![0]);
+
+    const recurringWriteIdx = doneSlice.indexOf("completeRecurringItem(supabase");
+    const oneTimeWriteIdx = doneSlice.indexOf(".update({ completed: true");
+    expect(recurringWriteIdx).toBeGreaterThan(0);
+    expect(oneTimeWriteIdx).toBeGreaterThan(0);
+    expect(guardIdx).toBeLessThan(recurringWriteIdx);
+    expect(guardIdx).toBeLessThan(oneTimeWriteIdx);
+  });
+
+  it("the show-buttons branch's maySnooze guard early-returns before the reply markup is edited", () => {
+    const guardMatch = showSlice.match(/if\s*\(!maySnooze\)[\s\S]{0,200}?return;/);
+    expect(guardMatch).toBeTruthy();
+    const guardIdx = showSlice.indexOf(guardMatch![0]);
+
+    const writeIdx = showSlice.indexOf("editMessageReplyMarkup");
+    expect(writeIdx).toBeGreaterThan(0);
+    expect(guardIdx).toBeLessThan(writeIdx);
+  });
+
+  it("the apply-snooze branch's maySnooze guard early-returns before item_reminders is updated", () => {
+    const guardMatch = applySlice.match(/if\s*\(!maySnooze\)[\s\S]{0,200}?return;/);
+    expect(guardMatch).toBeTruthy();
+    const guardIdx = applySlice.indexOf(guardMatch![0]);
+
+    const writeIdx = applySlice.indexOf(".update({ remind_at: newRemindAt.toISOString()");
+    expect(writeIdx).toBeGreaterThan(0);
+    expect(guardIdx).toBeLessThan(writeIdx);
+  });
+
+  it("mayComplete cannot be satisfied by created_by — a future edit must not quietly let a viewer complete an item they merely created a reminder for", () => {
+    expect(doneSlice.indexOf("const mayComplete")).toBeGreaterThan(0);
+    expect(doneSlice).not.toMatch(/mayComplete[\s\S]{0,120}created_by/);
   });
 
   it("imports verifyListPermission from the shared api-auth module", () => {
