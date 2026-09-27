@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
-import { cancelItemReminders } from "@/src/services/reminders";
 
 export async function POST(
   request: NextRequest,
@@ -44,10 +43,15 @@ export async function POST(
     );
   }
 
-  // Cancel all reminders for cleared items
-  const clearedIds = (cleared || []).map((i) => i.id);
-  await cancelItemReminders(supabase, clearedIds);
-
+  // Deliberately does NOT cancel reminders on cleared items here. Completing an
+  // item never cancels its reminder (a completed item still shows the
+  // reminder's original time), so a completed item routinely carries a live
+  // reminder — and undo (useItemHandlers.ts) only ever PATCHes deleted_at back
+  // to null, never un-cancels anything. Cancelling here made undo lossy. It's
+  // safe to leave the reminder alone: the cron cancels a reminder whose item is
+  // soft-deleted once the reminder comes due (app/api/cron/reminders/route.ts),
+  // and the digest skips items with no live reminders, so nothing ever fires
+  // for a row that stays cleared.
   return NextResponse.json({
     cleared: (cleared || []).length,
     clearedIds: (cleared || []).map((i) => i.id),

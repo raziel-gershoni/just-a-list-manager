@@ -86,4 +86,18 @@ describe("POST /api/lists/[id]/items/clear-completed", () => {
   it("excludes recurring rows from the clear query", () => {
     expect(source).toContain('.eq("recurring", false)');
   });
+
+  // Completing an item deliberately never cancels its reminder (a completed item
+  // still shows the reminder's original time), so a completed item routinely
+  // carries a live reminder. This route used to cancel those reminders right
+  // after soft-deleting, but the undo path (useItemHandlers.ts) only ever
+  // PATCHes deleted_at back to null — nothing ever un-cancels — so undo silently
+  // destroyed the reminder. The cron already cancels a reminder whose item is
+  // soft-deleted when the reminder comes due (app/api/cron/reminders/route.ts),
+  // and the digest skips items with no live reminders, so nothing fires for a
+  // row that stays cleared. Cancelling here is therefore both unnecessary and
+  // lossy for undo — it must not come back.
+  it("does not cancel reminders when clearing completed items (cron owns that; doing it here made undo lossy)", () => {
+    expect(source).not.toContain("cancelItemReminders");
+  });
 });
