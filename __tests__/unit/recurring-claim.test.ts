@@ -90,6 +90,22 @@ describe("completeRecurringItem claim", () => {
     expect(calls.filter((c) => c.values.deleted_at !== undefined)).toHaveLength(0);
   });
 
+  it("excludes recurring rows from the prior-occurrence soft-delete", async () => {
+    // Regression: a completed reminder with text matching a parked recurring
+    // grocery staple (recurring && completed) must not soft-delete the staple.
+    // Its sibling, clear-completed/route.ts, carries the same
+    // eq("recurring", false) guard for the identical reason — see
+    // docs/superpowers/specs/2026-09-08-delete-is-final-design.md.
+    const { calls, client } = fakeSupabase([{ id: "item-1" }]);
+    await completeRecurringItem(client, PARAMS);
+
+    const softDelete = calls.find(
+      (c) => c.table === "items" && c.op === "update" && c.values.deleted_at !== undefined
+    );
+    expect(softDelete).toBeDefined();
+    expect(softDelete!.filters).toContain("eq:recurring=false");
+  });
+
   it("claims with a compare-and-swap on completed=false, not a blind update", async () => {
     const { calls, client } = fakeSupabase([{ id: "item-1" }]);
     await completeRecurringItem(client, PARAMS);

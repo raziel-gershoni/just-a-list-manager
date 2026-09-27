@@ -72,13 +72,20 @@ export async function completeRecurringItem(
     return { status: "already-completed" };
   }
 
-  // 2. Soft-delete previous completed occurrences (same text, same list, not the current item)
+  // 2. Soft-delete previous completed occurrences (same text, same list, not the current item).
+  //    Recurring rows are excluded on purpose: a completed, non-deleted recurring item is a
+  //    parked grocery staple (isParkedRecurringItem in src/utils/list-helpers.ts), and
+  //    delete-is-final vetoes respawn on deleted_at (src/utils/recurring-respawn.ts), so
+  //    soft-deleting it here would retire it permanently instead of leaving it parked. Its
+  //    sibling, clear-completed/route.ts, carries the identical eq("recurring", false) guard
+  //    for the same reason. See docs/superpowers/specs/2026-09-08-delete-is-final-design.md.
   await supabase
     .from("items")
     .update({ deleted_at: new Date().toISOString() })
     .eq("list_id", listId)
     .eq("text", text)
     .eq("completed", true)
+    .eq("recurring", false)
     .neq("id", itemId)
     .is("deleted_at", null);
 
