@@ -427,15 +427,22 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     }
 
     // Telegram callback_data is chosen by the client at the protocol level, so a
-    // modified client can send any reminder id. Verify the sender has edit rights
+    // modified client can send any reminder id. Verify the sender holds rights
     // on the reminder's list before completing the item — an unknown bot user
     // (no botUser.id) fails closed. The failure message is deliberately identical
     // to the "reminder not found" one above so a caller who lacks permission can't
     // tell "doesn't exist" apart from "exists but you can't touch it".
+    //
+    // Called at the "view" bar (not "edit"): a view-only collaborator can
+    // legitimately have created this reminder themselves (the create route
+    // only requires "view"), and Done writes to `items` — shared state — so
+    // completing it still requires owner/editor, not merely being allowed to
+    // view the list at all.
     const perm = botUser?.id
-      ? await verifyListPermission(botUser.id, reminder.list_id, "edit")
+      ? await verifyListPermission(botUser.id, reminder.list_id, "view")
       : { allowed: false as const, role: null };
-    if (!perm.allowed) {
+    const mayComplete = perm.allowed && (perm.role === "owner" || perm.role === "editor");
+    if (!mayComplete) {
       await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.notFound") });
       return;
     }
@@ -508,12 +515,13 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .single();
     const lang = botUser?.language || "en";
 
-    // Look up the reminder's list so we can gate this on edit permission. This
-    // branch is otherwise read-only, but a bare reminder id would still let an
-    // attacker probe whether a given id exists in any list at all.
+    // Look up the reminder's list (and creator) so we can gate this on
+    // permission. This branch is otherwise read-only, but a bare reminder id
+    // would still let an attacker probe whether a given id exists in any
+    // list at all.
     const { data: reminder } = await supabase
       .from("item_reminders")
-      .select("id, list_id")
+      .select("id, list_id, created_by")
       .eq("id", reminderId)
       .single();
 
@@ -522,11 +530,18 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       return;
     }
 
-    // Same indistinguishability rationale as reminder_done above.
+    // Same indistinguishability rationale as reminder_done above. Called at
+    // the "view" bar: this branch only ever touches this one reminder row
+    // (remind_at/sent_at, or just shows buttons), so — unlike Done — it's
+    // fine to allow it when the sender is either an editor/owner OR the
+    // reminder's own creator (a view-only collaborator's personal reminder).
     const perm = botUser?.id
-      ? await verifyListPermission(botUser.id, reminder.list_id, "edit")
+      ? await verifyListPermission(botUser.id, reminder.list_id, "view")
       : { allowed: false as const, role: null };
-    if (!perm.allowed) {
+    const maySnooze =
+      perm.allowed &&
+      (perm.role === "owner" || perm.role === "editor" || reminder.created_by === botUser?.id);
+    if (!maySnooze) {
       await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.notFound") });
       return;
     }
@@ -583,10 +598,17 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     }
 
     // Same indistinguishability rationale as the other reminder_* branches.
+    // Same "view" bar + creator-fallback rule as the show-buttons branch:
+    // this only writes item_reminders.remind_at/sent_at on this one row, so
+    // the reminder's own creator may snooze it even as a view-only
+    // collaborator.
     const perm = botUser?.id
-      ? await verifyListPermission(botUser.id, reminder.list_id, "edit")
+      ? await verifyListPermission(botUser.id, reminder.list_id, "view")
       : { allowed: false as const, role: null };
-    if (!perm.allowed) {
+    const maySnooze =
+      perm.allowed &&
+      (perm.role === "owner" || perm.role === "editor" || reminder.created_by === botUser?.id);
+    if (!maySnooze) {
       await bot.answerCallbackQuery(query.id, { text: getMsg(senderLang, "reminder.notFound") });
       return;
     }

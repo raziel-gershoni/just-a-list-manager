@@ -103,4 +103,49 @@ describe("handleCallbackQuery reminder_* branches require edit permission", () =
     expect(source).toContain('verifyListPermission');
     expect(source).toMatch(/import\s*\{[^}]*verifyListPermission[^}]*\}\s*from\s*["']@\/src\/lib\/api-auth["']/);
   });
+
+  // A view-only collaborator can legitimately create a personal reminder
+  // (the create route only requires "view"), but requiring "edit" on every
+  // reminder_* branch broke that: both of that viewer's own buttons answered
+  // "Reminder not found" on a reminder they created themselves. The fix calls
+  // verifyListPermission at the "view" bar in every branch and then decides
+  // per-branch from `role`: reminder_done writes to `items` (shared state),
+  // so it still requires owner/editor; the snooze branches only ever touch
+  // this one reminder row, so they also allow the reminder's own creator.
+  it("all three branches call verifyListPermission at the \"view\" bar", () => {
+    for (const slice of [doneSlice, showSlice, applySlice]) {
+      expect(slice).toMatch(/verifyListPermission\([^,]+,\s*reminder\.list_id,\s*"view"\)/);
+    }
+  });
+
+  it("reminder_done requires owner or editor role — created_by alone is not enough", () => {
+    expect(doneSlice).toMatch(/perm\.role\s*===\s*"owner"/);
+    expect(doneSlice).toMatch(/perm\.role\s*===\s*"editor"/);
+
+    // The gate guarding the writes must be the role-derived decision, not the
+    // raw perm.allowed (which a view-only collaborator also satisfies).
+    const recurringWriteIdx = doneSlice.indexOf("completeRecurringItem(supabase");
+    const oneTimeWriteIdx = doneSlice.indexOf(".update({ completed: true");
+    const roleCheckIdx = doneSlice.search(/perm\.role\s*===\s*"owner"/);
+    expect(roleCheckIdx).toBeGreaterThan(0);
+    expect(roleCheckIdx).toBeLessThan(recurringWriteIdx);
+    expect(roleCheckIdx).toBeLessThan(oneTimeWriteIdx);
+  });
+
+  it("both snooze branches (show + apply) also allow the reminder's own creator", () => {
+    for (const slice of [showSlice, applySlice]) {
+      expect(slice).toMatch(/perm\.role\s*===\s*"owner"/);
+      expect(slice).toMatch(/perm\.role\s*===\s*"editor"/);
+      expect(slice).toMatch(/reminder\.created_by\s*===\s*botUser\?\.id/);
+    }
+  });
+
+  it("the show-buttons branch selects created_by so it can apply the creator fallback", () => {
+    // Its reminder lookup used to select only "id, list_id" — without
+    // created_by in the row, the creator-fallback check has nothing to read.
+    const selectIdx = showSlice.indexOf('.from("item_reminders")');
+    expect(selectIdx).toBeGreaterThan(0);
+    const selectSlice = showSlice.slice(selectIdx, selectIdx + 200);
+    expect(selectSlice).toMatch(/\.select\([^)]*created_by[^)]*\)/);
+  });
 });
