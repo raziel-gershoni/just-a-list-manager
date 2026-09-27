@@ -5,7 +5,6 @@ import { createServerClient } from "@/src/lib/supabase";
 import { findRecyclableItems, recycleItem } from "@/src/services/item-recycler";
 import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
 import { parseBody } from "@/src/lib/api-validation";
-import { cancelItemReminders } from "@/src/services/reminders";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { pickRecyclable } from "@/src/utils/pick-recyclable";
 
@@ -417,8 +416,14 @@ export async function DELETE(
     return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
 
-  // Cancel all reminders for the deleted item
-  await cancelItemReminders(supabase, itemId);
-
+  // Deliberately does NOT cancel reminders on the deleted item. Both undo
+  // paths that restore from this soft-delete (useItemHandlers.ts single-delete
+  // undo and remove-duplicates undo) only ever PATCH deleted_at back to null,
+  // never un-cancel anything — so cancelling here made undo lossy (identical
+  // bug to the one 9551051 removed from clear-completed). It's safe to leave
+  // the reminder alone: the cron cancels a reminder whose item is soft-deleted
+  // once the reminder comes due (app/api/cron/reminders/route.ts), and the
+  // digest skips items with no live reminders, so nothing ever fires for a row
+  // that stays deleted.
   return NextResponse.json({ success: true });
 }
