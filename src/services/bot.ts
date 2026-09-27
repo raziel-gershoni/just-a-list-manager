@@ -6,6 +6,7 @@
 
 import TelegramBot from "node-telegram-bot-api";
 import { createServerClient } from "@/src/lib/supabase";
+import { verifyListPermission } from "@/src/lib/api-auth";
 import { completeRecurringItem } from "@/src/services/recurring";
 import { serverEnv } from "@/src/lib/env";
 import enMessages from "@/messages/en.json";
@@ -405,10 +406,10 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
   } else if (data.startsWith("reminder_done:")) {
     const reminderId = data.replace("reminder_done:", "");
 
-    // Get user language
+    // Get user language and internal id (id is needed for the permission check below)
     const { data: botUser } = await supabase
       .from("users")
-      .select("language")
+      .select("id, language")
       .eq("telegram_id", query.from.id)
       .single();
     const lang = botUser?.language || "en";
@@ -421,6 +422,20 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       .single();
 
     if (!reminder) {
+      await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.notFound") });
+      return;
+    }
+
+    // Telegram callback_data is chosen by the client at the protocol level, so a
+    // modified client can send any reminder id. Verify the sender has edit rights
+    // on the reminder's list before completing the item — an unknown bot user
+    // (no botUser.id) fails closed. The failure message is deliberately identical
+    // to the "reminder not found" one above so a caller who lacks permission can't
+    // tell "doesn't exist" apart from "exists but you can't touch it".
+    const perm = botUser?.id
+      ? await verifyListPermission(botUser.id, reminder.list_id, "edit")
+      : { allowed: false as const, role: null };
+    if (!perm.allowed) {
       await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.notFound") });
       return;
     }
@@ -484,13 +499,36 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     // Show snooze time buttons
     const reminderId = data.replace("reminder_snooze:", "");
 
-    // Get user language
+    // Get user language and internal id (id is needed for the permission check below)
     const { data: botUser } = await supabase
       .from("users")
-      .select("language")
+      .select("id, language")
       .eq("telegram_id", query.from.id)
       .single();
     const lang = botUser?.language || "en";
+
+    // Look up the reminder's list so we can gate this on edit permission. This
+    // branch is otherwise read-only, but a bare reminder id would still let an
+    // attacker probe whether a given id exists in any list at all.
+    const { data: reminder } = await supabase
+      .from("item_reminders")
+      .select("id, list_id")
+      .eq("id", reminderId)
+      .single();
+
+    if (!reminder) {
+      await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.notFound") });
+      return;
+    }
+
+    // Same indistinguishability rationale as reminder_done above.
+    const perm = botUser?.id
+      ? await verifyListPermission(botUser.id, reminder.list_id, "edit")
+      : { allowed: false as const, role: null };
+    if (!perm.allowed) {
+      await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.notFound") });
+      return;
+    }
 
     await bot.answerCallbackQuery(query.id);
 
@@ -521,15 +559,34 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     const reminderId = parts[1];
     const duration = parts[2];
 
-    // Look up the reminder, item text, and user timezone
+    // Get the sender's internal id + language (needed for the permission check
+    // below). Distinct from the reminder-creator lookup further down, which is
+    // used only for timezone/lang when formatting the confirmation message.
+    const { data: botUser } = await supabase
+      .from("users")
+      .select("id, language")
+      .eq("telegram_id", query.from.id)
+      .single();
+    const senderLang = botUser?.language || "en";
+
+    // Look up the reminder, item text, list (for the permission check), and user timezone
     const { data: reminder } = await supabase
       .from("item_reminders")
-      .select("id, remind_at, created_by, items!inner(text)")
+      .select("id, remind_at, created_by, list_id, items!inner(text)")
       .eq("id", reminderId)
       .single();
 
     if (!reminder) {
-      await bot.answerCallbackQuery(query.id, { text: "Reminder not found." });
+      await bot.answerCallbackQuery(query.id, { text: getMsg(senderLang, "reminder.notFound") });
+      return;
+    }
+
+    // Same indistinguishability rationale as the other reminder_* branches.
+    const perm = botUser?.id
+      ? await verifyListPermission(botUser.id, reminder.list_id, "edit")
+      : { allowed: false as const, role: null };
+    if (!perm.allowed) {
+      await bot.answerCallbackQuery(query.id, { text: getMsg(senderLang, "reminder.notFound") });
       return;
     }
 
