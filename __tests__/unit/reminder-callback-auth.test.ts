@@ -93,7 +93,7 @@ describe("handleCallbackQuery reminder_* branches require edit permission", () =
     // Pin the argument (see the identical note on the reminder_done test above).
     expect(applySlice).toMatch(/verifyListPermission\([^,]+,\s*reminder\.list_id,/);
 
-    const writeIdx = applySlice.indexOf(".update({ remind_at: newRemindAt.toISOString()");
+    const writeIdx = applySlice.indexOf("remind_at: newRemindAt.toISOString()");
     expect(writeIdx).toBeGreaterThan(0);
 
     expect(
@@ -155,7 +155,7 @@ describe("handleCallbackQuery reminder_* branches require edit permission", () =
     expect(guardMatch).toBeTruthy();
     const guardIdx = applySlice.indexOf(guardMatch![0]);
 
-    const writeIdx = applySlice.indexOf(".update({ remind_at: newRemindAt.toISOString()");
+    const writeIdx = applySlice.indexOf("remind_at: newRemindAt.toISOString()");
     expect(writeIdx).toBeGreaterThan(0);
     expect(guardIdx).toBeLessThan(writeIdx);
   });

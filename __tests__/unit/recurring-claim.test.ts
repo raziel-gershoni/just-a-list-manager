@@ -3,14 +3,22 @@ import { completeRecurringItem } from "@/src/services/recurring";
 
 type Recorded = {
   table: string;
-  op: "update" | "insert";
+  op: "update" | "insert" | "select";
   values: Record<string, unknown>;
   filters: string[];
 };
 
 // Minimal stand-in for the PostgREST builder chain completeRecurringItem uses:
 // from(t).update(v)/.insert(v) then .eq/.neq/.is/.select/.single, awaited.
-function fakeSupabase(claimRows: unknown[], opts: { itemsInsertFails?: boolean } = {}) {
+function fakeSupabase(
+  claimRows: unknown[],
+  opts: {
+    itemsInsertFails?: boolean;
+    remindersInsertFails?: boolean;
+    // Row the post-claim item_reminders read resolves to (null = none found).
+    liveReminder?: { remind_at: string; anchor_at: string | null } | null;
+  } = {}
+) {
   const calls: Recorded[] = [];
 
   const make = (table: string, op: Recorded["op"], values: Record<string, unknown>) => {
@@ -28,6 +36,12 @@ function fakeSupabase(claimRows: unknown[], opts: { itemsInsertFails?: boolean }
         }
         return { data: { id: "new-item-1" }, error: null };
       }
+      if (table === "item_reminders" && op === "insert" && opts.remindersInsertFails) {
+        return { data: null, error: { message: "reminder boom" } };
+      }
+      if (table === "item_reminders" && op === "select") {
+        return { data: opts.liveReminder ?? null, error: null };
+      }
       return { data: null, error: null };
     };
 
@@ -37,6 +51,9 @@ function fakeSupabase(claimRows: unknown[], opts: { itemsInsertFails?: boolean }
       is: (c: string, v: unknown) => { rec.filters.push(`is:${c}=${v}`); return chain; },
       select: () => chain,
       single: () => chain,
+      order: (c: string, o: { ascending: boolean }) => { rec.filters.push(`order:${c}:${o.ascending}`); return chain; },
+      limit: (n: number) => { rec.filters.push(`limit:${n}`); return chain; },
+      maybeSingle: () => chain,
       then: (onOk: (r: unknown) => unknown) => Promise.resolve(result()).then(onOk),
     };
     return chain;
@@ -46,6 +63,7 @@ function fakeSupabase(claimRows: unknown[], opts: { itemsInsertFails?: boolean }
     from: (table: string) => ({
       update: (values: Record<string, unknown>) => make(table, "update", values),
       insert: (values: Record<string, unknown>) => make(table, "insert", values),
+      select: (cols: string) => make(table, "select", { cols }),
     }),
   };
 
@@ -173,5 +191,96 @@ describe("completeRecurringItem claim", () => {
     };
     const out = await completeRecurringItem(broken, PARAMS);
     expect(out.status).toBe("error");
+  });
+
+  it("performs no reminder read when it loses the claim", async () => {
+    const { calls, client } = fakeSupabase([], {
+      liveReminder: { remind_at: "2099-01-01T09:30:00.000Z", anchor_at: null },
+    });
+    await completeRecurringItem(client, PARAMS);
+    expect(calls.filter((c) => c.op === "select")).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+  });
+});
+
+// Snooze moves remind_at off the series slot and records the slot in anchor_at.
+// Done must compute the successor from the anchor, read server-side, because
+// the caller's remindAt is the snoozed time on the web path.
+describe("completeRecurringItem series anchor", () => {
+  const DAILY = { ...PARAMS, recurrence: "daily", remindAt: "2099-01-01T09:45:00.000Z" };
+  const reminderInsert = (calls: Recorded[]) =>
+    calls.find((c) => c.table === "item_reminders" && c.op === "insert")!;
+
+  it("computes the next occurrence from anchor_at, not the snoozed remind_at", async () => {
+    const { calls, client } = fakeSupabase([{ id: "item-1" }], {
+      liveReminder: { anchor_at: "2099-01-01T09:00:00.000Z", remind_at: "2099-01-01T09:30:00.000Z" },
+    });
+    const out = await completeRecurringItem(client, DAILY);
+    expect(reminderInsert(calls).values.remind_at).toBe("2099-01-02T09:00:00.000Z");
+    if (out.status === "created") expect(out.nextRemindAt).toBe("2099-01-02T09:00:00.000Z");
+    // The successor sits exactly on the slot, so it carries no anchor of its own.
+    expect(reminderInsert(calls).values).not.toHaveProperty("anchor_at");
+  });
+
+  it("falls back to the live remind_at when anchor_at is null", async () => {
+    const { calls, client } = fakeSupabase([{ id: "item-1" }], {
+      liveReminder: { anchor_at: null, remind_at: "2099-01-01T09:30:00.000Z" },
+    });
+    await completeRecurringItem(client, DAILY);
+    expect(reminderInsert(calls).values.remind_at).toBe("2099-01-02T09:30:00.000Z");
+  });
+
+  it("falls back to params.remindAt when no live reminder is found", async () => {
+    const { calls, client } = fakeSupabase([{ id: "item-1" }], { liveReminder: null });
+    await completeRecurringItem(client, DAILY);
+    expect(reminderInsert(calls).values.remind_at).toBe("2099-01-02T09:45:00.000Z");
+  });
+
+  it("reads the live reminder after the claim, scoped to item, list, creator and not cancelled", async () => {
+    const { calls, client } = fakeSupabase([{ id: "item-1" }], { liveReminder: null });
+    await completeRecurringItem(client, DAILY);
+    const read = calls.find((c) => c.table === "item_reminders" && c.op === "select");
+    expect(read).toBeDefined();
+    expect(calls.indexOf(read!)).toBeGreaterThan(0);
+    expect(read!.filters).toContain("eq:item_id=item-1");
+    expect(read!.filters).toContain("eq:list_id=list-1");
+    expect(read!.filters).toContain("eq:created_by=user-1");
+    expect(read!.filters).toContain("is:cancelled_at=null");
+  });
+});
+
+describe("completeRecurringItem reminder-insert failure", () => {
+  it("soft-deletes the successor, releases the claim and reports an error", async () => {
+    // Recurrence lives on the reminder row: a successor with no reminder never
+    // fires and Done on it takes the non-recurring path, so the series would end
+    // silently. Compensate so the retry wins the CAS and mints a clean pair.
+    const { calls, client } = fakeSupabase([{ id: "item-1" }], { remindersInsertFails: true });
+    const out = await completeRecurringItem(client, PARAMS);
+    expect(out.status).toBe("error");
+
+    const undo = calls.find(
+      (c) => c.table === "items" && c.op === "update" && c.values.deleted_at !== undefined &&
+        c.filters.includes("eq:id=new-item-1")
+    );
+    expect(undo).toBeDefined();
+    expect(undo!.filters).toContain("eq:list_id=list-1");
+
+    const release = calls.find(
+      (c) => c.table === "items" && c.op === "update" && c.values.completed === false
+    );
+    expect(release).toBeDefined();
+    expect(release!.filters).toContain("eq:id=item-1");
+    expect(release!.filters).toContain("eq:completed=true");
+    expect(release!.filters).toContain("eq:list_id=list-1");
+    // Successor is removed before the claim is released, so a retry cannot race
+    // a visible half-created occurrence.
+    expect(calls.indexOf(undo!)).toBeLessThan(calls.indexOf(release!));
+  });
+
+  it("does not compensate when the reminder insert succeeds", async () => {
+    const { calls, client } = fakeSupabase([{ id: "item-1" }]);
+    await completeRecurringItem(client, PARAMS);
+    expect(calls.filter((c) => c.values.completed === false)).toHaveLength(0);
+    expect(calls.filter((c) => c.filters.includes("eq:id=new-item-1"))).toHaveLength(0);
   });
 });

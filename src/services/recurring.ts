@@ -35,6 +35,16 @@ export async function completeRecurringItem(
 ): Promise<CompleteRecurringOutcome> {
   const { itemId, listId, userId, text, remindAt, recurrence, isShared } = params;
 
+  // Undo the claim so a retry can win the CAS again. Used by both failure paths
+  // below; declared before the claim but only called after it has succeeded.
+  const releaseClaim = () =>
+    supabase
+      .from("items")
+      .update({ completed: false, completed_at: null })
+      .eq("id", itemId)
+      .eq("list_id", listId)
+      .eq("completed", true);
+
   // 1. Claim the occurrence. This single-statement compare-and-swap IS the
   //    idempotency guard: under READ COMMITTED a concurrent second UPDATE blocks
   //    on the row lock, then re-evaluates `completed = false` against the committed
@@ -90,8 +100,28 @@ export async function completeRecurringItem(
     .neq("id", itemId)
     .is("deleted_at", null);
 
-  // 3. Calculate next occurrence
-  const nextRemindAt = getNextOccurrence(new Date(remindAt), recurrence);
+  // 3. Calculate next occurrence from the series anchor. Snooze moves remind_at
+  //    off the series slot and records the slot in anchor_at; computing from the
+  //    snoozed time would shift every future occurrence. The read is server-side
+  //    because the caller's remindAt is unreliable: the web client sends its
+  //    my_remind_at, which is the snoozed time after a Telegram snooze, and
+  //    offline replay goes through the same route. It comes after the claim so
+  //    a loser reads nothing. (item_id, created_by) identifies the reminder: the
+  //    create route cancels any live one for that pair before inserting, so
+  //    there is at most one. params.remindAt stays as the last-resort fallback.
+  const { data: live } = await supabase
+    .from("item_reminders")
+    .select("remind_at, anchor_at")
+    .eq("item_id", itemId)
+    .eq("list_id", listId)
+    .eq("created_by", userId)
+    .is("cancelled_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const base = live?.anchor_at ?? live?.remind_at ?? remindAt;
+  const nextRemindAt = getNextOccurrence(new Date(base), recurrence);
 
   // 4. Create new item with same text
   const { data: newItem, error: createError } = await supabase
@@ -105,20 +135,18 @@ export async function completeRecurringItem(
     // Release the claim so a retry can heal this. Without it the retry's CAS
     // loses, the route answers 200 already-completed, the queue dequeues it as
     // a success, and the series ends silently with every layer reporting OK.
-    await supabase
-      .from("items")
-      .update({ completed: false, completed_at: null })
-      .eq("id", itemId)
-      .eq("list_id", listId)
-      .eq("completed", true);
+    await releaseClaim();
     return { status: "error" };
   }
 
-  // 5. Create reminder on the new item. Failure here is logged, not surfaced as
-  // an error: the item is already completed and a successor already exists, so
-  // returning "error" would re-create the exact trap this function just closed
-  // (a retry's CAS would lose and silently report success). The cost of this
-  // path is an occurrence that never fires, not a dead series.
+  // 5. Create reminder on the new item. Recurrence lives on the reminder row, so
+  // a successor without one never fires, and Done on it takes the non-recurring
+  // path (isRecurringDone needs my_reminder_recurrence, the bot needs
+  // reminder.recurrence): no further occurrence is ever created and the series
+  // ends silently. So a failure here must not be swallowed. Compensate like the
+  // item-insert failure above: soft-delete the successor, release the claim, and
+  // report an error. The route answers 500, the client keeps the mutation for
+  // retry, and the retry wins the CAS and creates a clean successor + reminder.
   const { error: reminderError } = await supabase.from("item_reminders").insert({
     item_id: newItem.id,
     list_id: listId,
@@ -129,6 +157,13 @@ export async function completeRecurringItem(
   });
   if (reminderError) {
     console.error("[Recurring] Failed to create reminder for new item:", newItem.id, reminderError);
+    await supabase
+      .from("items")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", newItem.id)
+      .eq("list_id", listId);
+    await releaseClaim();
+    return { status: "error" };
   }
 
   return {
