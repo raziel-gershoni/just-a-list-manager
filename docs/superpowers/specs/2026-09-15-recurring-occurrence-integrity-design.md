@@ -160,8 +160,19 @@ How it works:
   the client skips its optimistic insert in that case (the winner's row arrives via Realtime).
 - In-flight tracking in `MutationQueue` + `useMutationQueue`.
 - Snooze keeps `recurrence`.
+- `item_reminders.anchor_at` (migration 026): snooze records the series slot, and Done
+  computes the next occurrence from it.
+- Reminder-insert compensation: see below.
 
 **Out (needs its own decision):**
+- The Telegram Done path (`src/services/bot.ts` ~:486-515) ignores
+  `completeRecurringItem`'s `status: "error"`. It still answers "Done" and strips the
+  buttons, so the compensation's retry premise holds only on the web path. The fix is to
+  answer an error and keep the keyboard so a re-tap retries.
+- A collaborator ticking a **shared** recurring reminder in the web app takes a plain PATCH.
+  The reminders GET is scoped to `created_by = auth.userId`, so a non-creator never has
+  `my_reminder_recurrence`. No successor is created, and the shared series ends for
+  everyone. The same collaborator's Telegram Done works.
 - ~~Preserving the series anchor across a snooze~~ — done, see `anchor_at` (migration 026) above.
 - Cancelling or disarming stale Telegram reminder buttons. The CAS makes a stale tap
   harmless *while the claim holds* — but the claim's key (`items.completed`) is a mutable
@@ -174,6 +185,21 @@ How it works:
 - Cleaning up the one existing duplicate row in production (`26240c02`). The user can delete
   it in-app; deletion is final as of `2026-09-08`.
 
-## No migration
+## Migration
 
-Nothing schema-side changes. The CAS uses the existing `completed` column.
+The CAS itself uses the existing `completed` column and needs no schema change. This spec's
+later work added migration 026 (`item_reminders.anchor_at`, nullable, no backfill).
+
+**Rows snoozed before 026 runs.** Their `anchor_at` is NULL, so they drift once. No backfill
+is possible: the original slot is not recoverable, because snooze offsets are rounded to 5
+minutes and "tomorrow" leaves no trace. Series that already drifted stay drifted until the
+user resets the time.
+
+## Reminder-insert compensation
+
+Recurrence lives on the reminder row, so a successor whose reminder insert fails never fires,
+and Done on it takes the non-recurring path: the series would end silently. When the insert
+fails, `completeRecurringItem` soft-deletes the just-created successor, releases the claim,
+and returns `status: "error"`. The route answers 500, the client keeps the mutation, and the
+retry wins the CAS and creates a clean successor plus reminder. If the soft-delete itself
+fails it is logged, and a reminder-less duplicate may remain visible.
