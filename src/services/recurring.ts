@@ -106,10 +106,13 @@ export async function completeRecurringItem(
   //    because the caller's remindAt is unreliable: the web client sends its
   //    my_remind_at, which is the snoozed time after a Telegram snooze, and
   //    offline replay goes through the same route. It comes after the claim so
-  //    a loser reads nothing. (item_id, created_by) identifies the reminder: the
-  //    create route cancels any live one for that pair before inserting, so
-  //    there is at most one. params.remindAt stays as the last-resort fallback.
-  const { data: live } = await supabase
+  //    a loser reads nothing. (item_id, created_by) identifies the reminder:
+  //    normally there is one live row, but the voice recycle path cancels only
+  //    unsent rows before inserting, so a sent row can stay live beside the new
+  //    one. The newest non-cancelled row is therefore chosen deliberately, and
+  //    .limit(1) is what keeps .maybeSingle() from erroring on 2+ rows.
+  //    params.remindAt stays as the last-resort fallback.
+  const { data: live, error: liveError } = await supabase
     .from("item_reminders")
     .select("remind_at, anchor_at")
     .eq("item_id", itemId)
@@ -119,6 +122,16 @@ export async function completeRecurringItem(
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (liveError) {
+    // Keep the fallback: failing closed would tell a Telegram user "Done" while
+    // the item stalls. But the caller's remindAt may be a snoozed time.
+    console.error(
+      "[Recurring] Failed to read live reminder for item",
+      itemId,
+      "- falling back to caller remindAt, the series may drift for this occurrence:",
+      liveError
+    );
+  }
 
   const base = live?.anchor_at ?? live?.remind_at ?? remindAt;
   const nextRemindAt = getNextOccurrence(new Date(base), recurrence);
@@ -157,11 +170,19 @@ export async function completeRecurringItem(
   });
   if (reminderError) {
     console.error("[Recurring] Failed to create reminder for new item:", newItem.id, reminderError);
-    await supabase
+    const { error: undoError } = await supabase
       .from("items")
       .update({ deleted_at: new Date().toISOString() })
       .eq("id", newItem.id)
       .eq("list_id", listId);
+    if (undoError) {
+      console.error(
+        "[Recurring] Failed to soft-delete successor",
+        newItem.id,
+        "- a reminder-less duplicate may remain visible:",
+        undoError
+      );
+    }
     await releaseClaim();
     return { status: "error" };
   }

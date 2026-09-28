@@ -246,6 +246,10 @@ describe("completeRecurringItem series anchor", () => {
     expect(read!.filters).toContain("eq:list_id=list-1");
     expect(read!.filters).toContain("eq:created_by=user-1");
     expect(read!.filters).toContain("is:cancelled_at=null");
+    // Newest live row, capped at 1 so maybeSingle() cannot error when a sent
+    // row sits beside a recycled one (voice recycle cancels only unsent rows).
+    expect(read!.filters).toContain("order:created_at:false");
+    expect(read!.filters).toContain("limit:1");
   });
 });
 
