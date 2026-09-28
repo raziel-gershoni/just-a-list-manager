@@ -131,15 +131,25 @@ this invariant must be revisited.
    `flushQueue`.
 3. **Stop clearing `recurrence` on snooze**, and correct the false comment.
 
-## Accepted consequence of (3): snooze shifts the series
+## Resolved consequence of (3): snooze no longer shifts the series
 
-The next occurrence is computed from the reminder's `remind_at` (`recurring.ts:50`), which
-after a snooze is the snoozed time. Snoozing a 09:00 daily reminder by 30 minutes and then
-tapping Done anchors the series at 09:30. Repeated snoozing compounds the drift.
+Originally the next occurrence was computed from the reminder's `remind_at`, which after a
+snooze is the snoozed time: snoozing a 09:00 daily reminder by 30 minutes and tapping Done
+anchored the series at 09:30, and repeated snoozing compounded the drift. This was first
+accepted as strictly better than a series that dies. It is now fixed by `anchor_at`
+(migration 026).
 
-Accepted deliberately: a series that drifts is strictly better than one that dies, and the
-user can reset the time. Preserving the original anchor needs a new column to carry it, which
-is a larger change — recorded below as follow-up.
+How it works:
+
+- Snooze is the only in-place writer of `item_reminders.remind_at`. Before moving
+  `remind_at` it records the series slot in `anchor_at` (`anchor_at ?? remind_at`, so the
+  original survives repeated snoozes).
+- `completeRecurringItem` reads the item's live reminder server-side, after the claim
+  succeeds, and computes the next occurrence from `anchor_at ?? remind_at`, falling back to
+  the caller's `remindAt`. It cannot trust the caller: the web client sends the snoozed
+  time. The successor's reminder is inserted on the slot exactly, so its `anchor_at` is NULL.
+- A deliberate time change in the app inserts a fresh reminder row (and cancels the old
+  one), so it carries no anchor and its time becomes the new anchor.
 
 ## Scope
 
@@ -152,7 +162,7 @@ is a larger change — recorded below as follow-up.
 - Snooze keeps `recurrence`.
 
 **Out (needs its own decision):**
-- Preserving the series anchor across a snooze (needs a `series_anchor_at` column).
+- ~~Preserving the series anchor across a snooze~~ — done, see `anchor_at` (migration 026) above.
 - Cancelling or disarming stale Telegram reminder buttons. The CAS makes a stale tap
   harmless *while the claim holds* — but the claim's key (`items.completed`) is a mutable
   bit, so a manual un-tick, `recycleItem`, or the 4-hour recurring respawn re-arms it, and a

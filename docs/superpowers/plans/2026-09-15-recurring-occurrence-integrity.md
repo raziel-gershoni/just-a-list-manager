@@ -20,7 +20,7 @@
 - Migrations are append-only; **this plan adds none**.
 - Do not connect to a database. `.env.local` `DATABASE_URL` points at production. Do not read secrets.
 - `scripts/diagnose-reminder-dupes.mjs` is an untracked read-only diagnostic. Leave it alone; do not run it.
-- Do not change `getNextOccurrence` — the series-drift consequence is accepted in the spec.
+- Do not change `getNextOccurrence`. (Series drift across a snooze was accepted here and later fixed by `anchor_at`, migration 026; see the spec.)
 
 ---
 
@@ -610,7 +610,7 @@ with:
     //
     // The duplicate chains that removal was meant to stop came from
     // completeRecurringItem running twice; its compare-and-swap claim now prevents
-    // that at the source. Note the series re-anchors to the snoozed time.
+    // that at the source. (Later superseded: the series now stays on its slot via anchor_at.)
     await supabase
       .from("item_reminders")
       .update({ remind_at: newRemindAt.toISOString(), sent_at: null })
@@ -659,7 +659,7 @@ Expected: empty.
 
 1. In a reminders list, set a **daily** recurring reminder. When it fires in Telegram, tap **Done**. Confirm exactly ONE new occurrence appears, dated one day later.
 2. Tap **Done** again on that same (now stale) Telegram message. Confirm NO second occurrence appears.
-3. Let a recurring reminder fire, tap **Snooze 30m**, then tap **Done** on the snoozed message. Confirm the next occurrence IS created (this is the regression fixed by Task 4), and note its time is anchored to the snoozed time.
+3. Let a recurring reminder fire, tap **Snooze 30m**, then tap **Done** on the snoozed message. Confirm the next occurrence IS created (this is the regression fixed by Task 4), and confirm its time is on the ORIGINAL slot, not shifted by the snooze (fixed later by `anchor_at`, migration 026; originally this plan accepted the drift).
 4. Complete a recurring item in the web app while the phone backgrounds the Mini App mid-tap. Confirm only one occurrence results.
 
 ---
@@ -668,7 +668,7 @@ Expected: empty.
 
 Recorded in the spec's Scope "Out" section; each needs its own decision:
 
-1. **Series drift across a snooze.** The next occurrence is computed from the snoozed `remind_at`, so snoozing re-anchors the series. Accepted deliberately in the spec; preserving the original anchor needs a `series_anchor_at` column.
+1. **Series drift across a snooze.** RESOLVED after this plan: snooze records the slot in `item_reminders.anchor_at` (migration 026) and Done computes from it. Originally accepted as drift in the spec.
 2. **Stale Telegram buttons are harmless but still present.** The CAS makes a repeat tap a no-op, but the message still shows a ✅ that now does nothing visible. Consider editing the message's markup when an occurrence is completed elsewhere.
 3. **`reminder_done` has no membership check** (`src/services/bot.ts:405`) — unlike the approve/decline branch at `:337-343`. Any Telegram user who knows a reminder id can act on it.
 4. **The existing duplicate row in production** (`26240c02`, text `לתזכר לקוחות לגבי לחם`) is not cleaned up by this change. Delete it in-app; deletion is final as of `2026-09-08`.
