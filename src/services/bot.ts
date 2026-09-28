@@ -606,7 +606,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     // list's item text into the snooze confirmation.
     const { data: reminder } = await supabase
       .from("item_reminders")
-      .select("id, remind_at, created_by, list_id, items!inner(text, list_id)")
+      .select("id, remind_at, anchor_at, created_by, list_id, items!inner(text, list_id)")
       .eq("id", reminderId)
       .single();
 
@@ -674,11 +674,17 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     //
     // Keeping it is safe as long as the cron does not insert follow-on reminders
     // (app/api/cron/reminders/route.ts stamps sent_at/cancelled_at only). If that
-    // ever changes, this branch must be revisited. Note the series re-anchors to
-    // the snoozed time.
+    // ever changes, this branch must be revisited. The series stays on its
+    // original slot via anchor_at (migration 026), so a snooze does not shift it.
     await supabase
       .from("item_reminders")
-      .update({ remind_at: newRemindAt.toISOString(), sent_at: null })
+      .update({
+        remind_at: newRemindAt.toISOString(),
+        sent_at: null,
+        // Remember the series slot before moving off it. `??` keeps the ORIGINAL
+        // across repeated snoozes instead of overwriting it with an already-snoozed time.
+        anchor_at: reminder.anchor_at ?? reminder.remind_at,
+      })
       .eq("id", reminderId);
 
     // Get user timezone and language for display

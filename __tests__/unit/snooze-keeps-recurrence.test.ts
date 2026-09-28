@@ -45,3 +45,28 @@ describe("reminder snooze", () => {
     expect(snoozeUpdate).not.toContain("inline_keyboard");
   });
 });
+
+// Snooze overwrites remind_at in place, and Done computes the next occurrence
+// from it, so without a recorded anchor one 30m snooze shifts every future
+// occurrence. anchor_at remembers the original series slot.
+describe("reminder snooze series anchor", () => {
+  const source = readFileSync(resolve(process.cwd(), "src/services/bot.ts"), "utf8");
+  const apply = source.slice(
+    source.indexOf('data.match(/^reminder_snooze:[^:]+:(30m'),
+    source.indexOf("// Get user timezone and language for display")
+  );
+
+  it("selects anchor_at on the reminder it snoozes", () => {
+    expect(apply).toMatch(/\.select\("[^"]*\banchor_at\b[^"]*"\)/);
+  });
+
+  it("records the series slot, keeping the original across repeated snoozes", () => {
+    expect(apply).toContain("anchor_at: reminder.anchor_at ?? reminder.remind_at");
+  });
+
+  it("never prefers the (possibly already snoozed) remind_at over an existing anchor", () => {
+    expect(apply).not.toContain("reminder.remind_at ?? reminder.anchor_at");
+    expect(apply).not.toMatch(/anchor_at:\s*reminder\.remind_at\s*[,}\n]/);
+    expect(apply).not.toMatch(/anchor_at:\s*reminder\.anchor_at\s*[,}\n]/);
+  });
+});
