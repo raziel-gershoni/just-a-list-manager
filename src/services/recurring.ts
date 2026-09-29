@@ -219,7 +219,10 @@ export async function completeItemRespectingRecurrence(
 
   // 1. Newest live recurring reminder, any creator. First, because most
   //    completions (e.g. grocery ticks) have none: one extra query.
-  const { data: rec } = await supabase
+  // Every read fails CLOSED: an error is not "no recurrence". Treating it as
+  // not-recurring would let the plain update complete the item, answer 200, and
+  // end the series silently. "No row" (data null, error null) stays not-recurring.
+  const { data: rec, error: recError } = await supabase
     .from("item_reminders")
     .select("created_by, remind_at, recurrence, is_shared")
     .eq("item_id", itemId)
@@ -229,26 +232,38 @@ export async function completeItemRespectingRecurrence(
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (recError) {
+    console.error("[Recurring] Failed to read recurring reminder for", itemId, recError);
+    return { status: "error" };
+  }
   if (!rec) return { status: "not-recurring" };
 
   // 2. Only reminders lists run the recurring flow (mirrors the client's
   //    listType === "reminders" gate). Grocery lists have their own
   //    recurring-staple mechanism (items.recurring).
-  const { data: list } = await supabase
+  const { data: list, error: listError } = await supabase
     .from("lists")
     .select("type")
     .eq("id", listId)
     .maybeSingle();
+  if (listError) {
+    console.error("[Recurring] Failed to read list type for", listId, listError);
+    return { status: "error" };
+  }
   if (list?.type !== "reminders") return { status: "not-recurring" };
 
   // 3. Item text, list-scoped and live. Missing: let the plain path 404.
-  const { data: item } = await supabase
+  const { data: item, error: itemError } = await supabase
     .from("items")
     .select("text")
     .eq("id", itemId)
     .eq("list_id", listId)
     .is("deleted_at", null)
     .maybeSingle();
+  if (itemError) {
+    console.error("[Recurring] Failed to read item text for", itemId, itemError);
+    return { status: "error" };
+  }
   if (!item) return { status: "not-recurring" };
 
   // 4. Delegate as the reminder's creator.
@@ -261,4 +276,16 @@ export async function completeItemRespectingRecurrence(
     recurrence: rec.recurrence,
     isShared: rec.is_shared,
   });
+}
+
+/**
+ * True when a PATCH body is a bare "mark completed": completed === true and no
+ * other defined key. Only then may the route hand off to the recurring flow,
+ * because that flow would drop any accompanying edit (text, position, ...).
+ */
+export function isPureCompletion(updates: Record<string, unknown>): boolean {
+  return (
+    updates.completed === true &&
+    Object.entries(updates).every(([k, v]) => k === "completed" || v === undefined)
+  );
 }

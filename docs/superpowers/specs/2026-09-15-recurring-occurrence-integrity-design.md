@@ -165,14 +165,23 @@ How it works:
 - Reminder-insert compensation: see below.
 
 **Out (needs its own decision):**
-- The Telegram Done path (`src/services/bot.ts` ~:486-515) ignores
-  `completeRecurringItem`'s `status: "error"`. It still answers "Done" and strips the
-  buttons, so the compensation's retry premise holds only on the web path. The fix is to
-  answer an error and keep the keyboard so a re-tap retries.
-- A collaborator ticking a **shared** recurring reminder in the web app takes a plain PATCH.
-  The reminders GET is scoped to `created_by = auth.userId`, so a non-creator never has
-  `my_reminder_recurrence`. No successor is created, and the shared series ends for
-  everyone. The same collaborator's Telegram Done works.
+- ~~The Telegram Done path ignoring `completeRecurringItem`'s `status: "error"`~~ — resolved.
+  `reminder_done` now answers `reminder.failed` and returns without editing the message, so
+  the Done button survives and a re-tap retries through the claim. The one-time branch also
+  calls `completeItemRespectingRecurrence` first, so it no longer ends another user's live
+  recurring series via a plain update; its `error` outcome takes the same `reminder.failed`
+  path and `not-recurring` falls through to the list-scoped plain update.
+- ~~A collaborator ticking a **shared** recurring reminder ending the series~~ — resolved by a
+  server-side hand-off. `PATCH /api/lists/[id]/items`, on a pure `completed:true` update
+  (`isPureCompletion`), calls `completeItemRespectingRecurrence`. It reads the newest live
+  recurring reminder on the item (any creator), gates on the list type being `reminders`,
+  reads the item text, and delegates to `completeRecurringItem` as the reminder's creator.
+  Each read fails closed (`status: "error"` becomes a 500, so the mutation queue retries).
+  This covers collaborators, a creator whose client lacks the reminder fields (a successor
+  that arrived over Realtime without `my_*` fields, or a failed reminders GET), and old app
+  bundles still in use. The CAS claim inside `completeRecurringItem` is untouched.
+  `unmark-completed` now also rejects `reminders` lists with 400, since un-marking re-arms
+  every completed occurrence.
 - ~~Preserving the series anchor across a snooze~~ — done, see `anchor_at` (migration 026) above.
 - Cancelling or disarming stale Telegram reminder buttons. The CAS makes a stale tap
   harmless *while the claim holds* — but the claim's key (`items.completed`) is a mutable
@@ -203,3 +212,19 @@ fails, `completeRecurringItem` soft-deletes the just-created successor, releases
 and returns `status: "error"`. The route answers 500, the client keeps the mutation, and the
 retry wins the CAS and creates a clean successor plus reminder. If the soft-delete itself
 fails it is logged, and a reminder-less duplicate may remain visible.
+
+## Accepted and known limitations
+
+**Accepted: the widened re-arm gap.** The claim key `items.completed` is mutable. Un-tick
+then re-tick, recycle, or the 4-hour respawn re-arms it, and the next completion mints one
+extra successor. That used to happen only when the reminder's creator re-ticked, because only
+the creator's client took the recurring route. Now any editor's tick does. The claim is never
+bypassed, and no actor gets more than the creator already could. Closing it needs a monotonic
+claim key (e.g. `item_reminders.acknowledged_at`) and a migration.
+
+**Known, not fixed:**
+- If `releaseClaim` itself fails, Telegram can answer a false "Done" and the series ends. This
+  is a double fault that predates this branch.
+- An editor's tick now keeps alive a series whose creator is a viewer, and the cron's personal
+  path sends to `created_by` without a membership check. This is theoretical today because the
+  app never demotes an approved collaborator.

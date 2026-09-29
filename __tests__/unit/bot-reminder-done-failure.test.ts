@@ -26,6 +26,7 @@ describe("reminder_done failure handling (source inspection)", () => {
     const block = branch.slice(check, branch.indexOf("} else {", check));
     expect(block).toContain('getMsg(lang, "reminder.failed")');
     expect(block).toContain("return;");
+    expect(block).not.toContain("editMessageText");
     expect(check).toBeLessThan(branch.indexOf("editMessageText"));
   });
 
@@ -38,5 +39,23 @@ describe("reminder_done failure handling (source inspection)", () => {
     expect(block).toContain("return;");
     // The failure return comes before the success answer/edit.
     expect(check).toBeLessThan(branch.lastIndexOf('getMsg(lang, "reminder.done")'));
+  });
+
+  it("one-time path hands off to the shared helper before its plain update, and error keeps the button", () => {
+    const elseIdx = branch.indexOf("} else {", branch.indexOf("outcome.status"));
+    const oneTime = branch.slice(elseIdx);
+    const call = oneTime.indexOf("completeItemRespectingRecurrence(supabase");
+    expect(call).toBeGreaterThan(-1);
+    expect(call).toBeLessThan(oneTime.indexOf(".update("));
+    expect(oneTime).toContain("itemId: reminder.item_id");
+    expect(oneTime).toContain("listId: reminder.list_id");
+    const check = oneTime.indexOf('handoff.status === "error"');
+    expect(check).toBeGreaterThan(call);
+    expect(check).toBeLessThan(oneTime.indexOf(".update("));
+    const block = oneTime.slice(check, oneTime.indexOf("}", oneTime.indexOf("return;", check)));
+    expect(block).toContain('getMsg(lang, "reminder.failed")');
+    expect(block).not.toContain("editMessageText");
+    // plain update only runs for not-recurring
+    expect(oneTime.slice(check)).toContain('handoff.status === "not-recurring"');
   });
 });

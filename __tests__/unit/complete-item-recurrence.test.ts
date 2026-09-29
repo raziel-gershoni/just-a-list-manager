@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
-import { completeItemRespectingRecurrence } from "@/src/services/recurring";
+import { completeItemRespectingRecurrence, isPureCompletion } from "@/src/services/recurring";
 
 type Recorded = {
   table: string;
@@ -19,6 +19,7 @@ function fakeSupabase(opts: {
   listType?: string | null;
   item?: { text: string } | null;
   claimRows?: unknown[];
+  failRead?: "rec" | "list" | "item";
 }) {
   const calls: Recorded[] = [];
   const make = (table: string, op: Recorded["op"], values: Record<string, unknown>) => {
@@ -27,13 +28,20 @@ function fakeSupabase(opts: {
     const result = () => {
       if (op === "select") {
         if (table === "item_reminders") {
-          if (String(values.cols).includes("created_by")) return { data: opts.rec ?? null, error: null };
+          if (String(values.cols).includes("created_by")) {
+            if (opts.failRead === "rec") return { data: null, error: { message: "boom" } };
+            return { data: opts.rec ?? null, error: null };
+          }
           return { data: null, error: null }; // completeRecurringItem's post-claim read
         }
         if (table === "lists") {
+          if (opts.failRead === "list") return { data: null, error: { message: "boom" } };
           return { data: opts.listType == null ? null : { type: opts.listType }, error: null };
         }
-        if (table === "items") return { data: opts.item ?? null, error: null };
+        if (table === "items") {
+          if (opts.failRead === "item") return { data: null, error: { message: "boom" } };
+          return { data: opts.item ?? null, error: null };
+        }
       }
       if (table === "items" && op === "update" && values.completed === true) {
         return { data: opts.claimRows ?? [{ id: "item-1" }], error: null };
@@ -98,6 +106,26 @@ describe("completeItemRespectingRecurrence", () => {
     expect(calls.filter((c) => c.op !== "select")).toHaveLength(0);
   });
 
+  it.each(["rec", "list", "item"] as const)(
+    "fails closed (status error, nothing claimed) when the %s read errors",
+    async (failRead) => {
+      const { calls, client } = fakeSupabase({
+        rec: REC, listType: "reminders", item: { text: "x" }, failRead,
+      });
+      const out = await completeItemRespectingRecurrence(client, P);
+      expect(out).toEqual({ status: "error" });
+      expect(calls.filter((c) => c.op !== "select")).toHaveLength(0);
+    }
+  );
+
+  it("filters the list read by id", async () => {
+    const { calls, client } = fakeSupabase({ rec: REC, listType: "reminders", item: { text: "x" } });
+    await completeItemRespectingRecurrence(client, P);
+    const listRead = calls.find((c) => c.table === "lists");
+    expect(listRead).toBeDefined();
+    expect(listRead!.filters).toContain("eq:id=list-1");
+  });
+
   it("runs the flow as the reminder's creator, with recurrence and is_shared from the row", async () => {
     const { calls, client } = fakeSupabase({ rec: REC, listType: "reminders", item: { text: "buy milk" } });
     const out = await completeItemRespectingRecurrence(client, P);
@@ -153,13 +181,9 @@ describe("PATCH /items wiring (source inspection)", () => {
   it("delegates only on a pure completion, before its own update", () => {
     const call = patch.indexOf("completeItemRespectingRecurrence(supabase");
     expect(call).toBeGreaterThan(-1);
-    const guard = patch.indexOf("if (isPureCompletion)");
+    const guard = patch.indexOf("if (isPureCompletion(updates))");
     expect(guard).toBeGreaterThan(-1);
     expect(guard).toBeLessThan(call);
-    // The guard requires completed === true and no other meaningful key.
-    const guardDef = patch.slice(patch.indexOf("const isPureCompletion"), guard);
-    expect(guardDef).toContain("updates.completed === true");
-    expect(guardDef).toContain('k === "completed"');
     // Before any write of the plain path.
     expect(call).toBeLessThan(patch.indexOf(".update(patchData)"));
     // Only one call site.
@@ -167,10 +191,22 @@ describe("PATCH /items wiring (source inspection)", () => {
   });
 
   it("maps an error outcome to 500 (so the mutation queue retries)", () => {
-    const block = patch.slice(patch.indexOf("if (isPureCompletion)"), patch.indexOf(".update(patchData)"));
+    const block = patch.slice(patch.indexOf("if (isPureCompletion(updates))"), patch.indexOf(".update(patchData)"));
     const errIdx = block.indexOf('outcome.status === "error"');
     expect(errIdx).toBeGreaterThan(-1);
     const after = block.slice(errIdx, block.indexOf("not-recurring", errIdx));
     expect(after).toContain("status: 500");
+  });
+});
+
+describe("isPureCompletion", () => {
+  it.each([
+    [{ completed: true }, true],
+    [{ completed: true, text: "x" }, false],
+    [{ completed: false }, false],
+    [{ completed: true, other: undefined }, true],
+    [{}, false],
+  ] as const)("%j -> %s", (input, expected) => {
+    expect(isPureCompletion({ ...input })).toBe(expected);
   });
 });

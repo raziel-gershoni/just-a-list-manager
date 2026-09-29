@@ -7,7 +7,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import { createServerClient } from "@/src/lib/supabase";
 import { verifyListPermission } from "@/src/lib/api-auth";
-import { completeRecurringItem } from "@/src/services/recurring";
+import { completeRecurringItem, completeItemRespectingRecurrence } from "@/src/services/recurring";
 import { serverEnv } from "@/src/lib/env";
 import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
@@ -499,19 +499,32 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         return;
       }
     } else {
-      // One-time: mark item as completed.
-      // Keep the reminder uncancelled so the completed item displays its original time
-      // in the done section. The reminder is already sent and inert; if not yet sent,
-      // the cron will silently mark it sent when due (since item is completed).
-      const { error: completeError } = await supabase
-        .from("items")
-        .update({ completed: true, completed_at: new Date().toISOString() })
-        .eq("id", reminder.item_id)
-        .eq("list_id", reminder.list_id);
-      if (completeError) {
-        console.error("[Bot] Failed to complete one-time reminder item:", completeError);
+      // One-time reminder, but the item may still carry someone else's live
+      // recurring reminder: a plain update would end their series. Let the
+      // shared helper decide first (same as PATCH /items).
+      const handoff = await completeItemRespectingRecurrence(supabase, {
+        itemId: reminder.item_id,
+        listId: reminder.list_id,
+      });
+      if (handoff.status === "error") {
         await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.failed") });
         return;
+      }
+      if (handoff.status === "not-recurring") {
+        // Mark item as completed.
+        // Keep the reminder uncancelled so the completed item displays its original time
+        // in the done section. The reminder is already sent and inert; if not yet sent,
+        // the cron will silently mark it sent when due (since item is completed).
+        const { error: completeError } = await supabase
+          .from("items")
+          .update({ completed: true, completed_at: new Date().toISOString() })
+          .eq("id", reminder.item_id)
+          .eq("list_id", reminder.list_id);
+        if (completeError) {
+          console.error("[Bot] Failed to complete one-time reminder item:", completeError);
+          await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.failed") });
+          return;
+        }
       }
     }
 

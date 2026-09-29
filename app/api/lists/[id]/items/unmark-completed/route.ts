@@ -21,6 +21,25 @@ export async function POST(
 
   const supabase = createServerClient();
 
+  // Reminders lists hold recurring occurrences: un-marking re-arms each completed
+  // one, and re-completing it (undo) would mint a duplicate successor. The UI only
+  // offers this on regular lists, but list-type changes aren't pushed to other open
+  // clients, so enforce it here.
+  const { data: list, error: listError } = await supabase
+    .from("lists")
+    .select("type")
+    .eq("id", listId)
+    .maybeSingle();
+  if (listError) {
+    return NextResponse.json({ error: "Failed to unmark items" }, { status: 500 });
+  }
+  if (list?.type === "reminders") {
+    return NextResponse.json(
+      { error: "Completed items on a reminders list can't be unmarked in bulk" },
+      { status: 400 }
+    );
+  }
+
   // Flip all completed items back to active (non-destructive; reminders survive)
   const { data: unmarked, error } = await supabase
     .from("items")

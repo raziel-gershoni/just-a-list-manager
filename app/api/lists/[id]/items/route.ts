@@ -7,7 +7,7 @@ import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "
 import { parseBody } from "@/src/lib/api-validation";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { pickRecyclable } from "@/src/utils/pick-recyclable";
-import { completeItemRespectingRecurrence } from "@/src/services/recurring";
+import { completeItemRespectingRecurrence, isPureCompletion } from "@/src/services/recurring";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
@@ -298,10 +298,7 @@ export async function PATCH(
   // the series, whoever completes it. A collaborator's client can't take the
   // complete-recurring route itself: it never sees someone else's reminder
   // (reminders GET is scoped to created_by = caller).
-  const isPureCompletion =
-    updates.completed === true &&
-    Object.entries(updates).every(([k, v]) => k === "completed" || v === undefined);
-  if (isPureCompletion) {
+  if (isPureCompletion(updates)) {
     const outcome = await completeItemRespectingRecurrence(supabase, { itemId, listId });
     if (outcome.status === "error") {
       // 500 so the client mutation queue retries (it drops 4xx); the helper
