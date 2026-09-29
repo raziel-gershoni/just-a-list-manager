@@ -231,6 +231,7 @@
     "snoozedItem": "⏰ {itemText} — snoozed until {time}",
     "doneItem": "✅ {itemText} — done",
     "done": "Done",
+    "failed": "Couldn't save — tap Done again.",
     "snooze": "Snooze",
     "snooze30m": "30 min",
     "snooze1h": "1 hour",

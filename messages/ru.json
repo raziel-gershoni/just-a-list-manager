@@ -231,6 +231,7 @@
     "snoozedItem": "⏰ {itemText} — отложено до {time}",
     "doneItem": "✅ {itemText} — готово",
     "done": "Готово",
+    "failed": "Не удалось сохранить — нажмите «Готово» ещё раз.",
     "snooze": "Отложить",
     "snooze30m": "30 мин",
     "snooze1h": "1 час",

@@ -231,6 +231,7 @@
     "snoozedItem": "⏰ {itemText} — נדחה ל-{time}",
     "doneItem": "✅ {itemText} — בוצע",
     "done": "בוצע",
+    "failed": "השמירה נכשלה — הקישו שוב על בוצע.",
     "snooze": "דחה",
     "snooze30m": "30 דקות",
     "snooze1h": "שעה",

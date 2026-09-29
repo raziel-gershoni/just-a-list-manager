@@ -483,7 +483,7 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     if (reminder.recurrence) {
       // Recurring: complete item + create new occurrence
       // Keep the sent reminder (not cancelled) so completed item shows its time
-      await completeRecurringItem(supabase, {
+      const outcome = await completeRecurringItem(supabase, {
         itemId: reminder.item_id,
         listId: reminder.list_id,
         userId: reminder.created_by,
@@ -492,16 +492,27 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
         recurrence: reminder.recurrence,
         isShared: reminder.is_shared,
       });
+      if (outcome.status === "error") {
+        // The claim was released, so the item is active again. Keep the Done
+        // button (no message edit) so a re-tap retries through the claim.
+        await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.failed") });
+        return;
+      }
     } else {
       // One-time: mark item as completed.
       // Keep the reminder uncancelled so the completed item displays its original time
       // in the done section. The reminder is already sent and inert; if not yet sent,
       // the cron will silently mark it sent when due (since item is completed).
-      await supabase
+      const { error: completeError } = await supabase
         .from("items")
         .update({ completed: true, completed_at: new Date().toISOString() })
         .eq("id", reminder.item_id)
         .eq("list_id", reminder.list_id);
+      if (completeError) {
+        console.error("[Bot] Failed to complete one-time reminder item:", completeError);
+        await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.failed") });
+        return;
+      }
     }
 
     await bot.answerCallbackQuery(query.id, { text: getMsg(lang, "reminder.done") });
