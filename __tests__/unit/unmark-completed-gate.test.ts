@@ -18,4 +18,14 @@ describe("unmark-completed type gate (source inspection)", () => {
     expect(update).toBeGreaterThan(gate);
     expect(src.slice(gate, update)).toContain("status: 400");
   });
+
+  it("a list-read error returns 500 before the bulk update", () => {
+    const check = src.indexOf("if (listError)");
+    expect(check).toBeGreaterThan(-1);
+    const update = src.indexOf(".update(");
+    expect(check).toBeLessThan(update);
+    const block = src.slice(check, src.indexOf('if (list?.type === "reminders")'));
+    expect(block).toContain("status: 500");
+    expect(block).toContain("return NextResponse.json");
+  });
 });

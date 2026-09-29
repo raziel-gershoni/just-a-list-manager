@@ -52,9 +52,13 @@ describe("reminder_done failure handling (source inspection)", () => {
     const check = oneTime.indexOf('handoff.status === "error"');
     expect(check).toBeGreaterThan(call);
     expect(check).toBeLessThan(oneTime.indexOf(".update("));
-    const block = oneTime.slice(check, oneTime.indexOf("}", oneTime.indexOf("return;", check)));
+    // The error block itself: from its condition up to the next handoff branch.
+    const block = oneTime.slice(check, oneTime.indexOf('handoff.status === "not-recurring"', check));
     expect(block).toContain('getMsg(lang, "reminder.failed")');
     expect(block).not.toContain("editMessageText");
+    // It must return before its own closing brace, or a failed hand-off falls
+    // through to the false "Done" answer and message edit.
+    expect(block).toMatch(/reminder\.failed"[^;]*\);\s*return;\s*\}\s*(?:if \(|$)/);
     // plain update only runs for not-recurring
     expect(oneTime.slice(check)).toContain('handoff.status === "not-recurring"');
   });
