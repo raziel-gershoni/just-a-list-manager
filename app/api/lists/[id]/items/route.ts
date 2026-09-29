@@ -7,6 +7,7 @@ import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "
 import { parseBody } from "@/src/lib/api-validation";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { pickRecyclable } from "@/src/utils/pick-recyclable";
+import { completeItemRespectingRecurrence } from "@/src/services/recurring";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
@@ -292,6 +293,29 @@ export async function PATCH(
   const { itemId, ...updates } = parsed.data;
 
   const supabase = createServerClient();
+
+  // A pure "mark completed" on an item with a live recurring reminder must advance
+  // the series, whoever completes it. A collaborator's client can't take the
+  // complete-recurring route itself: it never sees someone else's reminder
+  // (reminders GET is scoped to created_by = caller).
+  const isPureCompletion =
+    updates.completed === true &&
+    Object.entries(updates).every(([k, v]) => k === "completed" || v === undefined);
+  if (isPureCompletion) {
+    const outcome = await completeItemRespectingRecurrence(supabase, { itemId, listId });
+    if (outcome.status === "error") {
+      // 500 so the client mutation queue retries (it drops 4xx); the helper
+      // already released its claim, so the retry can win again.
+      return NextResponse.json({ error: "Failed to complete item" }, { status: 500 });
+    }
+    if (outcome.status !== "not-recurring") {
+      // created or already-completed: respond as the plain path would
+      const { data: done } = await supabase
+        .from("items").select().eq("id", itemId).eq("list_id", listId).single();
+      return NextResponse.json(done ?? { id: itemId, completed: true });
+    }
+  }
+
   const patchData: Record<string, unknown> = {};
 
   if (typeof updates.completed === "boolean") {

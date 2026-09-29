@@ -193,3 +193,72 @@ export async function completeRecurringItem(
     nextRemindAt: nextRemindAt.toISOString(),
   };
 }
+
+export type CompleteItemOutcome =
+  | CompleteRecurringOutcome
+  | { status: "not-recurring" };
+
+/**
+ * Complete an item, advancing its recurring series when it has one — whoever
+ * the caller is. The web client only routes a tick through complete-recurring
+ * when it can see the item's reminder, and the reminders GET is scoped to
+ * created_by = caller, so a collaborator's tick arrives as a plain completion
+ * and would end the series. The server decides instead.
+ *
+ * Reads only, then delegates. The reads decide WHETHER to run the recurring
+ * flow, not who wins: two concurrent callers both read and both call
+ * completeRecurringItem, whose compare-and-swap claim picks exactly one.
+ * `userId` passed on is the reminder's creator (not the caller) so the series
+ * stays owned by whoever set it, matching the Telegram Done path.
+ */
+export async function completeItemRespectingRecurrence(
+  supabase: SupabaseClient,
+  params: { itemId: string; listId: string }
+): Promise<CompleteItemOutcome> {
+  const { itemId, listId } = params;
+
+  // 1. Newest live recurring reminder, any creator. First, because most
+  //    completions (e.g. grocery ticks) have none: one extra query.
+  const { data: rec } = await supabase
+    .from("item_reminders")
+    .select("created_by, remind_at, recurrence, is_shared")
+    .eq("item_id", itemId)
+    .eq("list_id", listId)
+    .not("recurrence", "is", null)
+    .is("cancelled_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!rec) return { status: "not-recurring" };
+
+  // 2. Only reminders lists run the recurring flow (mirrors the client's
+  //    listType === "reminders" gate). Grocery lists have their own
+  //    recurring-staple mechanism (items.recurring).
+  const { data: list } = await supabase
+    .from("lists")
+    .select("type")
+    .eq("id", listId)
+    .maybeSingle();
+  if (list?.type !== "reminders") return { status: "not-recurring" };
+
+  // 3. Item text, list-scoped and live. Missing: let the plain path 404.
+  const { data: item } = await supabase
+    .from("items")
+    .select("text")
+    .eq("id", itemId)
+    .eq("list_id", listId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!item) return { status: "not-recurring" };
+
+  // 4. Delegate as the reminder's creator.
+  return completeRecurringItem(supabase, {
+    itemId,
+    listId,
+    userId: rec.created_by,
+    text: item.text,
+    remindAt: rec.remind_at,
+    recurrence: rec.recurrence,
+    isShared: rec.is_shared,
+  });
+}
