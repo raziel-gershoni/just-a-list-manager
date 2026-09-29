@@ -188,9 +188,8 @@ How it works:
   bit, so a manual un-tick, `recycleItem`, or the 4-hour recurring respawn re-arms it, and a
   later stale tap can then win and mint a second successor. The message still shows a button
   that ordinarily does nothing visible.
-- The missing membership check on `reminder_done` (`bot.ts:405`) — any Telegram user who
-  knows a reminder id can act on it. The CAS limits the blast radius to one completion,
-  but it is still an authorization gap.
+- ~~The missing membership check on `reminder_done`~~ — resolved: `bot.ts` now requires
+  owner or editor (added in `92029d4` / `792cdfa`).
 - Cleaning up the one existing duplicate row in production (`26240c02`). The user can delete
   it in-app; deletion is final as of `2026-09-08`.
 
@@ -216,15 +215,34 @@ fails it is logged, and a reminder-less duplicate may remain visible.
 ## Accepted and known limitations
 
 **Accepted: the widened re-arm gap.** The claim key `items.completed` is mutable. Un-tick
-then re-tick, recycle, or the 4-hour respawn re-arms it, and the next completion mints one
-extra successor. That used to happen only when the reminder's creator re-ticked, because only
-the creator's client took the recurring route. Now any editor's tick does. The claim is never
-bypassed, and no actor gets more than the creator already could. Closing it needs a monotonic
-claim key (e.g. `item_reminders.acknowledged_at`) and a migration.
+then re-tick, recycle, or the 4-hour respawn re-arms it, and the next completion that wins the
+claim mints a successor that the first series already produced. Before this branch, after a
+re-arm, a stale Telegram Done on the recurring reminder could do this too, from the creator
+or from a shared-reminder recipient (see the stale-button item under Scope "Out"). This
+branch adds three more triggers: any editor's web tick, the Telegram one-time Done hand-off,
+and the voice path. For voice, a voice add fuzzy-matches a completed occurrence
+(`find_fuzzy_items` searches completed items only) and `recycleItem` un-completes it. Voice
+then cancels only unsent reminders (`src/services/voice-handler.ts:290-296`), so the sent
+recurring reminder stays live, and a later Done wins the claim again. The result is not "one
+extra successor": it is a **second self-renewing series** running alongside the original.
+The claim is never bypassed, and no actor gets more than the creator already could. Recorded
+as accepted. The permanent fix is a monotonic claim key (e.g. `item_reminders.acknowledged_at`)
+plus a migration.
 
 **Known, not fixed:**
-- If `releaseClaim` itself fails, Telegram can answer a false "Done" and the series ends. This
-  is a double fault that predates this branch.
-- An editor's tick now keeps alive a series whose creator is a viewer, and the cron's personal
-  path sends to `created_by` without a membership check. This is theoretical today because the
-  app never demotes an approved collaborator.
+- If `releaseClaim` itself fails, the series ends and the caller is told it succeeded. On
+  Telegram that is a false "Done". It applies to the web path too: the retry gets
+  `already-completed`, answers 200, and is dequeued. `releaseClaim`'s own error is never
+  checked or logged (`src/services/recurring.ts`, both call sites). This is a double fault
+  that predates this branch.
+- An editor's tick keeps alive a series whose creator is a viewer, and the cron's personal
+  path sends to `created_by` without a membership check. Viewers can own a recurring series
+  today: invite links grant `"view"` (`app/api/share/route.ts:85`,
+  `app/api/share/[token]/route.ts:146,189`) and creating a reminder needs only `"view"`
+  (`app/api/lists/[id]/items/[itemId]/reminder/route.ts:16`). Viewers are members, so an
+  editor's tick keeping that series alive is intended, not a leak. Viewers cannot tap Done in
+  Telegram (`reminder_done` requires owner or editor), so before this branch a viewer's
+  recurring series could not advance at all; FIX 1 is what makes it work. Side effect: the
+  successor's `created_by` is the viewer, so a viewer appears to have authored an item in a
+  list where viewers cannot add items. This is cosmetic. Only the **ex-member** case is
+  theoretical, since no route removes a collaborator.
