@@ -43,7 +43,7 @@ export const webhookRateLimiter = new Proxy({} as Ratelimit, {
   },
 });
 
-// Voice: 10 req/min per user (stricter — Gemini free tier 15 RPM)
+// Voice: 10 req/min per user (stricter — each note is a quota'd Gemini call; per-model limits are in AI Studio)
 export const voiceRateLimiter = new Proxy({} as Ratelimit, {
   get(_, prop) {
     if (!_voiceRateLimiter) _voiceRateLimiter = createLimiter(10, "1 m", "ratelimit:voice");
