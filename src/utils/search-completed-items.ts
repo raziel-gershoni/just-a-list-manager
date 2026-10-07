@@ -46,3 +46,18 @@ export function searchCompletedItems(items: ItemData[], query: string, limit = 1
     .slice(0, limit)
     .map((i) => ({ id: i.id, text: i.text }));
 }
+
+/**
+ * Suggestions for the add-item input: searches only the text after the last comma,
+ * and is off entirely for reminders lists. Pure so it can be derived from live items.
+ */
+export function computeSuggestions(
+  listType: "regular" | "reminders" | "grocery",
+  items: ItemData[],
+  value: string
+): Suggestion[] {
+  if (!shouldSearchWhileTyping(listType)) return [];
+  const segments = value.split(",");
+  const currentSegment = segments[segments.length - 1].trim();
+  return searchCompletedItems(items, currentSegment);
+}

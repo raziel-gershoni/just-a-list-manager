@@ -203,7 +203,6 @@ function ListContent() {
       <OfflineIndicator />
 
       <AddItemInput
-        listId={listId}
         listType={listType}
         items={items}
         onAddItem={(text, recycleId) => {

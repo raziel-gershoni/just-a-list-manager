@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import type { ItemData } from "@/src/types";
-import { searchCompletedItems, shouldSearchWhileTyping } from "@/src/utils/search-completed-items";
+import { searchCompletedItems, shouldSearchWhileTyping, computeSuggestions } from "@/src/utils/search-completed-items";
 
 function item(over: Partial<ItemData> & { id: string; text: string }): ItemData {
   return {
@@ -61,6 +61,15 @@ describe("searchCompletedItems", () => {
     expect(ids(searchCompletedItems(items, "x"))).toEqual(["newZ", "mid", "old", "null"]);
   });
 
+  it("compares completed_at as instants, not strings (non-UTC offset)", () => {
+    const items = [
+      // 05:00Z: older, although "10:00" > "06:00" as text
+      item({ id: "plus5", text: "x", completed_at: "2026-09-07T10:00:00+05:00" }),
+      item({ id: "utc", text: "x", completed_at: "2026-09-07T06:00:00Z" }),
+    ];
+    expect(ids(searchCompletedItems(items, "x"))).toEqual(["utc", "plus5"]);
+  });
+
   it("respects limit (default 10)", () => {
     const items = Array.from({ length: 15 }, (_, n) => item({ id: `i${n}`, text: "milk" }));
     expect(searchCompletedItems(items, "milk")).toHaveLength(10);
@@ -88,12 +97,31 @@ describe("shouldSearchWhileTyping", () => {
   });
 });
 
+describe("computeSuggestions", () => {
+  const items = [item({ id: "m", text: "Milk" }), item({ id: "e", text: "Eggs" })];
+
+  it("is empty for reminders even when a completed item matches", () => {
+    expect(computeSuggestions("reminders", items, "mil")).toEqual([]);
+  });
+
+  it("matches for regular and grocery lists", () => {
+    expect(ids(computeSuggestions("regular", items, "mil"))).toEqual(["m"]);
+    expect(ids(computeSuggestions("grocery", items, "mil"))).toEqual(["m"]);
+  });
+
+  it("searches only the segment after the last comma", () => {
+    expect(ids(computeSuggestions("regular", items, "eggs, mil"))).toEqual(["m"]);
+    expect(computeSuggestions("regular", items, "eggs, ")).toEqual([]);
+  });
+});
+
 describe("source wiring", () => {
   const read = (p: string) => readFileSync(resolve(process.cwd(), p), "utf8");
 
   it("useListData fetches both item GETs with the 500 limit", () => {
     const src = read("src/hooks/useListData.ts");
     expect(src).toMatch(/ITEMS_FETCH_LIMIT = 500/);
+    expect(src).toContain("const ITEMS_URL_SUFFIX = `?limit=${ITEMS_FETCH_LIMIT}`;");
     const gets = src.match(/fetch\(`\/api\/lists\/\$\{listId\}\/items[^`]*`, \{\s*headers/g) ?? [];
     expect(gets).toHaveLength(2);
     for (const g of gets) expect(g).toContain("${ITEMS_URL_SUFFIX}");
@@ -103,8 +131,7 @@ describe("source wiring", () => {
     const src = read("components/AddItemInput.tsx");
     expect(src).not.toContain("/items/search");
     expect(src).not.toMatch(/fetch\(/);
-    expect(src).toMatch(/shouldSearchWhileTyping\(/);
-    expect(src).toMatch(/searchCompletedItems\(/);
+    expect(src).toMatch(/useMemo\(\s*\(\)\s*=>\s*computeSuggestions\(listType, items, value\)/);
   });
 
   it("page passes items to AddItemInput", () => {

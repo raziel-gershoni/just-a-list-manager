@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { Plus } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import type { ItemData } from "@/src/types";
-import { searchCompletedItems, shouldSearchWhileTyping, type Suggestion } from "@/src/utils/search-completed-items";
+import { computeSuggestions, type Suggestion } from "@/src/utils/search-completed-items";
 
 interface AddItemInputProps {
-  listId: string;
   listType?: "regular" | "reminders" | "grocery";
   items: ItemData[];
   onAddItem: (text: string, recycleId?: string) => void;
@@ -17,23 +16,19 @@ interface AddItemInputProps {
 export default function AddItemInput({ listType = "regular", items, onAddItem }: AddItemInputProps) {
   const t = useTranslations();
   const [value, setValue] = useState("");
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  // Only the open/closed flag is state; the list is derived so it can never go stale.
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestions = useMemo(
+    () => computeSuggestions(listType, items, value),
+    [listType, items, value]
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setValue(val);
 
-    // Get the current segment (after last comma)
-    const segments = val.split(",");
-    const currentSegment = segments[segments.length - 1].trim();
-
-    const found = shouldSearchWhileTyping(listType)
-      ? searchCompletedItems(items, currentSegment)
-      : [];
-    setSuggestions(found);
-    setShowSuggestions(found.length > 0);
+    setShowSuggestions(true);
   };
 
   const handleSubmit = () => {
@@ -44,7 +39,6 @@ export default function AddItemInput({ listType = "regular", items, onAddItem }:
 
     onAddItem(value.trim());
     setValue("");
-    setSuggestions([]);
     setShowSuggestions(false);
     inputRef.current?.focus();
   };
@@ -66,7 +60,6 @@ export default function AddItemInput({ listType = "regular", items, onAddItem }:
     // Recycle the selected item
     onAddItem(item.text, item.id);
     setValue("");
-    setSuggestions([]);
     setShowSuggestions(false);
     inputRef.current?.focus();
   };
@@ -103,9 +96,7 @@ export default function AddItemInput({ listType = "regular", items, onAddItem }:
               value={value}
               onChange={handleChange}
               onKeyDown={handleKeyDown}
-              onFocus={() => {
-                if (suggestions.length > 0) setShowSuggestions(true);
-              }}
+              onFocus={() => setShowSuggestions(true)}
               placeholder={listType === "reminders" ? t('items.addReminderPlaceholder') : t('items.addPlaceholder')}
               className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-base focus:ring-2 focus:ring-tg-button/20"
             />

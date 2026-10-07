@@ -26,8 +26,12 @@ function pickPreferredReminder(existing: Reminder | undefined, candidate: Remind
 }
 
 // The list cap is 500 non-deleted items (insert_item_if_under_limit uses the same
-// predicate as GET /items), so limit=500 returns the complete list. The route
-// defaults to 200 and we ignore nextCursor, which would silently truncate.
+// predicate as GET /items), so limit=500 covers every normal case. It is a cap, not a
+// guarantee: the voice insert (src/services/voice-handler.ts), the recurring successor
+// insert (src/services/recurring.ts) and the PATCH undo-restore
+// (app/api/lists/[id]/items/route.ts) bypass the cap RPC, so a list can exceed 500 and
+// GET then drops the lowest positions. The route defaults to 200 and we ignore
+// nextCursor, which would silently truncate.
 const ITEMS_FETCH_LIMIT = 500;
 const ITEMS_URL_SUFFIX = `?limit=${ITEMS_FETCH_LIMIT}`;
 
