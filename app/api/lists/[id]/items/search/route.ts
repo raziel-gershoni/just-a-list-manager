@@ -3,6 +3,7 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { findRecyclableItems } from "@/src/services/item-recycler";
 
+// The current client searches locally; this route remains for older cached Mini App bundles.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

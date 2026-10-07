@@ -205,6 +205,7 @@ function ListContent() {
       <AddItemInput
         listId={listId}
         listType={listType}
+        items={items}
         onAddItem={(text, recycleId) => {
           handleAddItem(text, recycleId);
           // Auto-open ReminderSheet after item syncs in reminders lists

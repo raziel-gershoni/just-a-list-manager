@@ -1,60 +1,25 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, Loader2 } from "lucide-react";
-import { useTelegram } from "./TelegramProvider";
+import { Plus } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
-
-interface RecyclableItem {
-  id: string;
-  text: string;
-}
+import type { ItemData } from "@/src/types";
+import { searchCompletedItems, shouldSearchWhileTyping, type Suggestion } from "@/src/utils/search-completed-items";
 
 interface AddItemInputProps {
   listId: string;
   listType?: "regular" | "reminders" | "grocery";
+  items: ItemData[];
   onAddItem: (text: string, recycleId?: string) => void;
 }
 
-export default function AddItemInput({ listId, listType = "regular", onAddItem }: AddItemInputProps) {
-  const { jwtRef } = useTelegram();
+export default function AddItemInput({ listType = "regular", items, onAddItem }: AddItemInputProps) {
   const t = useTranslations();
   const [value, setValue] = useState("");
-  const [suggestions, setSuggestions] = useState<RecyclableItem[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const searchItems = useCallback(
-    async (query: string) => {
-      const jwt = jwtRef.current;
-      if (!query.trim() || !jwt) {
-        setSuggestions([]);
-        setIsSearching(false);
-        return;
-      }
-
-      setIsSearching(true);
-      try {
-        const res = await fetch(
-          `/api/lists/${listId}/items/search?q=${encodeURIComponent(query.trim())}`,
-          { headers: { Authorization: `Bearer ${jwt}` } }
-        );
-        if (res.ok) {
-          const { items } = await res.json();
-          setSuggestions(items || []);
-          setShowSuggestions((items || []).length > 0);
-        }
-      } catch {
-        setSuggestions([]);
-      } finally {
-        setIsSearching(false);
-      }
-    },
-    [listId, jwtRef]
-  );
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -64,14 +29,11 @@ export default function AddItemInput({ listId, listType = "regular", onAddItem }
     const segments = val.split(",");
     const currentSegment = segments[segments.length - 1].trim();
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    if (currentSegment.length > 0) {
-      debounceRef.current = setTimeout(() => searchItems(currentSegment), 400);
-    } else {
-      setSuggestions([]);
-      setShowSuggestions(false);
-    }
+    const found = shouldSearchWhileTyping(listType)
+      ? searchCompletedItems(items, currentSegment)
+      : [];
+    setSuggestions(found);
+    setShowSuggestions(found.length > 0);
   };
 
   const handleSubmit = () => {
@@ -87,7 +49,7 @@ export default function AddItemInput({ listId, listType = "regular", onAddItem }
     inputRef.current?.focus();
   };
 
-  const handleSuggestionClick = (item: RecyclableItem) => {
+  const handleSuggestionClick = (item: Suggestion) => {
     const tg = getTelegramWebApp();
     tg?.HapticFeedback?.notificationOccurred("success");
 
@@ -147,9 +109,6 @@ export default function AddItemInput({ listId, listType = "regular", onAddItem }
               placeholder={listType === "reminders" ? t('items.addReminderPlaceholder') : t('items.addPlaceholder')}
               className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-base focus:ring-2 focus:ring-tg-button/20"
             />
-            {isSearching && (
-              <Loader2 className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tg-hint animate-spin" />
-            )}
           </div>
           <button
             onClick={handleSubmit}

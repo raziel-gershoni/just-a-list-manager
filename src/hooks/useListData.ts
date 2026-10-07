@@ -25,6 +25,12 @@ function pickPreferredReminder(existing: Reminder | undefined, candidate: Remind
   return candidate.remind_at < existing.remind_at ? candidate : existing;
 }
 
+// The list cap is 500 non-deleted items (insert_item_if_under_limit uses the same
+// predicate as GET /items), so limit=500 returns the complete list. The route
+// defaults to 200 and we ignore nextCursor, which would silently truncate.
+const ITEMS_FETCH_LIMIT = 500;
+const ITEMS_URL_SUFFIX = `?limit=${ITEMS_FETCH_LIMIT}`;
+
 export function useListData(listId: string, jwtRef: React.RefObject<string | null>) {
   const [listName, setListName] = useState("");
   const [items, setItems] = useState<ItemData[]>([]);
@@ -77,7 +83,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       }
 
       // Fetch items
-      const res = await fetch(`/api/lists/${listId}/items`, {
+      const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
       if (res.ok) {
@@ -160,7 +166,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     const jwt = jwtRef.current;
     if (!jwt) return;
     try {
-      const res = await fetch(`/api/lists/${listId}/items`, {
+      const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
       if (!res.ok) return;
