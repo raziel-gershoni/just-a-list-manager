@@ -4,8 +4,10 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { parseBody } from "@/src/lib/api-validation";
 import { categoryNameSchema } from "@/src/schemas/categories";
-import { getCategorizer } from "@/src/services/categorizer";
 import { categorizeList } from "@/src/services/categorize-list";
+import { categoryNames } from "@/src/services/category-names";
+
+const COLUMNS = "id, list_id, name_en, name_he, name_ru, position, created_by";
 
 type Params = { params: Promise<{ id: string; categoryId: string }> };
 
@@ -32,16 +34,29 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   if (!parsed.success) return parsed.response;
   const { name, locale } = parsed.data;
 
-  const translated = (await getCategorizer().translateName(name)) ?? { en: name, he: name, ru: name };
-  const names = { ...translated, [locale]: name };
+  // Read first: an unknown category, or a name that did not change, costs no AI call.
+  const supabase = createServerClient();
+  const { data: current, error: readError } = await supabase
+    .from("list_categories")
+    .select(COLUMNS)
+    .eq("id", categoryId)
+    .eq("list_id", listId)
+    .maybeSingle();
+  if (readError) return NextResponse.json({ error: "Failed to rename category" }, { status: 500 });
+  if (!current) return NextResponse.json({ error: "Category not found" }, { status: 404 });
+  if ((current as Record<string, unknown>)[`name_${locale}`] === name) {
+    return NextResponse.json({ category: current });
+  }
 
-  const { data: category } = await createServerClient()
+  const names = await categoryNames(name, locale, authz.userId);
+  const { data: category, error } = await supabase
     .from("list_categories")
     .update({ name_en: names.en, name_he: names.he, name_ru: names.ru })
     .eq("id", categoryId)
     .eq("list_id", listId)
-    .select("id, list_id, name_en, name_he, name_ru, position, created_by")
+    .select(COLUMNS)
     .maybeSingle();
+  if (error) return NextResponse.json({ error: "Failed to rename category" }, { status: 500 });
   if (!category) return NextResponse.json({ error: "Category not found" }, { status: 404 });
   return NextResponse.json({ category });
 }

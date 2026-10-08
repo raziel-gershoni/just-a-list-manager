@@ -10,6 +10,17 @@ vi.mock("@/src/services/categorizer", async (importOriginal) => ({
   getCategorizer: () => { throw new Error("GEMINI_API_KEY missing"); },
 }));
 
+// The default AI budget runs through the real checkRateLimit over these stand-in limiters.
+const limits = vi.hoisted(() => {
+  const answer = async () => ({ success: true, remaining: 0, reset: 0 });
+  return { list: vi.fn(answer), global: vi.fn(answer), answer };
+});
+vi.mock("@/src/lib/rate-limit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/src/lib/rate-limit")>()),
+  categorizeRateLimiter: { limit: limits.list },
+  categorizeGlobalRateLimiter: { limit: limits.global },
+}));
+
 type Row = { id: string; text: string; completed: boolean; category_id: string | null; category_locked: boolean; deleted_at: string | null; created_at: string };
 const row = (over: Partial<Row> & { id: string; text: string }): Row => ({
   completed: false, category_id: null, category_locked: false, deleted_at: null, created_at: "2026-10-01T00:00:00Z", ...over,
@@ -28,6 +39,7 @@ function world(opts: {
   failCategoriesRead?: boolean;
   failItemsRead?: boolean;
   failInsert?: boolean;
+  insertRefused?: string[]; // names (en) the insert RPC answers with no row, as at the cap
 }) {
   const categories = opts.categories ?? [];
   let nextCategory = 0;
@@ -41,9 +53,10 @@ function world(opts: {
       if (opts.failCategoriesRead) return { data: null, error: dbError };
       return { data: categories.map((c) => ({ ...c, name_he: c.name_en, name_ru: c.name_en })), error: null };
     }
-    if (call.table === "list_categories" && call.op === "insert") {
+    if (call.table === "insert_list_category") {
       if (opts.failInsert) return { data: null, error: dbError };
-      return { data: { id: `new-${++nextCategory}` }, error: null };
+      if (opts.insertRefused?.includes((call.values as { p_name_en: string }).p_name_en)) return { data: [], error: null };
+      return { data: [{ id: `new-${++nextCategory}` }], error: null };
     }
     if (call.table === "items" && call.op === "select") {
       if (opts.failItemsRead) return { data: null, error: dbError };
@@ -79,11 +92,14 @@ function world(opts: {
     }),
   };
   const deps = { supabase: fake.client, categorizer, lock, allowAiCall: async () => opts.aiAllowed ?? true };
-  const rpc = () => fake.calls.filter((c) => c.op === "rpc");
-  return { fake, deps, inputs, categorizer, lock, rpc };
+  const rpc = () => fake.calls.filter((c) => c.table === "apply_item_categories");
+  const inserts = () => fake.calls.filter((c) => c.table === "insert_list_category").map((c) => c.values);
+  return { fake, deps, inputs, categorizer, lock, rpc, inserts };
 }
 
 beforeEach(() => {
+  limits.list.mockReset().mockImplementation(limits.answer);
+  limits.global.mockReset().mockImplementation(limits.answer);
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "info").mockImplementation(() => {});
@@ -198,7 +214,7 @@ describe("categorizeList", () => {
     expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([{ id: "a", text: "yogurt", category_id: "dairy" }]);
   });
 
-  it("inserts new categories and renumbers positions in walk order", async () => {
+  it("inserts a new category after the existing one it names, placed by the list-locked RPC", async () => {
     const w = world({
       categories: [{ id: "produce", name_en: "Produce", position: 0 }, { id: "dairy", name_en: "Dairy", position: 1 }],
       items: [row({ id: "a", text: "bread" })],
@@ -209,11 +225,73 @@ describe("categorizeList", () => {
     });
     await categorizeList(w.deps, "L", "pending");
 
-    const insert = w.fake.calls.find((c) => c.table === "list_categories" && c.op === "insert")!;
-    expect(insert.values).toEqual({ list_id: "L", name_en: "Bakery", name_he: "מאפייה", name_ru: "Выпечка", position: 1, created_by: null });
-    const moved = w.fake.calls.filter((c) => c.table === "list_categories" && c.op === "update");
-    expect(moved.map((c) => [c.values, c.filters])).toEqual([[{ position: 2 }, ["eq:id=dairy", "eq:list_id=L"]]]);
+    expect(w.inserts()).toEqual([{
+      p_list_id: "L", p_name_en: "Bakery", p_name_he: "מאפייה", p_name_ru: "Выпечка",
+      p_created_by: null, p_placement: "after", p_after_id: "produce", p_max: 20,
+    }]);
+    // Positions are the RPC's job: no client-side inserts or renumbering.
+    expect(w.fake.calls.filter((c) => c.table === "list_categories" && c.op !== "select")).toEqual([]);
     expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([{ id: "a", text: "bread", category_id: "new-1" }]);
+  });
+
+  const placements = (w: ReturnType<typeof world>) =>
+    w.inserts().map((v) => { const { p_name_en, p_placement, p_after_id } = v as Record<string, unknown>; return [p_name_en, p_placement, p_after_id]; });
+  const created = (refs: [string, string | null][]) => ({
+    newCategories: refs.map(([ref, after]) => ({ ref, en: ref.toUpperCase(), he: ref, ru: ref, after })),
+    assignments: refs.map(([ref], i) => ({ i, category: ref })),
+  });
+  const items = (n: number) => Array.from({ length: n }, (_, k) => row({ id: `i${k}`, text: `item ${k}` }));
+
+  it("first scan: leading categories go first, each after the one before, keeping the AI's walk order", async () => {
+    const w = world({ items: items(3), result: created([["n1", null], ["n2", null], ["n3", null]]) });
+    await categorizeList(w.deps, "L", "pending");
+    expect(placements(w)).toEqual([["N1", "first", null], ["N2", "after", "new-1"], ["N3", "after", "new-2"]]);
+  });
+
+  it("chains a new category after an earlier new one by its inserted id", async () => {
+    const w = world({
+      categories: [{ id: "produce", name_en: "Produce", position: 0 }, { id: "dairy", name_en: "Dairy", position: 1 }],
+      items: items(2),
+      result: created([["n1", "c2"], ["n2", "n1"]]),
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(placements(w)).toEqual([["N1", "after", "dairy"], ["N2", "after", "new-1"]]);
+  });
+
+  it("keeps the listed order when a leading category follows one chained into the leading run", async () => {
+    const w = world({
+      categories: [{ id: "produce", name_en: "Produce", position: 0 }],
+      items: items(3),
+      result: created([["n1", null], ["n2", "n1"], ["n3", null]]),
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(placements(w)).toEqual([["N1", "first", null], ["N2", "after", "new-1"], ["N3", "after", "new-2"]]);
+  });
+
+  it("puts a category whose 'after' is not a category yet last", async () => {
+    const w = world({
+      categories: [{ id: "produce", name_en: "Produce", position: 0 }],
+      items: items(2),
+      result: created([["n1", "n2"], ["n2", null]]),
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(placements(w)).toEqual([["N1", "last", null], ["N2", "first", null]]);
+  });
+
+  it("at the cap the RPC inserts nothing: that category's items stay uncategorized, later ones place without it", async () => {
+    const w = world({
+      categories: [{ id: "produce", name_en: "Produce", position: 0 }],
+      items: [...items(4), row({ id: "p", text: "apples" })],
+      insertRefused: ["N1", "N3"],
+      result: {
+        ...created([["n1", null], ["n2", null], ["n3", "c1"], ["n4", "n3"]]),
+        assignments: [{ i: 0, category: "n1" }, { i: 1, category: "n2" }, { i: 2, category: "n3" }, { i: 3, category: "n4" }, { i: 4, category: "c1" }],
+      },
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(placements(w)).toEqual([["N1", "first", null], ["N2", "first", null], ["N3", "after", "produce"], ["N4", "last", null]]);
+    const written = (w.rpc()[0].values as { p_assignments: { text: string; category_id: string }[] }).p_assignments;
+    expect(written.map((a) => [a.text, a.category_id])).toEqual([["item 1", "new-1"], ["item 3", "new-2"], ["apples", "produce"]]);
   });
 
   it("sends at most 100 items per AI call: items still to buy first, then the newest", async () => {
@@ -274,8 +352,7 @@ describe("categorizeList", () => {
     });
     await categorizeList(w.deps, "L", "rescan");
     expect(w.categorizer.categorize).not.toHaveBeenCalled();
-    expect(w.fake.calls.filter((c) => c.table === "list_categories" && c.op !== "select")).toEqual([]);
-    expect(w.rpc()).toEqual([]);
+    expect(w.fake.calls.filter((c) => c.op !== "select")).toEqual([]);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("categories"), expect.objectContaining({ listId: "L" }));
   });
 
@@ -387,6 +464,32 @@ describe("categorizeList", () => {
     const w = world({ items: [row({ id: "a", text: "milk" })] });
     w.deps.supabase = { from: () => { throw new Error("db down"); }, rpc: () => { throw new Error("db down"); } };
     await expect(categorizeList(w.deps, "L", "pending")).resolves.toBeUndefined();
+  });
+
+  describe("the default AI budget", () => {
+    const refused = async () => ({ success: false, remaining: 0, reset: 0 });
+    const redisDown = async (): Promise<never> => { throw new Error("redis down"); };
+    const withoutBudget = (w: ReturnType<typeof world>) => ({ supabase: w.deps.supabase, categorizer: w.categorizer, lock: w.lock });
+
+    it("calls the AI when the list's and the app-wide budgets both allow", async () => {
+      const w = world({ items: [row({ id: "a", text: "milk" })] });
+      await categorizeList(withoutBudget(w), "L", "pending");
+      expect(w.categorizer.categorize).toHaveBeenCalledTimes(1);
+      expect(limits.list).toHaveBeenCalledWith("L");
+      expect(limits.global).toHaveBeenCalledWith("global");
+    });
+
+    it.each([
+      ["the list's budget is spent", "list", refused],
+      ["the app-wide budget is spent", "global", refused],
+      ["the list's budget cannot be checked", "list", redisDown],
+      ["the app-wide budget cannot be checked", "global", redisDown],
+    ] as const)("skips the AI when %s", async (_label, which, answer) => {
+      limits[which].mockImplementation(answer);
+      const w = world({ items: [row({ id: "a", text: "milk" })] });
+      await categorizeList(withoutBudget(w), "L", "pending");
+      expect(w.categorizer.categorize).not.toHaveBeenCalled();
+    });
   });
 
   it("never throws when the default categorizer cannot be built", async () => {

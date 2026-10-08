@@ -4,8 +4,9 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { parseBody } from "@/src/lib/api-validation";
 import { categoryNameSchema } from "@/src/schemas/categories";
-import { getCategorizer, MAX_CATEGORIES_PER_LIST } from "@/src/services/categorizer";
+import { MAX_CATEGORIES_PER_LIST } from "@/src/services/categorizer";
 import { categorizeList } from "@/src/services/categorize-list";
+import { categoryNames } from "@/src/services/category-names";
 
 const COLUMNS = "id, list_id, name_en, name_he, name_ru, position, created_by";
 
@@ -38,30 +39,34 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!parsed.success) return parsed.response;
   const { name, locale } = parsed.data;
 
+  const names = await categoryNames(name, locale, auth.userId);
+
+  // The cap check and the position are taken under the list row lock, so concurrent adds
+  // cannot pass the cap together or tie.
   const supabase = createServerClient();
-  const { data: existing, error: readError } = await supabase
-    .from("list_categories")
-    .select("id, position")
-    .eq("list_id", listId);
-  // A failed read is not an empty list: it would skip the cap and reuse position 0.
-  if (readError) return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
-  const rows = (existing ?? []) as { id: string; position: number }[];
-  if (rows.length >= MAX_CATEGORIES_PER_LIST) {
+  const { data: rows, error } = await supabase.rpc("insert_list_category", {
+    p_list_id: listId,
+    p_name_en: names.en,
+    p_name_he: names.he,
+    p_name_ru: names.ru,
+    p_created_by: auth.userId,
+    p_placement: "last",
+    p_after_id: null,
+    p_max: MAX_CATEGORIES_PER_LIST,
+  });
+  if (error) return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
+  const category = Array.isArray(rows) ? rows[0] : rows;
+  if (!category) {
     return NextResponse.json({ error: "A list can have at most 20 categories" }, { status: 400 });
   }
 
-  const translated = (await getCategorizer().translateName(name)) ?? { en: name, he: name, ru: name };
-  const names = { ...translated, [locale]: name };
-  const position = rows.reduce((max, r) => Math.max(max, r.position + 1), 0);
-
-  const { data: category, error } = await supabase
-    .from("list_categories")
-    .insert({ list_id: listId, name_en: names.en, name_he: names.he, name_ru: names.ru, position, created_by: auth.userId })
-    .select(COLUMNS)
-    .single();
-  if (error || !category) return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
-
-  // A new category can change where existing items belong: re-sort the whole list.
+  // A new category can change where existing items belong: re-sort the whole list. The
+  // owed re-scan is remembered, so one the AI budget refuses now runs on a later sweep.
+  const { error: owedError } = await supabase
+    .from("lists")
+    .update({ categories_rescan_at: new Date().toISOString() })
+    .eq("id", listId);
+  if (owedError) console.error("[categories/POST] could not record the owed re-scan", { listId, error: owedError });
   after(() => categorizeList({ supabase }, listId, "rescan"));
   return NextResponse.json({ category }, { status: 201 });
 }

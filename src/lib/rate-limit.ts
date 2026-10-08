@@ -35,6 +35,8 @@ let _apiRateLimiter: Ratelimit | null = null;
 let _authIpRateLimiter: Ratelimit | null = null;
 let _authUserRateLimiter: Ratelimit | null = null;
 let _categorizeRateLimiter: Ratelimit | null = null;
+let _categorizeGlobalRateLimiter: Ratelimit | null = null;
+let _categoryTranslateRateLimiter: Ratelimit | null = null;
 
 // Webhook: 30 req/min per user
 export const webhookRateLimiter = new Proxy({} as Ratelimit, {
@@ -76,11 +78,29 @@ export const authUserRateLimiter = new Proxy({} as Ratelimit, {
   },
 });
 
-// Grocery categorization: 20 Gemini calls per 10 min per list. Used fail-closed.
+// Grocery categorization: 15 Gemini calls/min per list. A short window frees slots
+// quickly, so the next sweep can retry. Used fail-closed.
 export const categorizeRateLimiter = new Proxy({} as Ratelimit, {
   get(_, prop) {
-    if (!_categorizeRateLimiter) _categorizeRateLimiter = createLimiter(20, "10 m", "ratelimit:categorize");
+    if (!_categorizeRateLimiter) _categorizeRateLimiter = createLimiter(15, "1 m", "ratelimit:categorize");
     return Reflect.get(_categorizeRateLimiter, prop);
+  },
+});
+
+// Grocery categorization + category name translation: 60 Gemini calls/min app-wide
+// (identifier "global"). Used fail-closed.
+export const categorizeGlobalRateLimiter = new Proxy({} as Ratelimit, {
+  get(_, prop) {
+    if (!_categorizeGlobalRateLimiter) _categorizeGlobalRateLimiter = createLimiter(60, "1 m", "ratelimit:categorize-global");
+    return Reflect.get(_categorizeGlobalRateLimiter, prop);
+  },
+});
+
+// Category name translation: 10 Gemini calls/min per user. Used fail-closed.
+export const categoryTranslateRateLimiter = new Proxy({} as Ratelimit, {
+  get(_, prop) {
+    if (!_categoryTranslateRateLimiter) _categoryTranslateRateLimiter = createLimiter(10, "1 m", "ratelimit:category-translate");
+    return Reflect.get(_categoryTranslateRateLimiter, prop);
   },
 });
 

@@ -7,8 +7,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getCategorizer, MAX_CATEGORIES_PER_LIST, type ItemCategorizer } from "@/src/services/categorizer";
 import { redisListLock, type ListLock, type RerunMode } from "@/src/utils/categorize-lock";
-import { orderWithNewCategories } from "@/src/utils/category-order";
-import { categorizeRateLimiter, checkRateLimit } from "@/src/lib/rate-limit";
+import { categorizeGlobalRateLimiter, categorizeRateLimiter, checkRateLimit } from "@/src/lib/rate-limit";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 
 export type CategorizeMode = RerunMode;
@@ -38,8 +37,12 @@ type Assignment = { id: string; text: string; category_id: string };
 
 const textKey = (text: string) => normalizeForCompare(normalizeForStorage(text));
 
+// The list's own budget first, so a list over its budget does not spend the app-wide one.
 async function defaultAllowAiCall(listId: string): Promise<boolean> {
-  return (await checkRateLimit(categorizeRateLimiter, listId, true)).success;
+  return (
+    (await checkRateLimit(categorizeRateLimiter, listId, true)).success &&
+    (await checkRateLimit(categorizeGlobalRateLimiter, "global", true)).success
+  );
 }
 
 /** Normalized text -> category, from rows that have one: hand-placed first, then newest. */
@@ -114,7 +117,7 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
 
   if (batch.length > 0) {
     if (!(await allowAiCall(listId))) {
-      console.warn("[Categorizer] per-list AI limit reached", { listId });
+      console.warn("[Categorizer] AI limit reached", { listId });
     } else {
       const keyed = categories.map((c, k) => ({ key: `c${k + 1}`, id: c.id, name: c.name_en }));
       const room = MAX_CATEGORIES_PER_LIST - categories.length;
@@ -126,32 +129,30 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
       });
       if (result) {
         const keyToId = new Map(keyed.map((k) => [k.key, k.id]));
-        if (result.newCategories.length > 0) {
-          const order = orderWithNewCategories(keyed.map((k) => k.key), result.newCategories);
-          for (const created of result.newCategories) {
-            const { data: inserted, error: insertError } = await supabase
-              .from("list_categories")
-              .insert({
-                list_id: listId,
-                name_en: created.en,
-                name_he: created.he,
-                name_ru: created.ru,
-                position: order.indexOf(created.ref),
-                created_by: null,
-              })
-              .select("id")
-              .single();
-            if (insertError) console.error("[Categorizer] category insert failed", { listId, error: insertError });
-            const id = (inserted as { id?: string } | null)?.id;
-            if (id) keyToId.set(created.ref, id);
-          }
-          for (const k of keyed) {
-            const position = order.indexOf(k.key);
-            const current = categories.find((c) => c.id === k.id)!;
-            if (position !== current.position) {
-              await supabase.from("list_categories").update({ position }).eq("id", k.id).eq("list_id", listId);
-            }
-          }
+        // The RPC places each one against the list's current positions under the list lock.
+        // after=null ones lead, each after the end of the leading run so far, and one chained
+        // onto that end joins the run: a first scan keeps the AI's walk order. An `after`
+        // that is not a category (yet) goes last.
+        let leadingEnd: string | null = null;
+        for (const created of result.newCategories) {
+          const afterId: string | null = created.after === null ? leadingEnd : keyToId.get(created.after) ?? null;
+          const placement = afterId ? "after" : created.after === null ? "first" : "last";
+          const { data: insertedRows, error: insertError } = await supabase.rpc("insert_list_category", {
+            p_list_id: listId,
+            p_name_en: created.en,
+            p_name_he: created.he,
+            p_name_ru: created.ru,
+            p_created_by: null,
+            p_placement: placement,
+            p_after_id: afterId,
+            p_max: MAX_CATEGORIES_PER_LIST,
+          });
+          if (insertError) console.error("[Categorizer] category insert failed", { listId, error: insertError });
+          const inserted = (Array.isArray(insertedRows) ? insertedRows[0] : insertedRows) as { id?: string } | null | undefined;
+          // No row: the list reached the cap meanwhile. Its items stay uncategorized.
+          if (!inserted?.id) continue;
+          keyToId.set(created.ref, inserted.id);
+          if (created.after === null || (afterId && afterId === leadingEnd)) leadingEnd = inserted.id;
         }
         for (const a of result.assignments) {
           const categoryId = keyToId.get(a.category);

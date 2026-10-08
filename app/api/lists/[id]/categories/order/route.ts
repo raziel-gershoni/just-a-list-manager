@@ -18,21 +18,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!parsed.success) return parsed.response;
   const { orderedIds } = parsed.data;
 
-  const supabase = createServerClient();
-  const { data } = await supabase.from("list_categories").select("id").eq("list_id", listId);
-  const current = new Set(((data ?? []) as { id: string }[]).map((c) => c.id));
-  const given = new Set(orderedIds);
-  if (given.size !== orderedIds.length || given.size !== current.size || orderedIds.some((id) => !current.has(id))) {
+  // One statement under the list row lock; false (nothing written) unless the order names
+  // every category of this list exactly once.
+  const { data: applied, error } = await createServerClient().rpc("reorder_list_categories", {
+    p_list_id: listId,
+    p_ordered_ids: orderedIds,
+  });
+  if (error) return NextResponse.json({ error: "Failed to reorder" }, { status: 500 });
+  if (!applied) {
     return NextResponse.json({ error: "Order must list every category of this list once" }, { status: 400 });
-  }
-
-  for (const [position, id] of orderedIds.entries()) {
-    const { error } = await supabase
-      .from("list_categories")
-      .update({ position })
-      .eq("id", id)
-      .eq("list_id", listId);
-    if (error) return NextResponse.json({ error: "Failed to reorder" }, { status: 500 });
   }
   return NextResponse.json({ success: true });
 }
