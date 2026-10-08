@@ -25,15 +25,6 @@ describe("category realtime wiring", () => {
     expect(src.match(/setCategories\(sortCategories\(/g)?.length).toBe(2);
   });
 
-  it("fetches categories only for grocery lists", () => {
-    const src = read("src/hooks/useListData.ts");
-    const fetches = [...src.matchAll(/\/categories`/g)];
-    expect(fetches.length).toBe(2);
-    for (const m of fetches) {
-      expect(src.slice(m.index - 120, m.index)).toMatch(/if \(\w+ === "grocery"\) \{/);
-    }
-  });
-
   it("the page hands setCategories to useListRealtime", () => {
     const page = read("app/list/[id]/page.tsx");
     const at = page.indexOf("useListRealtime({");

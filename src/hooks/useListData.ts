@@ -158,12 +158,18 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         });
         setItems(mapped);
         if (currentListType === "grocery") {
-          const catRes = await fetch(`/api/lists/${listId}/categories`, {
-            headers: { Authorization: `Bearer ${jwt}` },
-          });
-          if (catRes.ok) {
-            const { categories: fetched } = await catRes.json();
-            setCategories(sortCategories(fetched ?? []));
+          // The list works without categories (items show under "Sorting…"), so a failed
+          // request must not turn into the list's error screen.
+          try {
+            const catRes = await fetch(`/api/lists/${listId}/categories`, {
+              headers: { Authorization: `Bearer ${jwt}` },
+            });
+            if (catRes.ok) {
+              const { categories: fetched } = await catRes.json();
+              setCategories(sortCategories(fetched ?? []));
+            }
+          } catch (e) {
+            console.error("[List] Categories fetch error:", e);
           }
         }
       } else {
