@@ -37,7 +37,7 @@ export async function GET(
   // never respawns, and is purged by the 7-day cleanup cron.
   let query = supabase
     .from("items")
-    .select("id, text, completed, completed_at, deleted_at, skipped_at, ordered_at, recurring, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
+    .select("id, text, completed, completed_at, deleted_at, skipped_at, ordered_at, recurring, category_id, category_locked, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
     .eq("list_id", listId)
     .is("deleted_at", null)
     .order("position", { ascending: false })

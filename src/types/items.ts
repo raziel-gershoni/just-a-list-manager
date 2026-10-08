@@ -6,6 +6,8 @@ export interface ItemData {
   deleted_at: string | null;
   skipped_at: string | null;
   ordered_at: string | null;
+  category_id?: string | null;
+  category_locked?: boolean;
   recurring: boolean;
   position: number;
   created_by: string | null;
