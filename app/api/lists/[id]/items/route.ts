@@ -54,7 +54,11 @@ export async function GET(
     query = query.lt("position", parseInt(cursor));
   }
 
-  const { data: items, error } = await query;
+  // The list's type and owed re-scan decide the sweep below; read alongside the items.
+  const [{ data: items, error }, { data: list }] = await Promise.all([
+    query,
+    supabase.from("lists").select("type, categories_rescan_at").eq("id", listId).maybeSingle(),
+  ]);
 
   if (error) {
     return NextResponse.json({ error: "Failed to fetch items" }, { status: 500 });
@@ -65,8 +69,13 @@ export async function GET(
       ? items[items.length - 1].position
       : null;
 
-  // Sweep: first scan after deploy, lists switched to grocery, and failed runs.
-  if ((items || []).some((i) => !i.category_id)) scheduleCategorize(supabase, listId);
+  // Sweep grocery lists: first scan after deploy, failed runs, and a re-scan still owed.
+  if (
+    list?.type === "grocery" &&
+    (list.categories_rescan_at || (items || []).some((i) => !i.category_id))
+  ) {
+    scheduleCategorize(supabase, listId);
+  }
 
   return NextResponse.json({ items: items || [], nextCursor });
 }

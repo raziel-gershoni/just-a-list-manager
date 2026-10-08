@@ -16,9 +16,16 @@ export interface CategorizeDeps {
   categorizer?: ItemCategorizer;
   lock?: ListLock;
   allowAiCall?: (listId: string) => Promise<boolean>;
+  now?: () => number;
+  /** How long a pending run waits after taking the lock before it reads the items. */
+  settleMs?: number;
 }
 
-const MAX_ROUNDS = 3;
+// A run takes waiting requests until this much time has passed; one left waiting then is
+// picked up by the next trigger or the client's retry.
+const RUN_BUDGET_MS = 50_000;
+// Items added together (a comma list, two people) land within this, so they share one AI call.
+const SETTLE_MS = 1500;
 // Items per AI call, so a list's long completed history cannot push the reply past the
 // 25 s AI timeout on every attempt.
 const AI_BATCH_LIMIT = 100;
@@ -60,8 +67,29 @@ function knownCategories(rows: ItemRow[]): Map<string, string> {
   return known;
 }
 
-async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: CategorizeMode) {
+async function runOnce(deps: Required<CategorizeDeps>, listId: string, requested: CategorizeMode) {
   const { supabase, categorizer, allowAiCall } = deps;
+
+  // A re-scan the user asked for stays owed until one gets an AI answer, so every run
+  // re-scans until then. Read under the lock: a later request changes the value.
+  const { data: listData, error: listError } = await supabase
+    .from("lists")
+    .select("categories_rescan_at")
+    .eq("id", listId)
+    .maybeSingle();
+  if (listError) console.error("[Categorizer] could not read the owed re-scan", { listId, error: listError });
+  const owed = (listData as { categories_rescan_at?: string | null } | null)?.categories_rescan_at ?? null;
+  const mode: CategorizeMode = owed ? "rescan" : requested;
+  // Compare-and-swap: a re-scan asked for while this one ran stays owed.
+  const settleOwed = async () => {
+    if (!owed) return;
+    const { error } = await supabase
+      .from("lists")
+      .update({ categories_rescan_at: null })
+      .eq("id", listId)
+      .eq("categories_rescan_at", owed);
+    if (error) console.error("[Categorizer] could not clear the owed re-scan", { listId, error });
+  };
 
   // PostgREST returns failures instead of throwing. Going on without the categories would
   // tell the AI the list has none, and it would create duplicates of every one.
@@ -94,9 +122,13 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
       (!r.category_locked || !r.category_id) &&
       (mode === "rescan" || !r.category_id)
   );
-  if (targets.length === 0) return;
+  if (targets.length === 0) {
+    await settleOwed();
+    return;
+  }
 
   const assignments: Assignment[] = [];
+  let answered = false;
   let remaining = targets;
   if (mode === "pending") {
     const known = knownCategories(rows);
@@ -128,6 +160,7 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
         maxNew: Math.max(room, 0),
       });
       if (result) {
+        answered = true;
         const keyToId = new Map(keyed.map((k) => [k.key, k.id]));
         // The RPC places each one against the list's current positions under the list lock.
         // after=null ones lead, each after the end of the leading run so far, and one chained
@@ -169,8 +202,28 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
       p_assignments: assignments,
       p_only_null: mode === "pending",
     });
-    if (error) console.error("[Categorizer] apply failed", { listId, error });
+    if (error) {
+      console.error("[Categorizer] apply failed", { listId, error });
+      return;
+    }
   }
+  if (answered) await settleOwed();
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** The lock and the mode to run in, or null when another run holds the lock. */
+async function takeLock(lock: ListLock, listId: string, mode: CategorizeMode) {
+  const token = await lock.acquire(listId);
+  if (token) return { token, mode };
+  await lock.requestRerun(listId, mode);
+  // The holder looks for requests after it releases. If it released and looked between
+  // our attempt and our request, nobody would see the request: try once more.
+  const retry = await lock.acquire(listId);
+  if (!retry) return null;
+  // Our request and any other waiting one: a re-scan wins.
+  const waiting = await lock.takeRerun(listId);
+  return { token: retry, mode: waiting === "rescan" ? "rescan" : mode };
 }
 
 export async function categorizeList(
@@ -185,7 +238,10 @@ export async function categorizeList(
       categorizer: deps.categorizer ?? getCategorizer(),
       lock: deps.lock ?? redisListLock,
       allowAiCall: deps.allowAiCall ?? defaultAllowAiCall,
+      now: deps.now ?? Date.now,
+      settleMs: deps.settleMs ?? SETTLE_MS,
     };
+    const started = full.now();
     const { data: list } = await full.supabase
       .from("lists")
       .select("type")
@@ -198,19 +254,18 @@ export async function categorizeList(
     // is. A trigger that finds it held leaves a request, and the holder looks for one
     // after releasing, so a request made while it was releasing is not missed.
     let next: CategorizeMode | null = mode;
-    for (let round = 0; next && round < MAX_ROUNDS; round++) {
-      const token = await full.lock.acquire(listId);
-      if (!token) {
-        await full.lock.requestRerun(listId, next);
-        return;
-      }
+    for (let round = 0; next; round++) {
+      const held = await takeLock(full.lock, listId, next);
+      if (!held) return;
       try {
-        await runOnce(full, listId, next);
+        if (round === 0 && held.mode === "pending" && full.settleMs > 0) await sleep(full.settleMs);
+        await runOnce(full, listId, held.mode);
       } finally {
-        await full.lock.release(listId, token);
+        await full.lock.release(listId, held.token);
       }
-      // At the cap, a waiting request stays for the next run.
-      next = round + 1 < MAX_ROUNDS ? await full.lock.takeRerun(listId) : null;
+      // Out of time: a waiting request stays for the next trigger or the client's retry.
+      if (full.now() - started >= RUN_BUDGET_MS) return;
+      next = await full.lock.takeRerun(listId);
     }
   } catch (error) {
     console.error("[Categorizer] categorizeList failed", { listId, mode }, error);

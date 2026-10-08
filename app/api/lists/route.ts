@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { verifyUserAuth } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
@@ -6,6 +6,7 @@ import { createListSchema, updateListSchema } from "@/src/schemas/lists";
 import { parseBody } from "@/src/lib/api-validation";
 import { sortListsByUserOrder } from "@/src/utils/list-order";
 import { filterListsByView, type ListView } from "@/src/utils/list-archive";
+import { categorizeList } from "@/src/services/categorize-list";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "lists-get");
@@ -270,6 +271,9 @@ export async function PATCH(request: NextRequest) {
   if (error) {
     return NextResponse.json({ error: "Update failed" }, { status: 500 });
   }
+
+  // A list that becomes a grocery list is sorted right away, not on its next open.
+  if (type === "grocery") after(() => categorizeList({ supabase }, id, "pending"));
 
   return NextResponse.json(updated);
 }

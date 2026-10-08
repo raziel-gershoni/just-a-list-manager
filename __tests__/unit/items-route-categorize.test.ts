@@ -41,26 +41,52 @@ beforeEach(() => {
   h.categorize.mockClear();
 });
 
+// GET reads the items and the list itself (its type and any owed re-scan).
+function listed(items: { id: string; position: number; category_id: string | null }[], list: { type: string; categories_rescan_at: string | null }) {
+  h.fake = fakeSupabase((c) => {
+    if (c.table === "items") return { data: items, error: null };
+    if (c.table === "lists") return { data: list, error: null };
+    return { data: null, error: null };
+  }) as typeof h.fake;
+}
+const grocery = { type: "grocery", categories_rescan_at: null };
+
 describe("items route schedules categorization", () => {
   it("GET schedules a pending sweep when an item has no category", async () => {
-    use((c) => c.table === "items" ? { data: [{ id: "a", position: 1, category_id: null }], error: null } : { data: null, error: null });
+    listed([{ id: "a", position: 1, category_id: null }], grocery);
     await GET(req("GET"), params);
     await runAfter();
     expect(h.categorize).toHaveBeenCalledWith(expect.objectContaining({ supabase: expect.anything() }), "L", "pending");
   });
 
   it("GET sweeps a list where only some items are uncategorized", async () => {
-    use((c) => c.table === "items"
-      ? { data: [{ id: "a", position: 2, category_id: "x" }, { id: "b", position: 1, category_id: null }], error: null }
-      : { data: null, error: null });
+    listed([{ id: "a", position: 2, category_id: "x" }, { id: "b", position: 1, category_id: null }], grocery);
     await GET(req("GET"), params);
     expect(h.after).toHaveLength(1);
   });
 
   it("GET schedules nothing when every item is categorized", async () => {
-    use((c) => c.table === "items" ? { data: [{ id: "a", position: 1, category_id: "x" }], error: null } : { data: null, error: null });
+    listed([{ id: "a", position: 1, category_id: "x" }], grocery);
     await GET(req("GET"), params);
     expect(h.after).toEqual([]);
+  });
+
+  it("GET on a regular list schedules nothing, though none of its items has a category", async () => {
+    listed([{ id: "a", position: 1, category_id: null }], { type: "regular", categories_rescan_at: null });
+    const res = await GET(req("GET"), params);
+    expect(res.status).toBe(200);
+    expect(h.after).toEqual([]);
+  });
+
+  it("GET schedules a run for a grocery list that owes a re-scan, though every item has a category", async () => {
+    listed([{ id: "a", position: 1, category_id: "x" }], { type: "grocery", categories_rescan_at: "2026-10-08T10:00:00+00:00" });
+    await GET(req("GET"), params);
+    expect(h.after).toHaveLength(1);
+    await runAfter();
+    expect(h.categorize).toHaveBeenCalledWith(expect.anything(), "L", "pending");
+    const read = h.fake.calls.filter((c) => c.table === "lists");
+    expect(read).toHaveLength(1);
+    expect(read[0].filters).toEqual(expect.arrayContaining(["eq:id=L"]));
   });
 
   it("POST (idempotent create) schedules a pending run after the insert", async () => {

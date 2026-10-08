@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeSupabase, type FakeCall } from "../helpers/fake-supabase";
-import { categorizeList } from "@/src/services/categorize-list";
+import { categorizeList, type CategorizeDeps } from "@/src/services/categorize-list";
 import type { ItemCategorizer, CategorizeInput, Categorization } from "@/src/services/categorizer";
 import type { ListLock, RerunMode } from "@/src/utils/categorize-lock";
 
@@ -31,6 +31,8 @@ function world(opts: {
   categories?: { id: string; name_en: string; position: number }[];
   items?: Row[];
   result?: Categorization | null;
+  answer?: (input: CategorizeInput) => Categorization | null | Promise<Categorization | null>;
+  rescanAt?: string; // lists.categories_rescan_at: a re-scan the user asked for that has not run yet
   aiAllowed?: boolean;
   lockFree?: boolean | boolean[]; // a list answers successive acquires (one per round)
   reruns?: (RerunMode | null)[];
@@ -39,16 +41,33 @@ function world(opts: {
   failCategoriesRead?: boolean;
   failItemsRead?: boolean;
   failInsert?: boolean;
+  failApply?: boolean;
   insertRefused?: string[]; // names (en) the insert RPC answers with no row, as at the cap
 }) {
   const categories = opts.categories ?? [];
+  // The rows the fake database holds: reads return copies, apply_item_categories writes them.
+  const items = (opts.items ?? []).map((r) => ({ ...r }));
+  const list: Record<string, string | null> = {
+    id: "L",
+    type: opts.type === undefined ? "grocery" : opts.type,
+    categories_rescan_at: opts.rescanAt ?? null,
+  };
   let nextCategory = 0;
   const dbError = { message: "fetch failed", code: "" };
   const fake = fakeSupabase((call: FakeCall) => {
     // A deleted list is found only by a query that does not filter out deleted lists.
+    // An update writes only when every eq filter matches the row, as in Postgres.
+    if (call.table === "lists" && call.op === "update") {
+      const matches = call.filters.filter((f) => f.startsWith("eq:")).every((f) => {
+        const [k, v] = [f.slice(3, f.indexOf("=")), f.slice(f.indexOf("=") + 1)];
+        return String(list[k]) === v;
+      });
+      if (matches) Object.assign(list, call.values);
+      return { data: null, error: null };
+    }
     if (call.table === "lists" && opts.listDeleted)
-      return { data: call.filters.includes("is:deleted_at=null") ? null : { type: "grocery" }, error: null };
-    if (call.table === "lists") return { data: opts.type === undefined ? { type: "grocery" } : opts.type ? { type: opts.type } : null, error: null };
+      return { data: call.filters.includes("is:deleted_at=null") ? null : { ...list }, error: null };
+    if (call.table === "lists") return { data: list.type ? { ...list } : null, error: null };
     if (call.table === "list_categories" && call.op === "select") {
       if (opts.failCategoriesRead) return { data: null, error: dbError };
       return { data: categories.map((c) => ({ ...c, name_he: c.name_en, name_ru: c.name_en })), error: null };
@@ -60,27 +79,49 @@ function world(opts: {
     }
     if (call.table === "items" && call.op === "select") {
       if (opts.failItemsRead) return { data: null, error: dbError };
-      return { data: opts.items ?? [], error: null };
+      return { data: items.map((r) => ({ ...r })), error: null };
+    }
+    // The guards of the real function: same text, not hand-placed, live, empty in pending mode.
+    if (call.table === "apply_item_categories") {
+      if (opts.failApply) return { data: null, error: dbError };
+      const { p_assignments, p_only_null } = call.values as { p_assignments: { id: string; text: string; category_id: string }[]; p_only_null: boolean };
+      for (const a of p_assignments) {
+        const r = items.find((x) => x.id === a.id);
+        if (!r || r.text !== a.text || r.deleted_at || (r.category_locked && r.category_id) || (p_only_null && r.category_id)) continue;
+        r.category_id = a.category_id;
+        r.category_locked = false;
+      }
+      return { data: null, error: null };
     }
     return { data: null, error: null };
   });
   const inputs: CategorizeInput[] = [];
   const categorizer: ItemCategorizer = {
-    categorize: vi.fn(async (input: CategorizeInput) => { inputs.push(input); return opts.result === undefined ? { newCategories: [], assignments: [] } : opts.result; }),
+    categorize: vi.fn(async (input: CategorizeInput) => {
+      inputs.push(input);
+      if (opts.answer) return opts.answer(input);
+      return opts.result === undefined ? { newCategories: [], assignments: [] } : opts.result;
+    }),
     translateName: vi.fn(async () => null),
   };
   const reruns = [...(opts.reruns ?? [])];
   const free = Array.isArray(opts.lockFree) ? [...opts.lockFree] : null;
   let flag: RerunMode | null = null; // set by requestRerun, read by takeRerun, like the Redis flag
+  let holder: string | null = null; // one run at a time, like the Redis lock; lockFree=false is a run elsewhere
   const lock: ListLock & { requested: RerunMode[]; acquired: string[]; released: string[] } = {
     requested: [], acquired: [], released: [],
     acquire: vi.fn(async () => {
+      if (holder) return null;
       if (!(free ? free.shift() ?? true : opts.lockFree ?? true)) return null;
       const token = `tok-${lock.acquired.length + 1}`;
       lock.acquired.push(token);
+      holder = token;
       return token;
     }),
-    release: vi.fn(async (_l: string, token: string) => { lock.released.push(token); }),
+    release: vi.fn(async (_l: string, token: string) => {
+      if (holder === token) holder = null;
+      lock.released.push(token);
+    }),
     requestRerun: vi.fn(async (_l: string, m: RerunMode) => {
       lock.requested.push(m);
       if (m === "rescan" || !flag) flag = m;
@@ -91,10 +132,13 @@ function world(opts: {
       return taken;
     }),
   };
-  const deps = { supabase: fake.client, categorizer, lock, allowAiCall: async () => opts.aiAllowed ?? true };
+  // No settle wait unless a test asks for one.
+  const deps: CategorizeDeps & { supabase: typeof fake.client } = {
+    supabase: fake.client, categorizer, lock, allowAiCall: async () => opts.aiAllowed ?? true, settleMs: 0,
+  };
   const rpc = () => fake.calls.filter((c) => c.table === "apply_item_categories");
   const inserts = () => fake.calls.filter((c) => c.table === "insert_list_category").map((c) => c.values);
-  return { fake, deps, inputs, categorizer, lock, rpc, inserts };
+  return { fake, deps, inputs, categorizer, lock, rpc, inserts, items, list };
 }
 
 beforeEach(() => {
@@ -436,18 +480,183 @@ describe("categorizeList", () => {
   });
 
   it("hands the rerun to whoever took the lock between rounds", async () => {
-    const w = world({ items: [row({ id: "a", text: "milk" })], lockFree: [true, false], reruns: ["rescan"] });
+    // Taken by another run on both the attempt and the retry.
+    const w = world({ items: [row({ id: "a", text: "milk" })], lockFree: [true, false, false], reruns: ["rescan"] });
     await categorizeList(w.deps, "L", "pending");
     expect(w.categorizer.categorize).toHaveBeenCalledTimes(1);
     expect(w.lock.requested).toEqual(["rescan"]);
   });
 
-  it("stops after 3 rounds and leaves a further request for the next run", async () => {
+  // Every item gets the list's first category.
+  const allToFirst = (input: CategorizeInput): Categorization => ({
+    newCategories: [], assignments: input.items.map((it) => ({ i: it.i, category: "c1" })),
+  });
+  const dairy = [{ id: "dairy", name_en: "Dairy", position: 0 }];
+  const uncategorized = (w: ReturnType<typeof world>) => w.items.filter((r) => !r.category_id).map((r) => r.text);
+
+  it("keeps taking requests for 50 s, then leaves the next one for the next run", async () => {
     const w = world({ items: [row({ id: "a", text: "milk" })] });
-    w.lock.takeRerun = vi.fn(async (): Promise<RerunMode | null> => "pending");
+    let clock = 1_000_000;
+    w.deps.now = () => clock;
+    // Each AI call takes 10 s and every round ends with another request waiting.
+    w.categorizer.categorize = vi.fn(async () => { clock += 10_000; return { newCategories: [], assignments: [] }; });
+    let waiting = 20;
+    w.lock.takeRerun = vi.fn(async (): Promise<RerunMode | null> => (waiting-- > 0 ? "pending" : null));
     await categorizeList(w.deps, "L", "pending");
-    expect(w.categorizer.categorize).toHaveBeenCalledTimes(3);
-    expect(w.lock.takeRerun).toHaveBeenCalledTimes(2);
+    expect(w.categorizer.categorize).toHaveBeenCalledTimes(5);
+    // The request waiting after the fifth round, at 50 s, is not taken.
+    expect(w.lock.takeRerun).toHaveBeenCalledTimes(4);
+  });
+
+  it("sorts an item added during a run's third round (three rounds used to be the cap)", async () => {
+    const w = world({ categories: dairy, items: [row({ id: "a", text: "milk" })] });
+    let added = 0;
+    w.categorizer.categorize = vi.fn(async (input: CategorizeInput) => {
+      // Someone adds an item while the AI works; its trigger finds the lock held.
+      if (added < 3) {
+        added++;
+        w.items.push(row({ id: `n${added}`, text: `item ${added}` }));
+        await categorizeList(w.deps, "L", "pending");
+      }
+      return allToFirst(input);
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(uncategorized(w)).toEqual([]);
+    expect(w.categorizer.categorize).toHaveBeenCalledTimes(4);
+  });
+
+  it("a trigger that finds the lock held just as the holder finishes still gets its item sorted", async () => {
+    let inAi!: () => void;
+    const holderInAi = new Promise<void>((r) => { inAi = r; });
+    let finishAi!: () => void;
+    const aiDone = new Promise<void>((r) => { finishAi = r; });
+    let calls = 0;
+    const w = world({
+      categories: dairy,
+      items: [row({ id: "a", text: "milk" })],
+      answer: async (input) => {
+        if (++calls === 1) { inAi(); await aiDone; }
+        return allToFirst(input);
+      },
+    });
+    const holder = categorizeList(w.deps, "L", "pending");
+    await holderInAi;
+    w.items.push(row({ id: "b", text: "soap" }));
+    // The holder releases and finds no request between this trigger's failed acquire and its request.
+    const requestRerun = w.lock.requestRerun;
+    w.lock.requestRerun = vi.fn(async (listId: string, m: RerunMode) => {
+      finishAi();
+      await holder;
+      await requestRerun(listId, m);
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(uncategorized(w)).toEqual([]);
+  });
+
+  it("a trigger that gets the lock on its retry runs a re-scan another trigger left waiting", async () => {
+    const w = world({
+      categories: dairy,
+      items: [row({ id: "a", text: "milk", category_id: "dairy" }), row({ id: "b", text: "soap" })],
+      lockFree: [false, true],
+      answer: allToFirst,
+    });
+    await w.lock.requestRerun("L", "rescan");
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.inputs.map((input) => input.items.map((it) => it.text))).toEqual([["milk", "soap"]]);
+    expect(w.rpc().map((c) => (c.values as { p_only_null: boolean }).p_only_null)).toEqual([false]);
+  });
+
+  it("a pending run waits briefly after taking the lock, so adds landing together share one AI call", async () => {
+    const w = world({ categories: dairy, items: [row({ id: "a", text: "milk" })], answer: allToFirst });
+    w.deps.settleMs = 30;
+    const acquire = w.lock.acquire;
+    w.lock.acquire = vi.fn(async (listId: string) => {
+      const token = await acquire(listId);
+      // The second item of a comma list lands a moment after the first one's run took the lock.
+      if (token && w.lock.acquired.length === 1) setTimeout(() => w.items.push(row({ id: "b", text: "soap" })), 1);
+      return token;
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.inputs.map((input) => input.items.map((it) => it.text).sort())).toEqual([["milk", "soap"]]);
+    expect(uncategorized(w)).toEqual([]);
+  });
+
+  describe("a re-scan the user asked for", () => {
+    const OWED = "2026-10-08T10:00:00.123+00:00";
+    const sorted = () => world({
+      categories: dairy,
+      items: [row({ id: "a", text: "milk", category_id: "dairy" }), row({ id: "b", text: "soap" })],
+      rescanAt: OWED,
+      answer: allToFirst,
+    });
+    const owedClears = (w: ReturnType<typeof world>) => w.fake.calls.filter((c) => c.table === "lists" && c.op === "update");
+
+    it("runs as a re-scan when the list owes one, even if the trigger asked for pending, then is cleared", async () => {
+      const w = sorted();
+      await categorizeList(w.deps, "L", "pending");
+      expect(w.inputs.map((input) => input.items.map((it) => it.text))).toEqual([["milk", "soap"]]);
+      expect(w.rpc().map((c) => (c.values as { p_only_null: boolean }).p_only_null)).toEqual([false]);
+      expect(w.list.categories_rescan_at).toBeNull();
+      // Compare-and-swap on the value read: a newer request is not wiped.
+      expect(owedClears(w)).toHaveLength(1);
+      expect(owedClears(w)[0].values).toEqual({ categories_rescan_at: null });
+      expect(owedClears(w)[0].filters).toEqual(expect.arrayContaining(["eq:id=L", `eq:categories_rescan_at=${OWED}`]));
+    });
+
+    it("stays owed when the AI budget refuses it, and a later pending trigger runs it", async () => {
+      const w = sorted();
+      w.deps.allowAiCall = async () => false;
+      await categorizeList(w.deps, "L", "rescan");
+      expect(w.categorizer.categorize).not.toHaveBeenCalled();
+      expect(w.list.categories_rescan_at).toBe(OWED);
+
+      w.deps.allowAiCall = async () => true;
+      await categorizeList(w.deps, "L", "pending");
+      expect(w.inputs.map((input) => input.items.map((it) => it.text))).toEqual([["milk", "soap"]]);
+      expect(w.list.categories_rescan_at).toBeNull();
+    });
+
+    it("stays owed when the AI call fails", async () => {
+      const w = world({ categories: dairy, items: [row({ id: "a", text: "milk" })], rescanAt: OWED, result: null });
+      await categorizeList(w.deps, "L", "rescan");
+      expect(w.categorizer.categorize).toHaveBeenCalledTimes(1);
+      expect(w.list.categories_rescan_at).toBe(OWED);
+    });
+
+    it("stays owed when the AI's answer could not be saved", async () => {
+      const w = world({ categories: dairy, items: [row({ id: "a", text: "milk" })], rescanAt: OWED, answer: allToFirst, failApply: true });
+      await categorizeList(w.deps, "L", "rescan");
+      expect(w.categorizer.categorize).toHaveBeenCalledTimes(1);
+      expect(w.list.categories_rescan_at).toBe(OWED);
+    });
+
+    it("is cleared without an AI call when there is nothing to sort", async () => {
+      const w = world({
+        categories: dairy,
+        items: [row({ id: "a", text: "milk", category_id: "dairy", category_locked: true }), row({ id: "b", text: "gone", deleted_at: "2026-10-02T00:00:00Z" })],
+        rescanAt: OWED,
+      });
+      await categorizeList(w.deps, "L", "pending");
+      expect(w.categorizer.categorize).not.toHaveBeenCalled();
+      expect(w.list.categories_rescan_at).toBeNull();
+    });
+
+    it("asked again while one runs stays owed for the next run", async () => {
+      const w = sorted();
+      const LATER = "2026-10-08T10:00:05.456+00:00";
+      w.categorizer.categorize = vi.fn(async (input: CategorizeInput) => {
+        w.list.categories_rescan_at = LATER; // a category added while the AI works
+        return allToFirst(input);
+      });
+      await categorizeList(w.deps, "L", "pending");
+      expect(w.list.categories_rescan_at).toBe(LATER);
+    });
+
+    it("is not touched by a pending run of a list that owes none", async () => {
+      const w = world({ categories: dairy, items: [row({ id: "a", text: "milk" })], answer: allToFirst });
+      await categorizeList(w.deps, "L", "pending");
+      expect(owedClears(w)).toEqual([]);
+    });
   });
 
   it("releases the lock when a round throws", async () => {
@@ -469,7 +678,7 @@ describe("categorizeList", () => {
   describe("the default AI budget", () => {
     const refused = async () => ({ success: false, remaining: 0, reset: 0 });
     const redisDown = async (): Promise<never> => { throw new Error("redis down"); };
-    const withoutBudget = (w: ReturnType<typeof world>) => ({ supabase: w.deps.supabase, categorizer: w.categorizer, lock: w.lock });
+    const withoutBudget = (w: ReturnType<typeof world>) => ({ supabase: w.deps.supabase, categorizer: w.categorizer, lock: w.lock, settleMs: 0 });
 
     it("calls the AI when the list's and the app-wide budgets both allow", async () => {
       const w = world({ items: [row({ id: "a", text: "milk" })] });
@@ -494,7 +703,7 @@ describe("categorizeList", () => {
 
   it("never throws when the default categorizer cannot be built", async () => {
     const w = world({ items: [row({ id: "a", text: "milk" })] });
-    const deps = { supabase: w.deps.supabase, lock: w.lock, allowAiCall: w.deps.allowAiCall };
+    const deps = { supabase: w.deps.supabase, lock: w.lock, allowAiCall: w.deps.allowAiCall, settleMs: 0 };
     await expect(categorizeList(deps, "L", "pending")).resolves.toBeUndefined();
   });
 });
