@@ -48,7 +48,7 @@ function ListContent() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, categories, setCategories, loadCategories, fetchItems, refreshItems } =
+  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -111,18 +111,15 @@ function ListContent() {
   });
 
   // Saved items still under "Sorting…" re-request the list (GET /items sorts them) in case
-  // the server's sort request was lost. Items not saved yet have nothing to sort. Queued
-  // changes go out first, as on a reconnect, so the refetch can't briefly undo one.
+  // the server's sort request was lost. Items not saved yet have nothing to sort.
+  // retrySorting only fills in categories, so it can't undo a change still being saved.
   useSortingRetry({
     sortingIds:
       categoryGroups
         ?.find((g) => g.key === SORTING_GROUP)
         ?.items.filter((i) => !i._pending)
         .map((i) => i.id) ?? [],
-    refresh: async () => {
-      await flushQueue();
-      await refreshItems();
-    },
+    refresh: retrySorting,
   });
 
   const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =

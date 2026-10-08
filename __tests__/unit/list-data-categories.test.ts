@@ -148,4 +148,54 @@ describe("useListData loadCategories", () => {
     expect(f).not.toHaveBeenCalled();
     expect(render().categories).toEqual([]);
   });
+
+  describe("retrySorting", () => {
+    const row = (id: string, over: Record<string, unknown> = {}) => ({
+      id, text: id, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null,
+      recurring: false, position: 1, category_id: null, category_locked: false, ...over,
+    });
+
+    function stubServer(state: { items: unknown[]; categories: unknown[] }) {
+      const f = vi.fn(async (url: string) => {
+        const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+        if (url === "/api/lists") return json([{ id: "L", name: "Groceries", type: "grocery" }]);
+        if (url.startsWith("/api/lists/L/items")) return json({ items: state.items });
+        if (url.startsWith("/api/lists/L/reminders")) return json({ reminders: [] });
+        if (url === "/api/lists/L/categories") return json({ categories: state.categories });
+        throw new Error(`unexpected ${url}`);
+      });
+      vi.stubGlobal("fetch", f);
+      return f;
+    }
+
+    it("copies in a category the server has for an item still unsorted on screen, and touches nothing else", async () => {
+      const server = { items: [row("a"), row("b"), row("c", { category_id: "produce" })], categories: [] as unknown[] };
+      stubServer(server);
+      await render().fetchItems();
+      // On screen meanwhile: b was ticked off (not saved yet) and c moved by hand to bakery.
+      render().setItems((prev) => prev.map((i) =>
+        i.id === "b" ? { ...i, completed: true } : i.id === "c" ? { ...i, category_id: "bakery", category_locked: true } : i));
+
+      server.items = [row("a", { category_id: "dairy" }), row("b", { category_id: "produce" }), row("c", { category_id: "produce" })];
+      server.categories = [{ id: "dairy", list_id: "L", name_en: "Dairy", name_he: "", name_ru: "", position: 0, created_by: null }];
+      await render().retrySorting();
+
+      const items = Object.fromEntries(render().items.map((i) => [i.id, [i.category_id, i.completed]]));
+      expect(items).toEqual({ a: ["dairy", false], b: ["produce", true], c: ["bakery", false] });
+      expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
+    });
+
+    it("sends nothing without a token", async () => {
+      const f = stubServer({ items: [row("a")], categories: [] });
+      await render().fetchItems();
+      f.mockClear();
+      jwtRef.current = null as unknown as string;
+      try {
+        await render().retrySorting();
+      } finally {
+        jwtRef.current = "jwt";
+      }
+      expect(f).not.toHaveBeenCalled();
+    });
+  });
 });

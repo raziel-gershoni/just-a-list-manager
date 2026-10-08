@@ -259,5 +259,35 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     }
   }, [jwtRef, listId, listType, loadCategories]);
 
-  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems };
+  // The "Sorting…" retry: re-request the list so GET /items schedules a sort, and copy in a
+  // category the server already has for an item still unsorted on screen. Unlike
+  // refreshItems it replaces nothing else, so a change in flight or waiting in the queue is
+  // never undone, and it sends nothing from the queue.
+  const retrySorting = useCallback(async () => {
+    const jwt = jwtRef.current;
+    if (!jwt) return;
+    try {
+      const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (!res.ok) return;
+      const { items: fetched } = await res.json();
+      const server = new Map<string, { category_id?: string | null; category_locked?: boolean }>(
+        (fetched ?? []).map((i: { id: string; category_id?: string | null; category_locked?: boolean }) => [i.id, i])
+      );
+      setItems((prev) =>
+        prev.map((i) => {
+          if (i.category_id) return i;
+          const s = server.get(i.id);
+          return s?.category_id ? { ...i, category_id: s.category_id, category_locked: s.category_locked ?? false } : i;
+        })
+      );
+    } catch (e) {
+      console.error("[List] Sorting retry error:", e);
+      return;
+    }
+    if (listType === "grocery") await loadCategories();
+  }, [jwtRef, listId, listType, loadCategories]);
+
+  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting };
 }

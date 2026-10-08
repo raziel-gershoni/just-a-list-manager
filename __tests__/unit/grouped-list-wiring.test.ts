@@ -55,6 +55,7 @@ const S = vi.hoisted(() => ({
   dragGroups: undefined as CategoryGroup[] | null | undefined,
   calls: [] as string[],
   refreshItems: async function refreshItems() { S.calls.push("refresh"); },
+  retrySorting: async function retrySorting() { S.calls.push("retry"); },
   flushQueue: async function flushQueue() { await Promise.resolve(); S.calls.push("flush"); },
   sortingRetry: undefined as { sortingIds: string[]; refresh: () => unknown } | undefined,
 }));
@@ -79,7 +80,7 @@ vi.mock("@/src/hooks/useListData", () => ({
     listName: "Groceries", setListName: () => {}, items: S.items, setItems: () => {},
     loading: false, error: null, isShared: false, listType: S.listType, setListType: () => {},
     listIcon: null, listColor: null, categories: S.categories, setCategories: () => {},
-    loadCategories: async () => {}, fetchItems: () => {}, refreshItems: S.refreshItems,
+    loadCategories: async () => {}, fetchItems: () => {}, refreshItems: S.refreshItems, retrySorting: S.retrySorting,
   }),
 }));
 vi.mock("@/src/hooks/useSortingRetry", () => ({
@@ -195,11 +196,11 @@ describe("the rendered list page", () => {
     const { layout, sortingRetry } = renderList("grocery");
     expect(layout).toEqual(["# categories.sorting", "milk", "eggs", "yogurt", "# ירקות", "apples"]);
     expect(sortingRetry?.sortingIds).toEqual(["milk", "yogurt"]);
-    // Like a reconnect: send queued changes before refetching, so a change still waiting
-    // in the queue is not briefly replaced by the server's older copy.
+    // Only retrySorting: it fills in categories without replacing other state, and it never
+    // sends the queue (a flush without a token would get 401s and drop queued changes).
     S.calls = [];
     await sortingRetry!.refresh();
-    expect(S.calls).toEqual(["flush", "refresh"]);
+    expect(S.calls).toEqual(["retry"]);
   });
 
   it("never re-requests a list that is not grouped", () => {
