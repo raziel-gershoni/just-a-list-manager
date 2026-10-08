@@ -83,8 +83,13 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
   }
   const rows = (itemData ?? []) as ItemRow[];
 
+  // A hand-placed item keeps its category, unless that category is gone (a manual move
+  // that raced a category delete leaves it locked with no category): sort it again.
   const targets = rows.filter(
-    (r) => !r.deleted_at && !r.category_locked && (mode === "rescan" || !r.category_id)
+    (r) =>
+      !r.deleted_at &&
+      (!r.category_locked || !r.category_id) &&
+      (mode === "rescan" || !r.category_id)
   );
   if (targets.length === 0) return;
 

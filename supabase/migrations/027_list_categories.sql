@@ -44,8 +44,9 @@ CREATE INDEX IF NOT EXISTS idx_items_uncategorized
 CREATE INDEX IF NOT EXISTS idx_items_category ON items(category_id) WHERE category_id IS NOT NULL;
 
 -- Write AI results in one statement, only where the item still has the text the AI
--- saw, is not hand-placed, is live, and (pending mode) is still uncategorized, and only
--- to a category of the same list. A late result can never overwrite a newer edit or move.
+-- saw, is not hand-placed (or was, but its category is gone), is live, and (pending
+-- mode) is still uncategorized, and only to a category of the same list. A late result
+-- can never overwrite a newer edit or move.
 CREATE OR REPLACE FUNCTION apply_item_categories(
   p_list_id UUID,
   p_assignments JSONB,
@@ -55,12 +56,12 @@ DECLARE
   v_count INTEGER;
 BEGIN
   UPDATE items i
-  SET category_id = a.category_id
+  SET category_id = a.category_id, category_locked = false
   FROM jsonb_to_recordset(p_assignments) AS a(id UUID, "text" TEXT, category_id UUID)
   WHERE i.id = a.id
     AND i.list_id = p_list_id
     AND i."text" = a."text"
-    AND NOT i.category_locked
+    AND (NOT i.category_locked OR i.category_id IS NULL)
     AND i.deleted_at IS NULL
     AND (NOT p_only_null OR i.category_id IS NULL)
     AND EXISTS (
@@ -69,7 +70,7 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public;
 
 REVOKE ALL ON FUNCTION apply_item_categories(UUID, JSONB, BOOLEAN) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION apply_item_categories(UUID, JSONB, BOOLEAN) TO service_role;

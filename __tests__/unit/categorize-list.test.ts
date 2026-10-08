@@ -185,6 +185,19 @@ describe("categorizeList", () => {
     expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([{ id: "a", text: "apples", category_id: "produce" }]);
   });
 
+  it("re-sorts a hand-placed item whose category was deleted from under it", async () => {
+    // A manual move can land between a category delete's unlock and its DELETE; the FK then
+    // empties category_id but leaves category_locked = true. Such an item must not stay stuck.
+    const w = world({
+      categories: [{ id: "dairy", name_en: "Dairy", position: 0 }],
+      items: [row({ id: "a", text: "yogurt", category_locked: true, category_id: null })],
+      result: { newCategories: [], assignments: [{ i: 0, category: "c1" }] },
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.inputs[0].items).toEqual([{ i: 0, text: "yogurt" }]);
+    expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([{ id: "a", text: "yogurt", category_id: "dairy" }]);
+  });
+
   it("inserts new categories and renumbers positions in walk order", async () => {
     const w = world({
       categories: [{ id: "produce", name_en: "Produce", position: 0 }, { id: "dairy", name_en: "Dairy", position: 1 }],
