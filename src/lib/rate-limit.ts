@@ -34,6 +34,7 @@ let _voiceRateLimiter: Ratelimit | null = null;
 let _apiRateLimiter: Ratelimit | null = null;
 let _authIpRateLimiter: Ratelimit | null = null;
 let _authUserRateLimiter: Ratelimit | null = null;
+let _categorizeRateLimiter: Ratelimit | null = null;
 
 // Webhook: 30 req/min per user
 export const webhookRateLimiter = new Proxy({} as Ratelimit, {
@@ -72,6 +73,14 @@ export const authUserRateLimiter = new Proxy({} as Ratelimit, {
   get(_, prop) {
     if (!_authUserRateLimiter) _authUserRateLimiter = createLimiter(10, "1 m", "ratelimit:auth-user");
     return Reflect.get(_authUserRateLimiter, prop);
+  },
+});
+
+// Grocery categorization: 20 Gemini calls per 10 min per list. Used fail-closed.
+export const categorizeRateLimiter = new Proxy({} as Ratelimit, {
+  get(_, prop) {
+    if (!_categorizeRateLimiter) _categorizeRateLimiter = createLimiter(20, "10 m", "ratelimit:categorize");
+    return Reflect.get(_categorizeRateLimiter, prop);
   },
 });
 
