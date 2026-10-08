@@ -49,6 +49,14 @@ describe("items route schedules categorization", () => {
     expect(h.categorize).toHaveBeenCalledWith(expect.objectContaining({ supabase: expect.anything() }), "L", "pending");
   });
 
+  it("GET sweeps a list where only some items are uncategorized", async () => {
+    use((c) => c.table === "items"
+      ? { data: [{ id: "a", position: 2, category_id: "x" }, { id: "b", position: 1, category_id: null }], error: null }
+      : { data: null, error: null });
+    await GET(req("GET"), params);
+    expect(h.after).toHaveLength(1);
+  });
+
   it("GET schedules nothing when every item is categorized", async () => {
     use((c) => c.table === "items" ? { data: [{ id: "a", position: 1, category_id: "x" }], error: null } : { data: null, error: null });
     await GET(req("GET"), params);
@@ -133,6 +141,13 @@ describe("items route schedules categorization", () => {
     expect(check.filters).toEqual(expect.arrayContaining([`eq:id=${CAT}`, "eq:list_id=L"]));
     const update = h.fake.calls.find((c) => c.table === "items" && c.op === "update")!;
     expect(update.values).toMatchObject({ category_id: CAT, category_locked: true });
+  });
+
+  it("PATCH categoryId answers 500 when the category check itself fails, so the queue retries the move", async () => {
+    use((c) => c.table === "list_categories" ? { data: null, error: { message: "timeout" } } : { data: null, error: null });
+    const res = await PATCH(req("PATCH", { itemId: "a", categoryId: CAT }), params);
+    expect(res.status).toBe(500);
+    expect(h.fake.calls.filter((c) => c.table === "items" && c.op === "update")).toEqual([]);
   });
 
   it("PATCH categoryId from another list is rejected", async () => {

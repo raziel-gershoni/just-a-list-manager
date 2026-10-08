@@ -307,12 +307,16 @@ export async function PATCH(
   const supabase = createServerClient();
 
   if (updates.categoryId) {
-    const { data: category } = await supabase
+    const { data: category, error: categoryError } = await supabase
       .from("list_categories")
       .select("id")
       .eq("id", updates.categoryId)
       .eq("list_id", listId)
       .maybeSingle();
+    if (categoryError) {
+      // 500, not 400: the mutation queue drops 4xx, and this move should be retried.
+      return NextResponse.json({ error: "Failed to check category" }, { status: 500 });
+    }
     if (!category) {
       return NextResponse.json({ error: "Unknown category" }, { status: 400 });
     }
