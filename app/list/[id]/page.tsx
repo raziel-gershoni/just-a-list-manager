@@ -12,6 +12,7 @@ import ShareDialog from "@/components/ShareDialog";
 import ReminderSheet from "@/components/ReminderSheet";
 import ListHeader from "@/components/list/ListHeader";
 import SignalSheet from "@/components/list/SignalSheet";
+import CategoriesSheet from "@/components/list/CategoriesSheet";
 import SkippedItemsSection from "@/components/list/SkippedItemsSection";
 import RecurringItemsSection from "@/components/list/RecurringItemsSection";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
@@ -49,6 +50,7 @@ function ListContent() {
   const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, categories, setCategories, fetchItems, refreshItems } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
   const isReminders = listType === "reminders";
 
   const [showCompleted, setShowCompleted] = useState(() => {
@@ -406,6 +408,14 @@ function ListContent() {
                 </button>
               ))}
             </div>
+            {listType === "grocery" && (
+              <button
+                onClick={() => { setShowSettings(false); setShowCategories(true); }}
+                className="w-full py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
+              >
+                {t('categories.manage')}
+              </button>
+            )}
             <button
               onClick={() => setShowSettings(false)}
               className="w-full mt-4 py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
@@ -414,6 +424,17 @@ function ListContent() {
             </button>
           </div>
         </div>
+      )}
+
+      {showCategories && (
+        <CategoriesSheet
+          listId={listId}
+          jwtRef={jwtRef}
+          categories={categories}
+          setCategories={setCategories}
+          onClose={() => setShowCategories(false)}
+          onError={(message) => { setErrorToast(message); setTimeout(() => setErrorToast(null), 3000); }}
+        />
       )}
 
       {reminderItem && (() => {
