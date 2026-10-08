@@ -68,6 +68,9 @@ export async function handleVoiceMessage(
     return; // Duplicate — silently skip
   }
 
+  // Lists that got new items; sorted into categories after the lock is released.
+  const listsToSort: string[] = [];
+
   try {
     const supabase = createServerClient();
 
@@ -359,10 +362,7 @@ export async function handleVoiceMessage(
       }
     }
 
-    // Sort the new items on grocery lists (categorizeList skips other list types).
-    for (const listId of receipts.keys()) {
-      await categorizeList({ supabase }, listId, "pending");
-    }
+    listsToSort.push(...receipts.keys());
   } catch (error) {
     console.error("[VoiceHandler] Processing error:", error);
     try {
@@ -373,6 +373,13 @@ export async function handleVoiceMessage(
     } catch {}
   } finally {
     await releaseVoiceLock(voice.file_unique_id);
+  }
+
+  // Sort the new items on grocery lists (categorizeList skips other list types and never
+  // throws). This runs after the lock is released: the AI call can outlast the lock, and
+  // the receipt is already sent.
+  for (const listId of listsToSort) {
+    await categorizeList({ supabase: createServerClient() }, listId, "pending");
   }
 }
 
