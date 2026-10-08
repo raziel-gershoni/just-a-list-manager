@@ -75,6 +75,23 @@ export function useRealtimeList(
               old: payload.old,
             });
           }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "list_categories",
+            filter: `list_id=eq.${listId}`,
+          },
+          (payload) => {
+            onChangeRef.current({
+              table: "list_categories",
+              eventType: payload.eventType as RealtimeChange["eventType"],
+              new: payload.new,
+              old: payload.old,
+            });
+          }
         );
     },
     [listId]

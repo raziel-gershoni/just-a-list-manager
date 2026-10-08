@@ -44,7 +44,7 @@ function ListContent() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, fetchItems, refreshItems } =
+  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, categories, setCategories, fetchItems, refreshItems } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const isReminders = listType === "reminders";
@@ -135,6 +135,7 @@ function ListContent() {
     listId,
     setItems,
     setListName,
+    setCategories,
     isDraggingRef,
     onListDeleted,
   });

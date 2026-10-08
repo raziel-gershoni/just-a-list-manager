@@ -1,4 +1,4 @@
-export type RealtimeTable = "items" | "lists" | "collaborators";
+export type RealtimeTable = "items" | "lists" | "collaborators" | "list_categories";
 export type RealtimeEventType = "INSERT" | "UPDATE" | "DELETE";
 
 export interface RealtimeChange {

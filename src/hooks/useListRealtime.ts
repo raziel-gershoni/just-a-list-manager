@@ -2,10 +2,11 @@
 
 import { useCallback } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ItemData } from "@/src/types";
+import type { ItemData, ListCategory } from "@/src/types";
 import type { RealtimeChange } from "@/src/types";
 import { useRealtimeList } from "@/src/hooks/useRealtimeList";
 import { lookupUserName } from "@/src/utils/list-helpers";
+import { applyCategoryChange } from "@/src/utils/category-state";
 
 interface UseListRealtimeParams {
   supabaseClient: SupabaseClient | null;
@@ -13,6 +14,7 @@ interface UseListRealtimeParams {
   listId: string;
   setItems: React.Dispatch<React.SetStateAction<ItemData[]>>;
   setListName: React.Dispatch<React.SetStateAction<string>>;
+  setCategories: React.Dispatch<React.SetStateAction<ListCategory[]>>;
   isDraggingRef: React.RefObject<boolean>;
   onListDeleted: () => void;
 }
@@ -23,6 +25,7 @@ export function useListRealtime({
   listId,
   setItems,
   setListName,
+  setCategories,
   isDraggingRef,
   onListDeleted,
 }: UseListRealtimeParams) {
@@ -78,6 +81,8 @@ export function useListRealtime({
         } else if (change.eventType === "DELETE") {
           setItems((prev) => prev.filter((i) => i.id !== oldRec.id));
         }
+      } else if (change.table === "list_categories") {
+        setCategories((prev) => applyCategoryChange(prev, change));
       } else if (change.table === "lists") {
         if (change.eventType === "UPDATE") {
           if (newRec.deleted_at) {
@@ -88,7 +93,7 @@ export function useListRealtime({
         }
       }
     },
-    [setItems, setListName, isDraggingRef, onListDeleted]
+    [setItems, setListName, setCategories, isDraggingRef, onListDeleted]
   );
 
   return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange);

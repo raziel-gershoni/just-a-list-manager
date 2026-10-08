@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import type { ItemData } from "@/src/types";
+import type { ItemData, ListCategory } from "@/src/types";
 import type { ListColor, ListIconName } from "@/src/lib/list-icons";
 import { shouldRespawn } from "@/src/utils/recurring-respawn";
+import { sortCategories } from "@/src/utils/category-state";
 
 type Reminder = {
   id: string;
@@ -44,6 +45,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [listType, setListType] = useState<"regular" | "reminders" | "grocery">("regular");
   const [listIcon, setListIcon] = useState<ListIconName | null>(null);
   const [listColor, setListColor] = useState<ListColor | null>(null);
+  const [categories, setCategories] = useState<ListCategory[]>([]);
 
   const fetchItems = useCallback(async () => {
     const jwt = jwtRef.current;
@@ -155,6 +157,15 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           return base;
         });
         setItems(mapped);
+        if (currentListType === "grocery") {
+          const catRes = await fetch(`/api/lists/${listId}/categories`, {
+            headers: { Authorization: `Bearer ${jwt}` },
+          });
+          if (catRes.ok) {
+            const { categories: fetched } = await catRes.json();
+            setCategories(sortCategories(fetched ?? []));
+          }
+        }
       } else {
         setError(true);
       }
@@ -232,10 +243,19 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
 
         return [...unresolvedPending, ...mapped];
       });
+      if (listType === "grocery") {
+        const catRes = await fetch(`/api/lists/${listId}/categories`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+        if (catRes.ok) {
+          const { categories: fetched } = await catRes.json();
+          setCategories(sortCategories(fetched ?? []));
+        }
+      }
     } catch (e) {
       console.error("[List] Background refresh error:", e);
     }
   }, [jwtRef, listId, listType]);
 
-  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, fetchItems, refreshItems };
+  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, fetchItems, refreshItems };
 }
