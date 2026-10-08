@@ -39,11 +39,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!parsed.success) return parsed.response;
   const { name, locale } = parsed.data;
 
+  // Cheap pre-check so an add at the cap spends no AI call. The RPC below re-checks under
+  // the list row lock, which is what stops concurrent adds passing the cap together.
+  const supabase = createServerClient();
+  const { data: existing, error: readError } = await supabase
+    .from("list_categories")
+    .select("id")
+    .eq("list_id", listId)
+    .limit(MAX_CATEGORIES_PER_LIST);
+  if (readError) return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
+  if ((existing ?? []).length >= MAX_CATEGORIES_PER_LIST) {
+    return NextResponse.json({ error: "A list can have at most 20 categories" }, { status: 400 });
+  }
+
   const names = await categoryNames(name, locale, auth.userId);
 
   // The cap check and the position are taken under the list row lock, so concurrent adds
   // cannot pass the cap together or tie.
-  const supabase = createServerClient();
   const { data: rows, error } = await supabase.rpc("insert_list_category", {
     p_list_id: listId,
     p_name_en: names.en,

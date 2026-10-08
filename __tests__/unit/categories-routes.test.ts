@@ -102,7 +102,8 @@ describe("POST /categories", () => {
     expect(h.translate).toHaveBeenCalledWith("חיות מחמד");
     expect(h.translateLimit).toHaveBeenCalledWith("u1");
     expect(h.globalLimit).toHaveBeenCalledWith("global");
-    const [insert, owed, ...rest] = h.fake.calls;
+    const [precheck, insert, owed, ...rest] = h.fake.calls;
+    expect(precheck).toMatchObject({ op: "select", table: "list_categories" });
     expect(insert).toMatchObject({ op: "rpc", table: "insert_list_category" });
     expect(insert.values).toEqual({
       p_list_id: "L", p_name_en: "Pets", p_name_he: "חיות מחמד", p_name_ru: "Питомцы",
@@ -120,7 +121,7 @@ describe("POST /categories", () => {
     h.translate.mockResolvedValueOnce(null);
     use(inserting([{ id: "new" }]));
     expect((await POST(req("POST", { name: "Pets", locale: "en" }), listParams)).status).toBe(201);
-    expect(h.fake.calls[0].values).toMatchObject({ p_name_en: "Pets", p_name_he: "Pets", p_name_ru: "Pets" });
+    expect(h.fake.calls.find((c) => c.op === "rpc")!.values).toMatchObject({ p_name_en: "Pets", p_name_he: "Pets", p_name_ru: "Pets" });
   });
 
   it.each(budgetRefusals)("adds the category under its typed name, with no AI call, when %s", async (_label, which, answer) => {
@@ -128,9 +129,29 @@ describe("POST /categories", () => {
     use(inserting([{ id: "new" }]));
     expect((await POST(req("POST", { name: "Pets", locale: "en" }), listParams)).status).toBe(201);
     expect(h.translate).not.toHaveBeenCalled();
-    expect(h.fake.calls[0].values).toMatchObject({ p_name_en: "Pets", p_name_he: "Pets", p_name_ru: "Pets" });
+    expect(h.fake.calls.find((c) => c.op === "rpc")!.values).toMatchObject({ p_name_en: "Pets", p_name_he: "Pets", p_name_ru: "Pets" });
     await runAfter();
     expect(h.categorize).toHaveBeenCalledWith(expect.anything(), "L", "rescan");
+  });
+
+  it("refuses an add at the cap before spending any AI call", async () => {
+    const twenty = Array.from({ length: 20 }, (_, k) => ({ id: `k${k}` }));
+    use(inserting([row], (c) => c.table === "list_categories" && c.op === "select" ? { data: twenty, error: null } : undefined));
+    const res = await POST(req("POST", { name: "One more", locale: "en" }), listParams);
+    expect(res.status).toBe(400);
+    expect(h.translate).not.toHaveBeenCalled();
+    expect(h.globalLimit).not.toHaveBeenCalled();
+    expect(h.fake.calls.filter((c) => c.op === "rpc")).toEqual([]);
+    const precheck = h.fake.calls.find((c) => c.table === "list_categories")!;
+    expect(precheck.filters).toEqual(expect.arrayContaining(["eq:list_id=L"]));
+  });
+
+  it("answers 500 without an AI call when the cap pre-check cannot read the categories", async () => {
+    use(inserting([row], (c) => c.table === "list_categories" ? { data: null, error: { message: "boom" } } : undefined));
+    const res = await POST(req("POST", { name: "Pets", locale: "en" }), listParams);
+    expect(res.status).toBe(500);
+    expect(h.translate).not.toHaveBeenCalled();
+    expect(h.fake.calls.filter((c) => c.op === "rpc")).toEqual([]);
   });
 
   it("refuses a 21st category: the RPC inserts nothing, and no re-scan is owed or scheduled", async () => {
