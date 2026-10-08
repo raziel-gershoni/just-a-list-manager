@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { DragDropProvider } from "@dnd-kit/react";
 import type { DragDropEvents } from "@dnd-kit/react";
@@ -8,8 +8,11 @@ import { useSortable } from "@dnd-kit/react/sortable";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 import type { ListCategory } from "@/src/types";
 import { categoryLabel } from "@/src/types/categories";
-import { sortCategories } from "@/src/utils/category-state";
-import { createCategory, deleteCategory, renameCategory, reorderCategories } from "@/src/utils/category-api";
+import { askConfirm } from "@/src/types/telegram";
+import { restoreCategory, restoreCategoryName, restorePositions, sortCategories } from "@/src/utils/category-state";
+import {
+  createCategory, deleteCategory, renameCategory, reorderCategories, runCategoryAction,
+} from "@/src/utils/category-api";
 
 interface CategoriesSheetProps {
   listId: string;
@@ -17,7 +20,6 @@ interface CategoriesSheetProps {
   categories: ListCategory[];
   setCategories: React.Dispatch<React.SetStateAction<ListCategory[]>>;
   onClose: () => void;
-  onError: (message: string) => void;
 }
 
 function CategoryRow({
@@ -33,7 +35,6 @@ function CategoryRow({
   const { ref, handleRef, isDragSource } = useSortable({ id: category.id, index });
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(label);
-  const [confirming, setConfirming] = useState(false);
 
   return (
     <div ref={ref} className={`flex items-center gap-2 py-2.5 border-b border-separator ${isDragSource ? "opacity-50" : ""}`}>
@@ -55,59 +56,55 @@ function CategoryRow({
           {label}
         </button>
       )}
-      <button
-        onClick={() => (confirming ? onDelete() : setConfirming(true))}
-        onBlur={() => setConfirming(false)}
-        className={`text-[12px] flex items-center gap-1 ${confirming ? "text-tg-destructive" : "text-tg-hint"}`}
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-        {confirming ? t("categories.confirmDelete") : null}
+      <button onClick={onDelete} className="p-1 text-tg-hint" aria-label={t("common.delete")}>
+        <Trash2 className="w-4 h-4" />
       </button>
     </div>
   );
 }
 
-export default function CategoriesSheet({ listId, jwtRef, categories, setCategories, onClose, onError }: CategoriesSheetProps) {
+export default function CategoriesSheet({ listId, jwtRef, categories, setCategories, onClose }: CategoriesSheetProps) {
   const t = useTranslations();
   const locale = useLocale();
   const [newName, setNewName] = useState("");
+  // Shown inside the sheet: the page's toasts sit under this overlay.
+  const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const ordered = sortCategories(categories);
 
-  const run = async (action: (jwt: string) => Promise<void>, rollback: ListCategory[]) => {
-    const jwt = jwtRef.current;
-    if (!jwt) return;
-    try {
-      await action(jwt);
-    } catch {
-      setCategories(rollback);
-      onError(t("categories.error"));
-    }
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [error]);
+
+  const run = (action: (jwt: string) => Promise<void>, undo?: () => void) => {
+    setError(null);
+    void runCategoryAction(jwtRef.current, action, () => {
+      undo?.();
+      setError(t("categories.error"));
+    });
   };
 
   const add = () => {
     const name = newName.trim();
     if (!name) return;
     setNewName("");
-    const before = categories;
-    void run(async (jwt) => {
+    run(async (jwt) => {
       const created = await createCategory(listId, jwt, name, locale);
       setCategories((prev) => sortCategories([...prev.filter((c) => c.id !== created.id), created]));
-    }, before);
+    });
   };
 
-  const rename = (id: string, name: string) => {
-    const before = categories;
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, [`name_${locale}`]: name } : c)));
-    void run(async (jwt) => {
-      const updated = await renameCategory(listId, jwt, id, name, locale);
-      setCategories((prev) => prev.map((c) => (c.id === id ? updated : c)));
-    }, before);
+  const rename = (original: ListCategory, name: string) => {
+    setCategories((prev) => prev.map((c) => (c.id === original.id ? { ...c, [`name_${locale}`]: name } : c)));
+    run(async (jwt) => {
+      const updated = await renameCategory(listId, jwt, original.id, name, locale);
+      setCategories((prev) => prev.map((c) => (c.id === original.id ? updated : c)));
+    }, () => setCategories((prev) => restoreCategoryName(prev, original, locale)));
   };
 
-  const remove = (id: string) => {
-    const before = categories;
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-    void run((jwt) => deleteCategory(listId, jwt, id), before);
+  const remove = (original: ListCategory) => {
+    setCategories((prev) => prev.filter((c) => c.id !== original.id));
+    run((jwt) => deleteCategory(listId, jwt, original.id), () => setCategories((prev) => restoreCategory(prev, original)));
   };
 
   const onDragEnd: DragDropEvents["dragend"] = (event) => {
@@ -119,9 +116,8 @@ export default function CategoriesSheet({ listId, jwtRef, categories, setCategor
     const next = [...ordered];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
-    const before = categories;
     setCategories(next.map((c, position) => ({ ...c, position })));
-    void run((jwt) => reorderCategories(listId, jwt, next.map((c) => c.id)), before);
+    run((jwt) => reorderCategories(listId, jwt, next.map((c) => c.id)), () => setCategories((prev) => restorePositions(prev, ordered)));
   };
 
   return (
@@ -137,11 +133,14 @@ export default function CategoriesSheet({ listId, jwtRef, categories, setCategor
               category={c}
               index={index}
               label={categoryLabel(c, locale)}
-              onRename={(name) => rename(c.id, name)}
-              onDelete={() => remove(c.id)}
+              onRename={(name) => rename(c, name)}
+              onDelete={() => askConfirm(t("categories.confirmDelete", { name: categoryLabel(c, locale) }), () => remove(c))}
             />
           ))}
         </DragDropProvider>
+        {error && (
+          <p ref={errorRef} role="alert" className="mt-3 text-sm text-tg-destructive">{error}</p>
+        )}
         <div className="flex items-center gap-2 mt-4">
           <input
             value={newName}

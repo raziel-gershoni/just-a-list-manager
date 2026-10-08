@@ -433,7 +433,6 @@ function ListContent() {
           categories={categories}
           setCategories={setCategories}
           onClose={() => setShowCategories(false)}
-          onError={(message) => { setErrorToast(message); setTimeout(() => setErrorToast(null), 3000); }}
         />
       )}
 

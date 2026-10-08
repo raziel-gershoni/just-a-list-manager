@@ -25,3 +25,17 @@ export async function deleteCategory(listId: string, jwt: string, id: string): P
 export async function reorderCategories(listId: string, jwt: string, orderedIds: string[]): Promise<void> {
   await call(`/api/lists/${listId}/categories/order`, jwt, "PUT", { orderedIds });
 }
+
+/** Run one sheet request. A missing session and a failed request both end in onFail. */
+export async function runCategoryAction(
+  jwt: string | null,
+  action: (jwt: string) => Promise<void>,
+  onFail: () => void
+): Promise<void> {
+  if (!jwt) return onFail();
+  try {
+    await action(jwt);
+  } catch {
+    onFail();
+  }
+}

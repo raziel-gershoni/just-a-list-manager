@@ -248,7 +248,7 @@
     "title": "Categories",
     "add": "Add category",
     "placeholder": "New category",
-    "confirmDelete": "Delete?",
+    "confirmDelete": "Delete \"{name}\"?",
     "reorder": "Drag to reorder",
     "empty": "Categories appear after the first sort.",
     "error": "Couldn't save the change"

@@ -20,3 +20,15 @@ export interface WindowWithTelegram extends Window {
 export function getTelegramWebApp(): TelegramWebApp | undefined {
   return (window as WindowWithTelegram).Telegram?.WebApp;
 }
+
+/** Ask before a destructive action: Telegram's native confirm, else window.confirm. */
+export function askConfirm(message: string, onConfirm: () => void): void {
+  const tg = getTelegramWebApp();
+  if (tg?.showConfirm) {
+    tg.showConfirm(message, (confirmed: boolean) => {
+      if (confirmed) onConfirm();
+    });
+  } else if (window.confirm(message)) {
+    onConfirm();
+  }
+}
