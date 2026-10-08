@@ -13,6 +13,7 @@ import { checkRateLimit } from "@/src/lib/rate-limit";
 import { getVoiceProcessor, type VoiceItem } from "./voice-processor";
 import { findFuzzyMatch, recycleItem } from "./item-recycler";
 import { normalizeForStorage } from "@/src/utils/text-normalize";
+import { categorizeList } from "@/src/services/categorize-list";
 
 /** Escape ILIKE special characters */
 function escapeIlike(input: string): string {
@@ -356,6 +357,11 @@ export async function handleVoiceMessage(
       } catch (e) {
         console.error("[VoiceHandler] Failed to send receipt:", e);
       }
+    }
+
+    // Sort the new items on grocery lists (categorizeList skips other list types).
+    for (const listId of receipts.keys()) {
+      await categorizeList({ supabase }, listId, "pending");
     }
   } catch (error) {
     console.error("[VoiceHandler] Processing error:", error);

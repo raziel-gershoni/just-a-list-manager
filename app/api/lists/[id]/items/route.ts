@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
@@ -8,9 +8,16 @@ import { parseBody } from "@/src/lib/api-validation";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { pickRecyclable } from "@/src/utils/pick-recyclable";
 import { completeItemRespectingRecurrence, isPureCompletion } from "@/src/services/recurring";
+import { categorizeList } from "@/src/services/categorize-list";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
+
+// Sort new or changed grocery items after the response (categorizeList skips other
+// list types and never throws).
+function scheduleCategorize(supabase: ReturnType<typeof createServerClient>, listId: string) {
+  after(() => categorizeList({ supabase }, listId, "pending"));
+}
 
 export async function GET(
   request: NextRequest,
@@ -57,6 +64,9 @@ export async function GET(
     items && items.length === limit
       ? items[items.length - 1].position
       : null;
+
+  // Sweep: first scan after deploy, lists switched to grocery, and failed runs.
+  if ((items || []).some((i) => !i.category_id)) scheduleCategorize(supabase, listId);
 
   return NextResponse.json({ items: items || [], nextCursor });
 }
@@ -168,6 +178,7 @@ export async function POST(
       .limit(10)
       .then(() => {}, () => {});
 
+    scheduleCategorize(supabase, listId);
     return NextResponse.json(
       { items: [{ ...item, recycled: false }] },
       { status: 201 }
@@ -267,6 +278,7 @@ export async function POST(
     response.warning = `Added ${results.length} items. ${skipped} items skipped — this list has a 500-item limit.`;
   }
 
+  if (results.length > 0) scheduleCategorize(supabase, listId);
   return NextResponse.json(response, { status: 201 });
 }
 
@@ -293,6 +305,18 @@ export async function PATCH(
   const { itemId, ...updates } = parsed.data;
 
   const supabase = createServerClient();
+
+  if (updates.categoryId) {
+    const { data: category } = await supabase
+      .from("list_categories")
+      .select("id")
+      .eq("id", updates.categoryId)
+      .eq("list_id", listId)
+      .maybeSingle();
+    if (!category) {
+      return NextResponse.json({ error: "Unknown category" }, { status: 400 });
+    }
+  }
 
   // A pure "mark completed" on an item with a live recurring reminder must advance
   // the series, whoever completes it. A collaborator's client can't take the
@@ -365,6 +389,11 @@ export async function PATCH(
     patchData.deleted_at = null;
   }
 
+  if (updates.categoryId) {
+    patchData.category_id = updates.categoryId;
+    patchData.category_locked = true;
+  }
+
   if (Object.keys(patchData).length === 0) {
     return NextResponse.json(
       { error: "No valid fields to update" },
@@ -390,6 +419,19 @@ export async function PATCH(
       { error: "Item not found or update failed" },
       { status: 404 }
     );
+  }
+
+  // A text change re-sorts the item, unless a person placed it by hand. Guarded on the
+  // new text so a later edit's own run is never undone by this one.
+  if (typeof patchData.text === "string" && !updates.categoryId && item.category_locked === false) {
+    await supabase
+      .from("items")
+      .update({ category_id: null })
+      .eq("id", itemId)
+      .eq("list_id", listId)
+      .eq("category_locked", false)
+      .eq("text", patchData.text);
+    scheduleCategorize(supabase, listId);
   }
 
   // Don't cancel reminders on completion — the cron handles cleanup for completed items,

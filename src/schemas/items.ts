@@ -25,6 +25,7 @@ export const updateItemSchema = z.object({
   recurring: z.boolean().optional(),
   restoreRecurring: z.boolean().optional(),
   deleted_at: z.null().optional(),
+  categoryId: z.string().uuid().optional(),
 });
 
 // POST /api/lists/[id]/items/reorder
