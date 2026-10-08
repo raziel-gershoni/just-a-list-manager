@@ -17,6 +17,7 @@ const REPLAYABLE_TYPES = [
   "restore-recurring",
   "recycle",
   "unskip-all",
+  "set-category",
 ];
 
 function makeMutation(type: string): QueuedMutation {
@@ -142,5 +143,39 @@ describe("createExecutorFactory - unskip-all", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
 
     await expect(factory(mutation, () => "jwt")!()).rejects.toThrow(/: 500$/);
+  });
+});
+
+// Dropping an item under another category while offline must still reach the
+// server after a reload, as the same PATCH the drag hook sends online.
+describe("createExecutorFactory - set-category", () => {
+  const factory = createExecutorFactory();
+  const mutation: QueuedMutation = {
+    id: "m",
+    type: "set-category",
+    payload: { listId: "l1", itemId: "i1", categoryId: "c1" },
+    timestamp: 0,
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("PATCHes the item with the chosen category", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await factory(mutation, () => "jwt")!();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/lists/l1/items");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body)).toEqual({ itemId: "i1", categoryId: "c1" });
+  });
+
+  it("throws with the HTTP status when the server rejects it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+
+    await expect(factory(mutation, () => "jwt")!()).rejects.toThrow(/: 400$/);
   });
 });

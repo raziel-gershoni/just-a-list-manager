@@ -191,6 +191,20 @@ export const createExecutorFactory = (): ExecutorFactory => {
           });
           if (!res.ok) throw new Error(`Restore all failed: ${res.status}`);
         };
+      case "set-category":
+        return async () => {
+          const jwt = getJwt();
+          const res = await fetch(`/api/lists/${payload.listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId: payload.itemId, categoryId: payload.categoryId }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Set category failed: ${res.status}`);
+        };
       default:
         return null;
     }

@@ -2,9 +2,10 @@
 
 import { useRef, useCallback } from "react";
 import type { DragDropEvents } from "@dnd-kit/react";
-import type { ItemData } from "@/src/types";
+import type { ItemData, CategoryGroup } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import { genMutId } from "@/src/utils/list-helpers";
+import { computeGroupedDrop } from "@/src/utils/grouped-drop";
 
 interface UseListDragDropParams {
   items: ItemData[];
@@ -12,6 +13,7 @@ interface UseListDragDropParams {
   addMutation: (mutation: { id: string; type: string; payload: Record<string, unknown>; execute: () => Promise<string | void> }) => void;
   listId: string;
   jwtRef: React.RefObject<string | null>;
+  groups: CategoryGroup[] | null;
 }
 
 export function useListDragDrop({
@@ -20,6 +22,7 @@ export function useListDragDrop({
   addMutation,
   listId,
   jwtRef,
+  groups,
 }: UseListDragDropParams) {
   const isDraggingRef = useRef(false);
   const previousItemsRef = useRef<ItemData[]>([]);
@@ -46,41 +49,77 @@ export function useListDragDrop({
       }
 
       const sourceId = source.id as string;
-      const projectedIndex = (source as { sortable?: { index: number } }).sortable?.index;
+      const sortable = (source as { sortable?: { index: number; group?: string } }).sortable;
+      const projectedIndex = sortable?.index;
 
-      // Compute new order from current active items
-      const currentActive = items
-        .filter((i) => !i.completed && !i.deleted_at && !i.skipped_at)
-        .sort((a, b) => b.position - a.position);
+      let updatedIds: string[];
+      let moveTo: string | null = null;
+      if (groups) {
+        const drop = computeGroupedDrop(groups, sourceId, sortable?.group as string | undefined, projectedIndex);
+        if (!drop) {
+          // Re-render from the pre-drag state so nothing the sortable moved on screen sticks.
+          setItems(previousItemsRef.current);
+          isDraggingRef.current = false;
+          return;
+        }
+        updatedIds = drop.orderedIds;
+        moveTo = drop.moveTo;
+      } else {
+        // Compute new order from current active items
+        const currentActive = items
+          .filter((i) => !i.completed && !i.deleted_at && !i.skipped_at)
+          .sort((a, b) => b.position - a.position);
 
-      const originalIndex = currentActive.findIndex((i) => i.id === sourceId);
+        const originalIndex = currentActive.findIndex((i) => i.id === sourceId);
 
-      if (originalIndex === -1 || projectedIndex == null || originalIndex === projectedIndex) {
-        isDraggingRef.current = false;
-        return;
+        if (originalIndex === -1 || projectedIndex == null || originalIndex === projectedIndex) {
+          isDraggingRef.current = false;
+          return;
+        }
+
+        const reordered = [...currentActive];
+        const [moved] = reordered.splice(originalIndex, 1);
+        reordered.splice(projectedIndex, 0, moved);
+        updatedIds = reordered.map((i) => i.id);
       }
 
-      const reordered = [...currentActive];
-      const [moved] = reordered.splice(originalIndex, 1);
-      reordered.splice(projectedIndex, 0, moved);
-
       // Assign new positions (highest position = first item)
-      const updatedIds: string[] = [];
       const positionMap = new Map<string, number>();
-      reordered.forEach((item, index) => {
-        const newPosition = reordered.length - index;
-        positionMap.set(item.id, newPosition);
-        updatedIds.push(item.id);
+      updatedIds.forEach((id, index) => {
+        positionMap.set(id, updatedIds.length - index);
       });
 
-      // Update items state with new positions
+      // Update items state with new positions, and the new category for a moved item
       setItems((prev) =>
         prev.map((item) => {
           const newPos = positionMap.get(item.id);
-          if (newPos != null) return { ...item, position: newPos };
-          return item;
+          let next = newPos != null ? { ...item, position: newPos } : item;
+          if (moveTo && item.id === sourceId) next = { ...next, category_id: moveTo, category_locked: true };
+          return next;
         })
       );
+
+      if (moveTo) {
+        const categoryId = moveTo;
+        addMutation({
+          id: genMutId(),
+          type: "set-category",
+          payload: { listId, itemId: sourceId, categoryId },
+          execute: async () => {
+            const jwt = jwtRef.current;
+            const res = await fetch(`/api/lists/${listId}/items`, {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${jwt}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ itemId: sourceId, categoryId }),
+              keepalive: true,
+            });
+            if (!res.ok) throw new Error(`Set category failed: ${res.status}`);
+          },
+        });
+      }
 
       const mutId = genMutId();
       addMutation({
@@ -106,7 +145,7 @@ export function useListDragDrop({
         },
       });
     },
-    [items, jwtRef, listId, addMutation, setItems]
+    [items, groups, jwtRef, listId, addMutation, setItems]
   );
 
   return { handleDragStart, handleDragEnd, isDraggingRef };
