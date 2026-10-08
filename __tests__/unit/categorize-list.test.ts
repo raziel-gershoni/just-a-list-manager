@@ -97,6 +97,13 @@ describe("categorizeList", () => {
     expect(w.lock.acquire).not.toHaveBeenCalled();
   });
 
+  it("does nothing for a deleted grocery list", async () => {
+    const w = world({ listDeleted: true, items: [row({ id: "a", text: "milk" })] });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.categorizer.categorize).not.toHaveBeenCalled();
+    expect(w.lock.acquire).not.toHaveBeenCalled();
+  });
+
   it("reuses the category of a known text without calling the AI", async () => {
     const w = world({
       categories: [{ id: "dairy", name_en: "Dairy", position: 0 }],
@@ -124,6 +131,37 @@ describe("categorizeList", () => {
     });
     await categorizeList(w.deps, "L", "pending");
     expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([{ id: "new", text: "Cream", category_id: "baking" }]);
+  });
+
+  it("among unlocked rows with the same text, reuses the newest one's category", async () => {
+    const w = world({
+      categories: [{ id: "dairy", name_en: "Dairy", position: 0 }, { id: "baking", name_en: "Baking", position: 1 }],
+      items: [
+        row({ id: "older", text: "cream", category_id: "baking", created_at: "2026-09-01T00:00:00Z", deleted_at: "2026-09-02T00:00:00Z" }),
+        row({ id: "newer", text: "cream", category_id: "dairy", created_at: "2026-10-01T00:00:00Z", deleted_at: "2026-10-02T00:00:00Z" }),
+        row({ id: "new", text: "Cream", created_at: "2026-10-05T00:00:00Z" }),
+      ],
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([{ id: "new", text: "Cream", category_id: "dairy" }]);
+  });
+
+  it("writes the AI's answer to the item it was asked about when other targets were reused", async () => {
+    const w = world({
+      categories: [{ id: "dairy", name_en: "Dairy", position: 0 }, { id: "household", name_en: "Household", position: 1 }],
+      items: [
+        row({ id: "old", text: "milk", category_id: "dairy", deleted_at: "2026-10-02T00:00:00Z" }),
+        row({ id: "a", text: "milk" }),
+        row({ id: "b", text: "soap" }),
+      ],
+      result: { newCategories: [], assignments: [{ i: 0, category: "c2" }] },
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.inputs[0].items).toEqual([{ i: 0, text: "soap" }]);
+    expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([
+      { id: "a", text: "milk", category_id: "dairy" },
+      { id: "b", text: "soap", category_id: "household" },
+    ]);
   });
 
   it("sends only live, unlocked, uncategorized items with categories keyed in walk order", async () => {
