@@ -23,15 +23,28 @@ function world(opts: {
   aiAllowed?: boolean;
   lockFree?: boolean;
   reruns?: (RerunMode | null)[];
+  // PostgREST reports failures as { data: null, error } instead of throwing.
+  failCategoriesRead?: boolean;
+  failItemsRead?: boolean;
+  failInsert?: boolean;
 }) {
   const categories = opts.categories ?? [];
   let nextCategory = 0;
+  const dbError = { message: "fetch failed", code: "" };
   const fake = fakeSupabase((call: FakeCall) => {
     if (call.table === "lists") return { data: opts.type === undefined ? { type: "grocery" } : opts.type ? { type: opts.type } : null, error: null };
-    if (call.table === "list_categories" && call.op === "select")
+    if (call.table === "list_categories" && call.op === "select") {
+      if (opts.failCategoriesRead) return { data: null, error: dbError };
       return { data: categories.map((c) => ({ ...c, name_he: c.name_en, name_ru: c.name_en })), error: null };
-    if (call.table === "list_categories" && call.op === "insert") return { data: { id: `new-${++nextCategory}` }, error: null };
-    if (call.table === "items" && call.op === "select") return { data: opts.items ?? [], error: null };
+    }
+    if (call.table === "list_categories" && call.op === "insert") {
+      if (opts.failInsert) return { data: null, error: dbError };
+      return { data: { id: `new-${++nextCategory}` }, error: null };
+    }
+    if (call.table === "items" && call.op === "select") {
+      if (opts.failItemsRead) return { data: null, error: dbError };
+      return { data: opts.items ?? [], error: null };
+    }
     return { data: null, error: null };
   });
   const inputs: CategorizeInput[] = [];
@@ -155,6 +168,46 @@ describe("categorizeList", () => {
     await categorizeList(w.deps, "L", "rescan");
     expect(w.inputs[0].items).toEqual([{ i: 0, text: "milk" }, { i: 1, text: "milk" }]);
     expect(w.rpc()[0].values).toMatchObject({ p_only_null: false });
+  });
+
+  it("stops when the categories read fails, instead of recreating the list's categories", async () => {
+    const w = world({
+      categories: [{ id: "dairy", name_en: "Dairy", position: 0 }],
+      items: [row({ id: "a", text: "milk", category_id: "dairy" }), row({ id: "b", text: "cheese", category_id: "dairy" })],
+      failCategoriesRead: true,
+      // What the AI says when it is told the list has no categories yet.
+      result: {
+        newCategories: [{ ref: "n1", en: "Dairy", he: "חלב", ru: "Молочное", after: null }],
+        assignments: [{ i: 0, category: "n1" }, { i: 1, category: "n1" }],
+      },
+    });
+    await categorizeList(w.deps, "L", "rescan");
+    expect(w.categorizer.categorize).not.toHaveBeenCalled();
+    expect(w.fake.calls.filter((c) => c.table === "list_categories" && c.op !== "select")).toEqual([]);
+    expect(w.rpc()).toEqual([]);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("categories"), expect.objectContaining({ listId: "L" }));
+  });
+
+  it("stops and logs when the items read fails", async () => {
+    const w = world({ categories: [{ id: "dairy", name_en: "Dairy", position: 0 }], failItemsRead: true });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.categorizer.categorize).not.toHaveBeenCalled();
+    expect(w.rpc()).toEqual([]);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("items"), expect.objectContaining({ listId: "L" }));
+  });
+
+  it("logs a failed category insert and drops the assignments that needed it", async () => {
+    const w = world({
+      items: [row({ id: "a", text: "bread" })],
+      failInsert: true,
+      result: {
+        newCategories: [{ ref: "n1", en: "Bakery", he: "מאפייה", ru: "Выпечка", after: null }],
+        assignments: [{ i: 0, category: "n1" }],
+      },
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.rpc()).toEqual([]);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("insert"), expect.objectContaining({ listId: "L" }));
   });
 
   it("writes nothing when the AI fails", async () => {

@@ -56,17 +56,27 @@ function knownCategories(rows: ItemRow[]): Map<string, string> {
 async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: CategorizeMode) {
   const { supabase, categorizer, allowAiCall } = deps;
 
-  const { data: categoryData } = await supabase
+  // PostgREST returns failures instead of throwing. Going on without the categories would
+  // tell the AI the list has none, and it would create duplicates of every one.
+  const { data: categoryData, error: categoryError } = await supabase
     .from("list_categories")
     .select("id, name_en, position")
     .eq("list_id", listId)
     .order("position", { ascending: true });
+  if (categoryError) {
+    console.error("[Categorizer] could not load categories", { listId, error: categoryError });
+    return;
+  }
   const categories = ((categoryData ?? []) as CategoryRow[]).slice().sort((a, b) => a.position - b.position);
 
-  const { data: itemData } = await supabase
+  const { data: itemData, error: itemError } = await supabase
     .from("items")
     .select("id, text, category_id, category_locked, deleted_at, created_at")
     .eq("list_id", listId);
+  if (itemError) {
+    console.error("[Categorizer] could not load items", { listId, error: itemError });
+    return;
+  }
   const rows = (itemData ?? []) as ItemRow[];
 
   const targets = rows.filter(
@@ -103,7 +113,7 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
         if (result.newCategories.length > 0) {
           const order = orderWithNewCategories(keyed.map((k) => k.key), result.newCategories);
           for (const created of result.newCategories) {
-            const { data: inserted } = await supabase
+            const { data: inserted, error: insertError } = await supabase
               .from("list_categories")
               .insert({
                 list_id: listId,
@@ -115,6 +125,7 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
               })
               .select("id")
               .single();
+            if (insertError) console.error("[Categorizer] category insert failed", { listId, error: insertError });
             const id = (inserted as { id?: string } | null)?.id;
             if (id) keyToId.set(created.ref, id);
           }
