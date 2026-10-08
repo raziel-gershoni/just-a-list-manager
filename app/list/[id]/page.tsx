@@ -260,10 +260,16 @@ function ListContent() {
                 ? /* Grocery list: a header per category in walk order. Headers and rows stay
                      siblings (no wrapper per group): dnd-kit moves a dragged row's DOM node
                      into the other category, and React must find it under the same parent. */
-                  categoryGroups.flatMap((group) => [
+                  categoryGroups.flatMap((group, groupIndex) => [
+                    // A quiet label lined up with the item text (past the 22px checkbox and its
+                    // 12px gap), so it reads as part of its items rather than a bar across the list.
                     <div
                       key={`group-${group.key}`}
-                      className="px-5 pt-4 pb-1.5 text-[11px] text-tg-hint/70 font-semibold tracking-widest uppercase bg-tg-secondary-bg/80 backdrop-blur-md"
+                      role="heading"
+                      aria-level={3}
+                      className={`ps-[54px] pe-5 pb-1 text-[13px] leading-5 font-medium text-tg-hint ${
+                        groupIndex === 0 ? "pt-2" : "pt-5"
+                      } ${group.key === SORTING_GROUP ? "motion-safe:animate-pulse" : ""}`}
                     >
                       {group.label}
                     </div>,

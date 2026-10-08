@@ -145,6 +145,10 @@ function renderList(listType: string) {
     sortables: S.sortables.map(({ id, index, group, disabled }) => ({ id, index, group, disabled })),
     dragGroups: S.dragGroups,
     sortingRetry: S.sortingRetry,
+    headers: Children.toArray(S.providerChildren as ReactNode)
+      .map((child) => child as ReactElement<{ role?: string; "aria-level"?: number; children?: unknown }>)
+      .filter((el) => typeof el.type === "string")
+      .map((el) => ({ text: String(el.props.children), role: el.props.role, level: el.props["aria-level"] })),
   };
 }
 
@@ -164,6 +168,14 @@ describe("the rendered list page", () => {
       "# categories.sorting", "milk",
       "# ירקות", "apples", "bananas",
       "# חלב", "cheese",
+    ]);
+  });
+
+  it("announces each category header as a heading to screen readers", () => {
+    expect(renderList("grocery").headers).toEqual([
+      { text: "categories.sorting", role: "heading", level: 3 },
+      { text: "ירקות", role: "heading", level: 3 },
+      { text: "חלב", role: "heading", level: 3 },
     ]);
   });
 
