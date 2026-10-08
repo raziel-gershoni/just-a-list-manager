@@ -134,7 +134,16 @@ export function parseCategorization(text: string, input: CategorizeInput): Categ
       });
     }
   }
-  const kept = candidates.slice(0, Math.max(0, input.maxNew));
+  // Only a category some valid assignment points at may take one of the free slots, so
+  // an unused proposal can't crowd out the one an item needs.
+  const candidateRefs = new Set(candidates.map((c) => c.ref));
+  const wanted = new Set<string>();
+  for (const raw of data.assignments as Record<string, unknown>[]) {
+    if (typeof raw?.i === "number" && indices.has(raw.i) && typeof raw.category === "string" && candidateRefs.has(raw.category)) {
+      wanted.add(raw.category);
+    }
+  }
+  const kept = candidates.filter((c) => wanted.has(c.ref)).slice(0, Math.max(0, input.maxNew));
   const keptRefs = new Set(kept.map((c) => c.ref));
 
   const assignments: Categorization["assignments"] = [];
@@ -151,10 +160,21 @@ export function parseCategorization(text: string, input: CategorizeInput): Categ
   // A new category no item uses would sit empty in the order; never create it. Every
   // assignment's category is an existing key or a kept ref it uses, so none is orphaned.
   const usedRefs = new Set(assignments.map((a) => a.category));
-  const validAfter = new Set([...existingKeys, ...keptRefs]);
-  const newCategories = kept
-    .filter((c) => usedRefs.has(c.ref))
-    .map((c) => ({ ...c, after: c.after && validAfter.has(c.after) ? c.after : null }));
+  const final = kept.filter((c) => usedRefs.has(c.ref));
+  const finalRefs = new Set(final.map((c) => c.ref));
+
+  // An `after` that names a dropped proposal takes that proposal's own `after`, so the
+  // walk order the model described survives the drop.
+  const afterOf = new Map(candidates.map((c) => [c.ref, c.after]));
+  const resolveAfter = (after: string | null): string | null => {
+    const seenRefs = new Set<string>();
+    while (after && !existingKeys.has(after) && !finalRefs.has(after) && afterOf.has(after) && !seenRefs.has(after)) {
+      seenRefs.add(after);
+      after = afterOf.get(after) ?? null;
+    }
+    return after && (existingKeys.has(after) || finalRefs.has(after)) ? after : null;
+  };
+  const newCategories = final.map((c) => ({ ...c, after: resolveAfter(c.after) }));
 
   return { newCategories, assignments };
 }

@@ -90,6 +90,40 @@ describe("GeminiCategorizer.categorize request", () => {
 });
 
 describe("parseCategorization", () => {
+  it("does not let a proposed category no item uses take the last free slot", () => {
+    const out = parseCategorization(JSON.stringify({
+      newCategories: [
+        { ref: "n1", en: "Unused", he: "x", ru: "y", after: null },
+        { ref: "n2", en: "Bakery", he: "מאפייה", ru: "Выпечка", after: null },
+      ],
+      assignments: [{ i: 0, category: "n2" }],
+    }), { ...INPUT, maxNew: 1 });
+    expect(out.newCategories.map((c) => c.ref)).toEqual(["n2"]);
+    expect(out.assignments).toEqual([{ i: 0, category: "n2" }]);
+  });
+
+  it("keeps an 'after' that names another kept new category", () => {
+    const out = parseCategorization(JSON.stringify({
+      newCategories: [
+        { ref: "n1", en: "Bakery", he: "b", ru: "b", after: "c2" },
+        { ref: "n2", en: "Deli", he: "d", ru: "d", after: "n1" },
+      ],
+      assignments: [{ i: 0, category: "n1" }, { i: 1, category: "n2" }],
+    }), INPUT);
+    expect(out.newCategories.map((c) => [c.ref, c.after])).toEqual([["n1", "c2"], ["n2", "n1"]]);
+  });
+
+  it("an 'after' naming a dropped category follows that category's own 'after'", () => {
+    const out = parseCategorization(JSON.stringify({
+      newCategories: [
+        { ref: "n1", en: "Unused", he: "x", ru: "y", after: "c1" },
+        { ref: "n2", en: "Deli", he: "d", ru: "d", after: "n1" },
+      ],
+      assignments: [{ i: 0, category: "n2" }],
+    }), INPUT);
+    expect(out.newCategories.map((c) => [c.ref, c.after])).toEqual([["n2", "c1"]]);
+  });
+
   it("keeps valid assignments to existing keys and to new refs", () => {
     const out = parseCategorization(JSON.stringify({
       newCategories: [{ ref: "n1", en: "Household", he: "ניקיון", ru: "Бытовое", after: "c2" }],
