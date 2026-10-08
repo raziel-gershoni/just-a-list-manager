@@ -57,8 +57,6 @@ export function useListDragDrop({
       if (groups) {
         const drop = computeGroupedDrop(groups, sourceId, sortable?.group as string | undefined, projectedIndex);
         if (!drop) {
-          // Re-render from the pre-drag state so nothing the sortable moved on screen sticks.
-          setItems(previousItemsRef.current);
           isDraggingRef.current = false;
           return;
         }
