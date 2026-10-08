@@ -118,12 +118,12 @@ describe("computeSuggestions", () => {
 describe("source wiring", () => {
   const read = (p: string) => readFileSync(resolve(process.cwd(), p), "utf8");
 
-  it("useListData fetches both item GETs with the 500 limit", () => {
+  it("useListData sends every item GET (load, refresh, Sorting… retry) with the 500 limit", () => {
     const src = read("src/hooks/useListData.ts");
     expect(src).toMatch(/ITEMS_FETCH_LIMIT = 500/);
     expect(src).toContain("const ITEMS_URL_SUFFIX = `?limit=${ITEMS_FETCH_LIMIT}`;");
     const gets = src.match(/fetch\(`\/api\/lists\/\$\{listId\}\/items[^`]*`, \{\s*headers/g) ?? [];
-    expect(gets).toHaveLength(2);
+    expect(gets).toHaveLength(3);
     for (const g of gets) expect(g).toContain("${ITEMS_URL_SUFFIX}");
   });
 
