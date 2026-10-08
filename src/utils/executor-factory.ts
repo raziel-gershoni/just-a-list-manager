@@ -177,6 +177,20 @@ export const createExecutorFactory = (): ExecutorFactory => {
           });
           if (!res.ok) throw new Error(`Recycle failed: ${res.status}`);
         };
+      case "unskip-all":
+        return async () => {
+          const jwt = getJwt();
+          const res = await fetch(`/api/lists/${payload.listId}/items/unskip-all`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemIds: payload.itemIds }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Restore all failed: ${res.status}`);
+        };
       default:
         return null;
     }

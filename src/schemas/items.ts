@@ -32,6 +32,13 @@ export const reorderItemsSchema = z.object({
   orderedIds: z.array(z.string().min(1)).min(1).max(500),
 });
 
+// POST /api/lists/[id]/items/unskip-all
+// .uuid(): the client sends only synced ids; items still on a temp- id are
+// restored through their own queued skip mutation.
+export const unskipAllSchema = z.object({
+  itemIds: z.array(z.string().uuid()).min(1).max(500),
+});
+
 // GET /api/lists/[id]/items — query params
 export const getItemsQuerySchema = z.object({
   cursor: z.string().optional(),

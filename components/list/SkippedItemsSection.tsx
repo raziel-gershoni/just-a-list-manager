@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, CircleOff } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleOff, RotateCcw } from "lucide-react";
 import { useTranslations } from "next-intl";
 import ItemRow from "@/components/ItemRow";
 import type { ItemData } from "@/src/types";
@@ -17,6 +17,7 @@ interface SkippedItemsSectionProps {
   onDelete: (id: string) => void;
   onEdit: (id: string, newText: string) => void;
   onSkip: (id: string, skipped: boolean) => void;
+  onRestoreAll?: () => void;
 }
 
 export default function SkippedItemsSection({
@@ -30,6 +31,7 @@ export default function SkippedItemsSection({
   onDelete,
   onEdit,
   onSkip,
+  onRestoreAll,
 }: SkippedItemsSectionProps) {
   const t = useTranslations();
 
@@ -48,6 +50,20 @@ export default function SkippedItemsSection({
         )}
         <CircleOff className="w-3.5 h-3.5" style={{ color: "var(--list-rose)" }} strokeWidth={2.5} />
         {t('items.skippedSection', { count: skippedItems.length })}
+        {onRestoreAll && (
+          <span className="ms-auto flex items-center">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRestoreAll();
+              }}
+              className="shrink-0 whitespace-nowrap text-tg-hint text-[12px] font-medium tracking-wide flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3 shrink-0" />
+              {t('items.restoreAll')}
+            </button>
+          </span>
+        )}
       </button>
       {showSkipped && (
         <div className="item-enter">

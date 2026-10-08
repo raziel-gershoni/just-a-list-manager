@@ -16,6 +16,7 @@ const REPLAYABLE_TYPES = [
   "set-recurring",
   "restore-recurring",
   "recycle",
+  "unskip-all",
 ];
 
 function makeMutation(type: string): QueuedMutation {
@@ -104,5 +105,42 @@ describe("createExecutorFactory - toggle routing", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/lists/l1/items");
     expect(init.method).toBe("PATCH");
+  });
+});
+
+// "Restore all" on the Not available section: a tap made offline must still
+// reach the bulk endpoint after a reload, and a failed response must throw with
+// the status so the queue can tell retry (5xx) from drop (4xx).
+describe("createExecutorFactory - unskip-all", () => {
+  const factory = createExecutorFactory();
+  const mutation: QueuedMutation = {
+    id: "m3",
+    type: "unskip-all",
+    payload: { listId: "l1", itemIds: ["a", "b"] },
+    timestamp: 0,
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("POSTs the tapped item ids to the list's unskip-all endpoint with the current JWT", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await factory(mutation, () => "jwt-now")!();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/lists/l1/items/unskip-all");
+    expect(init.method).toBe("POST");
+    expect(init.headers.Authorization).toBe("Bearer jwt-now");
+    expect(JSON.parse(init.body)).toEqual({ itemIds: ["a", "b"] });
+  });
+
+  it("throws with the HTTP status when the server rejects it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+
+    await expect(factory(mutation, () => "jwt")!()).rejects.toThrow(/: 500$/);
   });
 });

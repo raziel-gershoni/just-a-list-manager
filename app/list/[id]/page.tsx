@@ -101,7 +101,7 @@ function ListContent() {
     jwtRef,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -277,6 +277,7 @@ function ListContent() {
                   onDelete={handleDelete}
                   onEdit={handleEditItem}
                   onSkip={handleSkip}
+                  onRestoreAll={handleRestoreSkipped}
                 />
                 <RecurringItemsSection
                   recurringItems={recurringItems}

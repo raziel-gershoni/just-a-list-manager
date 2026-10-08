@@ -7,6 +7,7 @@ import { genMutId } from "@/src/utils/list-helpers";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { computeUnmarkCompleted } from "@/src/utils/unmark-completed";
 import { computeClearCompleted } from "@/src/utils/clear-completed";
+import { computeUnskipAll } from "@/src/utils/unskip-all";
 
 interface UseItemHandlersParams {
   listId: string;
@@ -372,20 +373,10 @@ export function useItemHandlers({
     [jwtRef, listId, addMutation, userId, setItems]
   );
 
-  const handleSkip = useCallback(
+  // Server side of a skip/unskip. Shared by handleSkip and Restore all, which uses
+  // it for items still waiting for their offline create.
+  const enqueueSkip = useCallback(
     (itemId: string, skipped: boolean) => {
-      const tg = getTelegramWebApp();
-      tg?.HapticFeedback?.impactOccurred("light");
-
-      // Optimistic update
-      setItems((prev) =>
-        prev.map((i) =>
-          i.id === itemId
-            ? { ...i, skipped_at: skipped ? new Date().toISOString() : null }
-            : i
-        )
-      );
-
       const mutId = genMutId();
       addMutation({
         id: mutId,
@@ -406,8 +397,70 @@ export function useItemHandlers({
         },
       });
     },
-    [jwtRef, listId, addMutation, setItems]
+    [jwtRef, listId, addMutation]
   );
+
+  const handleSkip = useCallback(
+    (itemId: string, skipped: boolean) => {
+      const tg = getTelegramWebApp();
+      tg?.HapticFeedback?.impactOccurred("light");
+
+      // Optimistic update
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId
+            ? { ...i, skipped_at: skipped ? new Date().toISOString() : null }
+            : i
+        )
+      );
+
+      enqueueSkip(itemId, skipped);
+    },
+    [enqueueSkip, setItems]
+  );
+
+  // "Restore all" on the Not available section: every skipped item goes back to the
+  // active list, in its old position. No undo: the action is non-destructive, and any
+  // item can be skipped again on its own.
+  const handleRestoreSkipped = useCallback(() => {
+    const { affectedIds } = computeUnskipAll(items);
+    if (affectedIds.length === 0) return;
+
+    const tg = getTelegramWebApp();
+    tg?.HapticFeedback?.impactOccurred("light");
+
+    setItems((prev) => computeUnskipAll(prev).next);
+
+    // One request for the synced items, scoped to their ids so a late replay can't
+    // restore anything skipped after this tap. An item still waiting for its offline
+    // create has a temp- id the server doesn't know; its own skip mutation, queued
+    // behind the create, restores it once the queue swaps in the real id.
+    const itemIds: string[] = [];
+    for (const id of affectedIds) {
+      if (id.startsWith("temp-")) enqueueSkip(id, false);
+      else itemIds.push(id);
+    }
+    if (itemIds.length === 0) return;
+
+    addMutation({
+      id: genMutId(),
+      type: "unskip-all",
+      payload: { listId, itemIds },
+      execute: async () => {
+        const jwt = jwtRef.current;
+        const res = await fetch(`/api/lists/${listId}/items/unskip-all`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ itemIds }),
+          keepalive: true,
+        });
+        if (!res.ok) throw new Error(`Restore all failed: ${res.status}`);
+      },
+    });
+  }, [jwtRef, listId, items, addMutation, enqueueSkip, setItems]);
 
   const handleOrder = useCallback(
     (itemId: string, ordered: boolean) => {
@@ -805,5 +858,5 @@ export function useItemHandlers({
     [jwtRef, listId, setItems, setReminderToast]
   );
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder };
 }
