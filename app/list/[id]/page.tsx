@@ -23,6 +23,7 @@ import { useItemHandlers } from "@/src/hooks/useItemHandlers";
 import { useListDragDrop } from "@/src/hooks/useListDragDrop";
 import { useListRealtime } from "@/src/hooks/useListRealtime";
 import { useListDerivedData } from "@/src/hooks/useListDerivedData";
+import { useSortingRetry } from "@/src/hooks/useSortingRetry";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { SORTING_GROUP } from "@/src/utils/list-helpers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
@@ -47,7 +48,7 @@ function ListContent() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, categories, setCategories, fetchItems, refreshItems } =
+  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, categories, setCategories, loadCategories, fetchItems, refreshItems } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -107,6 +108,17 @@ function ListContent() {
     listId,
     jwtRef,
     groups: categoryGroups,
+  });
+
+  // Saved items still under "Sorting…" re-request the list (GET /items sorts them) in case
+  // the server's sort request was lost. Items not saved yet have nothing to sort.
+  useSortingRetry({
+    sortingIds:
+      categoryGroups
+        ?.find((g) => g.key === SORTING_GROUP)
+        ?.items.filter((i) => !i._pending)
+        .map((i) => i.id) ?? [],
+    refresh: refreshItems,
   });
 
   const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
@@ -397,7 +409,10 @@ function ListContent() {
                         method: "PATCH",
                         headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
                         body: JSON.stringify({ id: listId, type: tp }),
-                      }).catch(() => {});
+                      })
+                        // Nothing loaded categories while the list was another type.
+                        .then(() => (tp === "grocery" ? loadCategories() : undefined))
+                        .catch(() => {});
                     }
                   }}
                   className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${

@@ -19,11 +19,8 @@ describe("category realtime wiring", () => {
     expect(src.slice(at, at + 200)).toMatch(/setCategories\(\(prev\) => applyCategoryChange\(prev, change\)\)/);
   });
 
-  it("loads categories with the items, in both the first fetch and the refresh", () => {
-    const src = read("src/hooks/useListData.ts");
-    expect(src.match(/\/categories`/g)?.length).toBe(2);
-    expect(src.match(/setCategories\(sortCategories\(/g)?.length).toBe(2);
-  });
+  // Loading categories with the items (first fetch and refresh) is run for real in
+  // list-data-categories.test.ts.
 
   it("the page hands setCategories to useListRealtime", () => {
     const page = read("app/list/[id]/page.tsx");

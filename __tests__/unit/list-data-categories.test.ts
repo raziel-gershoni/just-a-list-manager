@@ -28,10 +28,10 @@ vi.mock("react", () => {
 
 import { useListData } from "@/src/hooks/useListData";
 
-const jwtRef = { current: "jwt" };
+const jwtRef: { current: string | null } = { current: "jwt" };
 const render = () => { R.i = 0; return useListData("L", jwtRef); };
 
-function stubFetch(categories: "fail" | unknown[], type = "grocery") {
+function stubFetch(categories: "fail" | 500 | unknown[], type = "grocery") {
   const f = vi.fn(async (url: string) => {
     const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
     if (url === "/api/lists") return json([{ id: "L", name: "Groceries", type }]);
@@ -41,6 +41,7 @@ function stubFetch(categories: "fail" | unknown[], type = "grocery") {
     if (url.startsWith("/api/lists/L/reminders")) return json({ reminders: [] });
     if (url === "/api/lists/L/categories") {
       if (categories === "fail") throw new TypeError("Failed to fetch");
+      if (categories === 500) return { ok: false, status: 500, json: async () => ({ error: "Failed to load categories" }) };
       return json({ categories });
     }
     throw new Error(`unexpected ${url}`);
@@ -93,5 +94,58 @@ describe("useListData categories", () => {
     const state = render();
     expect(state.items.map((i) => i.id)).toEqual(["a"]);
     expect(state.categories.map((c) => c.id)).toEqual(["dairy"]);
+  });
+
+  it("a refresh picks up categories added since the list opened", async () => {
+    stubFetch([dairy]);
+    await render().fetchItems();
+    stubFetch([dairy, produce]);
+    await render().refreshItems();
+    expect(render().categories.map((c) => c.id)).toEqual(["produce", "dairy"]);
+  });
+});
+
+const dairy = { id: "dairy", list_id: "L", name_en: "Dairy", name_he: "", name_ru: "", position: 1, created_by: null };
+const produce = { id: "produce", list_id: "L", name_en: "Produce", name_he: "", name_ru: "", position: 0, created_by: null };
+
+describe("useListData loadCategories", () => {
+  it("loads the categories in walk order, whatever type the list opened as", async () => {
+    // A list switched to grocery in settings opened as regular, so nothing loaded them yet.
+    const f = stubFetch([dairy, produce], "regular");
+    await render().fetchItems();
+    expect(render().categories).toEqual([]);
+
+    await render().loadCategories();
+    expect(render().categories.map((c) => c.id)).toEqual(["produce", "dairy"]);
+    expect(f.mock.calls.filter(([url]) => url === "/api/lists/L/categories")).toHaveLength(1);
+  });
+
+  it("never throws: a request that fails to send is logged and changes nothing", async () => {
+    stubFetch([dairy]);
+    await render().fetchItems();
+    stubFetch("fail");
+    await expect(render().loadCategories()).resolves.toBeUndefined();
+    expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
+    expect(console.error).toHaveBeenCalledWith("[List] Categories fetch error:", expect.any(TypeError));
+  });
+
+  it("an error response changes nothing", async () => {
+    stubFetch([dairy]);
+    await render().fetchItems();
+    stubFetch(500);
+    await render().loadCategories();
+    expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
+  });
+
+  it("does nothing before the user is signed in", async () => {
+    const f = stubFetch([dairy]);
+    jwtRef.current = null;
+    try {
+      await render().loadCategories();
+    } finally {
+      jwtRef.current = "jwt";
+    }
+    expect(f).not.toHaveBeenCalled();
+    expect(render().categories).toEqual([]);
   });
 });

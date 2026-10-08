@@ -47,6 +47,24 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [listColor, setListColor] = useState<ListColor | null>(null);
   const [categories, setCategories] = useState<ListCategory[]>([]);
 
+  // The list works without categories (items show under "Sorting…"), so a failed request
+  // is only logged: it must never turn into the list's error screen.
+  const loadCategories = useCallback(async () => {
+    const jwt = jwtRef.current;
+    if (!jwt) return;
+    try {
+      const res = await fetch(`/api/lists/${listId}/categories`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (res.ok) {
+        const { categories: fetched } = await res.json();
+        setCategories(sortCategories(fetched ?? []));
+      }
+    } catch (e) {
+      console.error("[List] Categories fetch error:", e);
+    }
+  }, [jwtRef, listId]);
+
   const fetchItems = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
@@ -157,21 +175,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           return base;
         });
         setItems(mapped);
-        if (currentListType === "grocery") {
-          // The list works without categories (items show under "Sorting…"), so a failed
-          // request must not turn into the list's error screen.
-          try {
-            const catRes = await fetch(`/api/lists/${listId}/categories`, {
-              headers: { Authorization: `Bearer ${jwt}` },
-            });
-            if (catRes.ok) {
-              const { categories: fetched } = await catRes.json();
-              setCategories(sortCategories(fetched ?? []));
-            }
-          } catch (e) {
-            console.error("[List] Categories fetch error:", e);
-          }
-        }
+        if (currentListType === "grocery") await loadCategories();
       } else {
         setError(true);
       }
@@ -181,7 +185,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     } finally {
       setLoading(false);
     }
-  }, [jwtRef, listId]);
+  }, [jwtRef, listId, loadCategories]);
 
   const refreshItems = useCallback(async () => {
     const jwt = jwtRef.current;
@@ -249,19 +253,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
 
         return [...unresolvedPending, ...mapped];
       });
-      if (listType === "grocery") {
-        const catRes = await fetch(`/api/lists/${listId}/categories`, {
-          headers: { Authorization: `Bearer ${jwt}` },
-        });
-        if (catRes.ok) {
-          const { categories: fetched } = await catRes.json();
-          setCategories(sortCategories(fetched ?? []));
-        }
-      }
+      if (listType === "grocery") await loadCategories();
     } catch (e) {
       console.error("[List] Background refresh error:", e);
     }
-  }, [jwtRef, listId, listType]);
+  }, [jwtRef, listId, listType, loadCategories]);
 
-  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, fetchItems, refreshItems };
+  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems };
 }

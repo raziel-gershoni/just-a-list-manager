@@ -53,6 +53,8 @@ const S = vi.hoisted(() => ({
   providerChildren: null as unknown,
   sortables: [] as Record<string, unknown>[],
   dragGroups: undefined as CategoryGroup[] | null | undefined,
+  refreshItems: async function refreshItems() {},
+  sortingRetry: undefined as { sortingIds: string[]; refresh: unknown } | undefined,
 }));
 
 vi.mock("next-intl", () => ({ useTranslations: () => S.t, useLocale: () => S.locale }));
@@ -75,8 +77,13 @@ vi.mock("@/src/hooks/useListData", () => ({
     listName: "Groceries", setListName: () => {}, items: S.items, setItems: () => {},
     loading: false, error: null, isShared: false, listType: S.listType, setListType: () => {},
     listIcon: null, listColor: null, categories: S.categories, setCategories: () => {},
-    fetchItems: () => {}, refreshItems: () => {},
+    loadCategories: async () => {}, fetchItems: () => {}, refreshItems: S.refreshItems,
   }),
+}));
+vi.mock("@/src/hooks/useSortingRetry", () => ({
+  useSortingRetry: (args: { sortingIds: string[]; refresh: unknown }) => {
+    S.sortingRetry = args;
+  },
 }));
 vi.mock("@/src/hooks/useMutationQueue", () => ({ useMutationQueue: () => ({ addMutation: () => {}, flushQueue: () => {} }) }));
 vi.mock("@/src/hooks/useItemHandlers", () => ({ useItemHandlers: () => new Proxy({}, { get: () => () => {} }) }));
@@ -124,7 +131,7 @@ const item = (id: string, position: number, category_id: string | null): ItemDat
 });
 
 function renderList(listType: string) {
-  Object.assign(S, { listType, providerChildren: null, sortables: [], dragGroups: undefined });
+  Object.assign(S, { listType, providerChildren: null, sortables: [], dragGroups: undefined, sortingRetry: undefined });
   renderToStaticMarkup(createElement(ListPage));
   return {
     // The drag area's direct children, top to bottom: "# label" for a header, the id for a row.
@@ -134,6 +141,7 @@ function renderList(listType: string) {
     }),
     sortables: S.sortables.map(({ id, index, group, disabled }) => ({ id, index, group, disabled })),
     dragGroups: S.dragGroups,
+    sortingRetry: S.sortingRetry,
   };
 }
 
@@ -172,6 +180,26 @@ describe("the rendered list page", () => {
       ["produce", ["apples", "bananas"]],
       ["dairy", ["cheese"]],
     ]);
+  });
+
+  it("re-requests the list while synced items wait under Sorting…", () => {
+    // eggs is still being saved (no server row to sort yet); yogurt's category was deleted.
+    S.items = [
+      item("milk", 5, null),
+      { ...item("eggs", 4, null), _pending: true },
+      item("yogurt", 3, "gone"),
+      item("apples", 2, "produce"),
+    ];
+    const { layout, sortingRetry } = renderList("grocery");
+    expect(layout).toEqual(["# categories.sorting", "milk", "eggs", "yogurt", "# ירקות", "apples"]);
+    expect(sortingRetry?.sortingIds).toEqual(["milk", "yogurt"]);
+    expect(sortingRetry?.refresh).toBe(S.refreshItems);
+  });
+
+  it("never re-requests a list that is not grouped", () => {
+    // A regular list's items have no category, but nothing will ever sort them.
+    const { sortingRetry } = renderList("regular");
+    expect(sortingRetry?.sortingIds).toEqual([]);
   });
 
   it("keeps a regular list flat, ungrouped and ordered by position", () => {
