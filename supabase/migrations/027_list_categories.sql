@@ -79,6 +79,14 @@ GRANT EXECUTE ON FUNCTION apply_item_categories(UUID, JSONB, BOOLEAN) TO service
 -- failed. Cleared by the first re-scan that gets an AI answer.
 ALTER TABLE lists ADD COLUMN IF NOT EXISTS categories_rescan_at TIMESTAMPTZ;
 
+-- Setting or clearing only that flag must not bump lists.updated_at: it orders lists the user
+-- hasn't dragged on the home screen, and a background re-scan should not move a list there.
+-- Any other change still bumps it (an explicit updated_at in the same UPDATE is kept as given).
+DROP TRIGGER IF EXISTS trg_lists_updated_at ON lists;
+CREATE TRIGGER trg_lists_updated_at BEFORE UPDATE ON lists FOR EACH ROW
+  WHEN ((to_jsonb(OLD) - 'categories_rescan_at' - 'updated_at') IS DISTINCT FROM (to_jsonb(NEW) - 'categories_rescan_at' - 'updated_at'))
+  EXECUTE FUNCTION update_updated_at();
+
 -- Insert a category under the list row lock: cap check, placement and shift happen against
 -- current positions, so concurrent adds, AI inserts and reorders cannot tie or overwrite.
 -- p_placement: 'first' | 'after' (p_after_id) | 'last'. An 'after' whose category is gone
