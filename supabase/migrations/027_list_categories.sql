@@ -74,3 +74,77 @@ $$ LANGUAGE plpgsql SET search_path = public;
 
 REVOKE ALL ON FUNCTION apply_item_categories(UUID, JSONB, BOOLEAN) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION apply_item_categories(UUID, JSONB, BOOLEAN) TO service_role;
+
+-- A re-scan the user asked for (a new category) that could not run yet: the AI was refused or
+-- failed. Cleared by the first re-scan that gets an AI answer.
+ALTER TABLE lists ADD COLUMN IF NOT EXISTS categories_rescan_at TIMESTAMPTZ;
+
+-- Insert a category under the list row lock: cap check, placement and shift happen against
+-- current positions, so concurrent adds, AI inserts and reorders cannot tie or overwrite.
+-- p_placement: 'first' | 'after' (p_after_id) | 'last'. An 'after' whose category is gone
+-- falls back to 'last'. Returns no row when the list already has p_max categories.
+CREATE OR REPLACE FUNCTION insert_list_category(
+  p_list_id UUID,
+  p_name_en TEXT,
+  p_name_he TEXT,
+  p_name_ru TEXT,
+  p_created_by UUID,
+  p_placement TEXT,
+  p_after_id UUID,
+  p_max INTEGER
+) RETURNS SETOF list_categories AS $$
+DECLARE
+  v_count INTEGER;
+  v_pos INTEGER;
+BEGIN
+  PERFORM 1 FROM lists WHERE id = p_list_id FOR UPDATE;
+  SELECT count(*) INTO v_count FROM list_categories WHERE list_id = p_list_id;
+  IF v_count >= p_max THEN
+    RETURN;
+  END IF;
+  IF p_placement = 'first' THEN
+    v_pos := 0;
+  ELSIF p_placement = 'after' THEN
+    SELECT c.position + 1 INTO v_pos FROM list_categories c WHERE c.id = p_after_id AND c.list_id = p_list_id;
+  END IF;
+  IF v_pos IS NULL THEN
+    SELECT COALESCE(MAX(c.position) + 1, 0) INTO v_pos FROM list_categories c WHERE c.list_id = p_list_id;
+  ELSE
+    UPDATE list_categories SET position = position + 1 WHERE list_id = p_list_id AND position >= v_pos;
+  END IF;
+  RETURN QUERY
+    INSERT INTO list_categories (list_id, name_en, name_he, name_ru, position, created_by)
+    VALUES (p_list_id, p_name_en, p_name_he, p_name_ru, v_pos, p_created_by)
+    RETURNING *;
+END;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+-- Renumber a list's categories in one statement under the same lock. False (nothing written)
+-- unless p_ordered_ids is exactly the list's categories, each once.
+CREATE OR REPLACE FUNCTION reorder_list_categories(p_list_id UUID, p_ordered_ids UUID[])
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  PERFORM 1 FROM lists WHERE id = p_list_id FOR UPDATE;
+  SELECT count(*) INTO v_count FROM list_categories WHERE list_id = p_list_id;
+  IF v_count <> COALESCE(cardinality(p_ordered_ids), 0)
+     OR (SELECT count(DISTINCT x) FROM unnest(p_ordered_ids) AS x) <> v_count
+     OR EXISTS (
+       SELECT 1 FROM unnest(p_ordered_ids) AS x
+       WHERE NOT EXISTS (SELECT 1 FROM list_categories c WHERE c.id = x AND c.list_id = p_list_id)
+     ) THEN
+    RETURN false;
+  END IF;
+  UPDATE list_categories c
+  SET position = o.ord - 1
+  FROM unnest(p_ordered_ids) WITH ORDINALITY AS o(id, ord)
+  WHERE c.id = o.id AND c.list_id = p_list_id;
+  RETURN true;
+END;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+REVOKE ALL ON FUNCTION insert_list_category(UUID, TEXT, TEXT, TEXT, UUID, TEXT, UUID, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION insert_list_category(UUID, TEXT, TEXT, TEXT, UUID, TEXT, UUID, INTEGER) TO service_role;
+REVOKE ALL ON FUNCTION reorder_list_categories(UUID, UUID[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION reorder_list_categories(UUID, UUID[]) TO service_role;
