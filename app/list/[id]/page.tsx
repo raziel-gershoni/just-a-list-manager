@@ -111,14 +111,18 @@ function ListContent() {
   });
 
   // Saved items still under "Sorting…" re-request the list (GET /items sorts them) in case
-  // the server's sort request was lost. Items not saved yet have nothing to sort.
+  // the server's sort request was lost. Items not saved yet have nothing to sort. Queued
+  // changes go out first, as on a reconnect, so the refetch can't briefly undo one.
   useSortingRetry({
     sortingIds:
       categoryGroups
         ?.find((g) => g.key === SORTING_GROUP)
         ?.items.filter((i) => !i._pending)
         .map((i) => i.id) ?? [],
-    refresh: refreshItems,
+    refresh: async () => {
+      await flushQueue();
+      await refreshItems();
+    },
   });
 
   const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =

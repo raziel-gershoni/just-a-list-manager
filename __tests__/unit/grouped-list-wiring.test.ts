@@ -53,8 +53,10 @@ const S = vi.hoisted(() => ({
   providerChildren: null as unknown,
   sortables: [] as Record<string, unknown>[],
   dragGroups: undefined as CategoryGroup[] | null | undefined,
-  refreshItems: async function refreshItems() {},
-  sortingRetry: undefined as { sortingIds: string[]; refresh: unknown } | undefined,
+  calls: [] as string[],
+  refreshItems: async function refreshItems() { S.calls.push("refresh"); },
+  flushQueue: async function flushQueue() { await Promise.resolve(); S.calls.push("flush"); },
+  sortingRetry: undefined as { sortingIds: string[]; refresh: () => unknown } | undefined,
 }));
 
 vi.mock("next-intl", () => ({ useTranslations: () => S.t, useLocale: () => S.locale }));
@@ -81,11 +83,11 @@ vi.mock("@/src/hooks/useListData", () => ({
   }),
 }));
 vi.mock("@/src/hooks/useSortingRetry", () => ({
-  useSortingRetry: (args: { sortingIds: string[]; refresh: unknown }) => {
+  useSortingRetry: (args: { sortingIds: string[]; refresh: () => unknown }) => {
     S.sortingRetry = args;
   },
 }));
-vi.mock("@/src/hooks/useMutationQueue", () => ({ useMutationQueue: () => ({ addMutation: () => {}, flushQueue: () => {} }) }));
+vi.mock("@/src/hooks/useMutationQueue", () => ({ useMutationQueue: () => ({ addMutation: () => {}, flushQueue: S.flushQueue }) }));
 vi.mock("@/src/hooks/useItemHandlers", () => ({ useItemHandlers: () => new Proxy({}, { get: () => () => {} }) }));
 vi.mock("@/src/hooks/useListRealtime", () => ({ useListRealtime: () => ({ resubscribe: () => {} }) }));
 vi.mock("@/src/hooks/useListDragDrop", () => ({
@@ -182,7 +184,7 @@ describe("the rendered list page", () => {
     ]);
   });
 
-  it("re-requests the list while synced items wait under Sorting…", () => {
+  it("re-requests the list while synced items wait under Sorting…", async () => {
     // eggs is still being saved (no server row to sort yet); yogurt's category was deleted.
     S.items = [
       item("milk", 5, null),
@@ -193,7 +195,11 @@ describe("the rendered list page", () => {
     const { layout, sortingRetry } = renderList("grocery");
     expect(layout).toEqual(["# categories.sorting", "milk", "eggs", "yogurt", "# ירקות", "apples"]);
     expect(sortingRetry?.sortingIds).toEqual(["milk", "yogurt"]);
-    expect(sortingRetry?.refresh).toBe(S.refreshItems);
+    // Like a reconnect: send queued changes before refetching, so a change still waiting
+    // in the queue is not briefly replaced by the server's older copy.
+    S.calls = [];
+    await sortingRetry!.refresh();
+    expect(S.calls).toEqual(["flush", "refresh"]);
   });
 
   it("never re-requests a list that is not grouped", () => {
