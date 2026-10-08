@@ -241,5 +241,8 @@
     "notFound": "Reminder not found.",
     "today": "Today",
     "tomorrow": "Tomorrow"
+  },
+  "categories": {
+    "sorting": "Sorting…"
   }
 }

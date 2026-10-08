@@ -24,3 +24,5 @@ export interface ItemData {
 }
 
 export type CompletedGroup = { label: string; items: ItemData[] };
+
+export type CategoryGroup = { key: string; categoryId: string | null; label: string; items: ItemData[] };

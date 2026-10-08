@@ -241,5 +241,8 @@
     "notFound": "תזכורת לא נמצאה.",
     "today": "היום",
     "tomorrow": "מחר"
+  },
+  "categories": {
+    "sorting": "ממיין…"
   }
 }

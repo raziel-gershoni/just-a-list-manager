@@ -1,4 +1,5 @@
-import type { ItemData, CompletedGroup } from "@/src/types";
+import type { ItemData, CompletedGroup, CategoryGroup, ListCategory } from "@/src/types";
+import { categoryLabel } from "@/src/types/categories";
 
 export function genMutId(): string {
   return `mut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -58,6 +59,40 @@ export function groupByCompletionTime(
       label: t(`items.completedTime.${b.key}`),
       items: grouped.get(b.key)!,
     }));
+}
+
+export const SORTING_GROUP = "sorting";
+
+/**
+ * Active grocery items grouped for the store walk: anything not yet sorted first,
+ * then each non-empty category in walk order. Item order inside a group is kept.
+ */
+export function groupByCategory(
+  active: ItemData[],
+  categories: ListCategory[],
+  locale: string,
+  sortingLabel: string
+): CategoryGroup[] {
+  const known = new Set(categories.map((c) => c.id));
+  const byCategory = new Map<string, ItemData[]>();
+  const sorting: ItemData[] = [];
+  for (const item of active) {
+    const id = item.category_id;
+    if (id && known.has(id)) {
+      const bucket = byCategory.get(id) ?? [];
+      bucket.push(item);
+      byCategory.set(id, bucket);
+    } else {
+      sorting.push(item);
+    }
+  }
+  const groups: CategoryGroup[] = [];
+  if (sorting.length) groups.push({ key: SORTING_GROUP, categoryId: null, label: sortingLabel, items: sorting });
+  for (const c of [...categories].sort((a, b) => a.position - b.position)) {
+    const items = byCategory.get(c.id);
+    if (items?.length) groups.push({ key: c.id, categoryId: c.id, label: categoryLabel(c, locale), items });
+  }
+  return groups;
 }
 
 // Item grouping predicates. "Ordered" items stay in the active list (shown
