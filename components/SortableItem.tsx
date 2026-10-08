@@ -13,6 +13,8 @@ const longPressSensor = PointerSensor.configure({
 interface SortableItemProps {
   id: string;
   index: number;
+  group?: string;
+  disabled?: boolean;
   text: string;
   isPending?: boolean;
   isDuplicate?: boolean;
@@ -38,6 +40,8 @@ interface SortableItemProps {
 export default function SortableItem({
   id,
   index,
+  group,
+  disabled,
   text,
   isPending,
   isDuplicate,
@@ -62,6 +66,8 @@ export default function SortableItem({
   const { ref, isDragSource } = useSortable({
     id,
     index,
+    group,
+    disabled,
     sensors: [longPressSensor],
   });
 

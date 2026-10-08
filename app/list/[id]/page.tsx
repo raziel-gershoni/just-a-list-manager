@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { RefreshCw } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
@@ -23,6 +23,7 @@ import { useListDragDrop } from "@/src/hooks/useListDragDrop";
 import { useListRealtime } from "@/src/hooks/useListRealtime";
 import { useListDerivedData } from "@/src/hooks/useListDerivedData";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
+import { SORTING_GROUP } from "@/src/utils/list-helpers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
 import { DragDropProvider } from "@dnd-kit/react";
 
@@ -40,6 +41,7 @@ function ListContent() {
     onRefreshNeededRef,
   } = useTelegram();
   const t = useTranslations();
+  const locale = useLocale();
   const router = useRouter();
   const params = useParams();
   const listId = params.id as string;
@@ -93,13 +95,16 @@ function ListContent() {
 
   const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError);
 
+  const { activeItems, skippedItems, recurringItems, completedItems, completedGroups, categoryGroups, duplicateTexts } =
+    useListDerivedData(items, t as (key: string) => string, { categories, locale, grouped: listType === "grocery" });
+
   const { handleDragStart, handleDragEnd, isDraggingRef } = useListDragDrop({
     items,
     setItems,
     addMutation,
     listId,
     jwtRef,
-    groups: null,
+    groups: categoryGroups,
   });
 
   const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
@@ -156,9 +161,6 @@ function ListContent() {
   useEffect(() => {
     if (isReady) fetchItems();
   }, [isReady, fetchItems]);
-
-  const { activeItems, skippedItems, recurringItems, completedItems, completedGroups, duplicateTexts } =
-    useListDerivedData(items, t as (key: string) => string);
 
   if (loading) {
     return (
@@ -239,31 +241,70 @@ function ListContent() {
           <>
             {/* Regular list: position-ordered with drag-to-reorder */}
             <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-              {activeItems.map((item, index) => (
-                <SortableItem
-                  key={item.id}
-                  id={item.id}
-                  index={index}
-                  text={item.text}
-                  isPending={item._pending}
-                  isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
-                  creatorName={isShared ? item.creator_name : null}
-                  isOwnItem={item.created_by === userId}
-                  editorName={isShared ? item.editor_name : null}
-                  isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-                  onToggle={handleToggle}
-                  onDelete={handleDelete}
-                  onEdit={handleEditItem}
-                  onSkip={listType === "grocery" ? handleSkip : undefined}
-                  ordered={item.ordered_at != null}
-                  onOrder={listType === "grocery" ? handleOrder : undefined}
-                  recurring={item.recurring}
-                  onToggleRecurring={listType === "grocery" ? handleSetRecurring : undefined}
-                  onRemoveDuplicates={handleRemoveDuplicates}
-                  isExiting={item._exiting}
-                  isJustAdded={item._justAdded}
-                />
-              ))}
+              {categoryGroups
+                ? /* Grocery list: a header per category in walk order. Headers and rows stay
+                     siblings (no wrapper per group): dnd-kit moves a dragged row's DOM node
+                     into the other category, and React must find it under the same parent. */
+                  categoryGroups.flatMap((group) => [
+                    <div
+                      key={`group-${group.key}`}
+                      className="px-5 pt-4 pb-1.5 text-[11px] text-tg-hint/70 font-semibold tracking-widest uppercase bg-tg-secondary-bg/80 backdrop-blur-md"
+                    >
+                      {group.label}
+                    </div>,
+                    ...group.items.map((item, indexInGroup) => (
+                      <SortableItem
+                        key={item.id}
+                        id={item.id}
+                        index={indexInGroup}
+                        group={group.key}
+                        disabled={group.key === SORTING_GROUP}
+                        text={item.text}
+                        isPending={item._pending}
+                        isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
+                        creatorName={isShared ? item.creator_name : null}
+                        isOwnItem={item.created_by === userId}
+                        editorName={isShared ? item.editor_name : null}
+                        isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+                        onToggle={handleToggle}
+                        onDelete={handleDelete}
+                        onEdit={handleEditItem}
+                        onSkip={handleSkip}
+                        ordered={item.ordered_at != null}
+                        onOrder={handleOrder}
+                        recurring={item.recurring}
+                        onToggleRecurring={handleSetRecurring}
+                        onRemoveDuplicates={handleRemoveDuplicates}
+                        isExiting={item._exiting}
+                        isJustAdded={item._justAdded}
+                      />
+                    )),
+                  ])
+                : activeItems.map((item, index) => (
+                    <SortableItem
+                      key={item.id}
+                      id={item.id}
+                      index={index}
+                      text={item.text}
+                      isPending={item._pending}
+                      isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
+                      creatorName={isShared ? item.creator_name : null}
+                      isOwnItem={item.created_by === userId}
+                      editorName={isShared ? item.editor_name : null}
+                      isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+                      onToggle={handleToggle}
+                      onDelete={handleDelete}
+                      onEdit={handleEditItem}
+                      onSkip={listType === "grocery" ? handleSkip : undefined}
+                      ordered={item.ordered_at != null}
+                      onOrder={listType === "grocery" ? handleOrder : undefined}
+                      recurring={item.recurring}
+                      onToggleRecurring={listType === "grocery" ? handleSetRecurring : undefined}
+                      onRemoveDuplicates={handleRemoveDuplicates}
+                      isExiting={item._exiting}
+                      isJustAdded={item._justAdded}
+                    />
+                  ))}
             </DragDropProvider>
 
             {listType === "grocery" && (
