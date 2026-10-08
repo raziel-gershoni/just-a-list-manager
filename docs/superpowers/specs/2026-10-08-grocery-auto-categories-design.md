@@ -207,3 +207,18 @@ All use the existing auth, rate-limit and permission helpers and zod validation.
 
 Grouping the Not available, Recurring or Completed sections; categories on regular or
 reminders lists; per-user categories or order; managing categories offline.
+
+## Changes after the whole-change review
+
+- Category inserts (user and AI) and reorders go through `insert_list_category` and
+  `reorder_list_categories`, which hold the list row lock, check the 20-category cap and place
+  against current positions. Concurrent adds, AI inserts and reorders cannot tie or overwrite.
+- A re-scan the user asked for is durable: `lists.categories_rescan_at` stays set until a re-scan
+  gets an AI answer, and every later run or GET sweep picks it up.
+- No sort request is stranded: a failed lock attempt retries once, the run loops on requests within
+  a 50 s budget instead of 3 rounds, and the client re-requests the list (which sweeps) when items
+  stay under "Sorting…" for 30 s, 60 s and 120 s.
+- AI budgets: per list 15 calls/min, app-wide 60 calls/min (categorization and translation), and
+  name translation 10/min per user. When refused, names fall back to the typed name and sorting
+  waits for the next sweep. Renaming checks the category exists before any AI call.
+- Switching a list to grocery sorts it right away (server) and loads its categories (client).

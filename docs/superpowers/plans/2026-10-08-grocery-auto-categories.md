@@ -3134,3 +3134,176 @@ git commit -m "feat: categories sheet to add, rename, reorder and delete categor
 - [ ] **Step 2: One live call** through the real categorizer (no database writes): a scratch `.mts` script run with `TELEGRAM_OAUTH_CLIENT_ID=x TELEGRAM_OAUTH_CLIENT_SECRET=x npx -y tsx --env-file=.env.local <script>` that calls `new GeminiCategorizer().categorize({ categories: [], items: [...mixed he/en/ru groceries...], allowNew: true, maxNew: 20 })` and prints the result. Expect sensible sections in walk order with names in three languages. Never print env values.
 - [ ] **Step 3: Independent review** of the whole change (correctness and races, server security and scoping, UI/drag, tests), fix confirmed findings test-first.
 - [ ] **Step 4: Push** `main` to origin and notify the user.
+
+---
+
+## Addendum: fixes from the whole-change review (2026-10-08)
+
+The final review confirmed nine findings (several overlapping). Migration 027 has not shipped,
+so it is edited in place. Every fix is test-first; each listed guard must be proven to bite.
+Product behavior the user chose does not change.
+
+### Task F1: Atomic category inserts and reorders; owed-rescan column (migration 027)
+
+**Files:** `supabase/migrations/027_list_categories.sql`, `src/schemas/categories.ts`, the scratch
+PGlite checker (copy `scratchpad/build-categories/check-migration-v2.mjs` and extend it; do not commit it).
+
+Append to 027 (keep everything already there):
+
+```sql
+-- A re-scan the user asked for (a new category) that could not run yet: the AI was refused or
+-- failed. Cleared by the first re-scan that gets an AI answer.
+ALTER TABLE lists ADD COLUMN IF NOT EXISTS categories_rescan_at TIMESTAMPTZ;
+
+-- Insert a category under the list row lock: cap check, placement and shift happen against
+-- current positions, so concurrent adds, AI inserts and reorders cannot tie or overwrite.
+-- p_placement: 'first' | 'after' (p_after_id) | 'last'. An 'after' whose category is gone
+-- falls back to 'last'. Returns no row when the list already has p_max categories.
+CREATE OR REPLACE FUNCTION insert_list_category(
+  p_list_id UUID,
+  p_name_en TEXT,
+  p_name_he TEXT,
+  p_name_ru TEXT,
+  p_created_by UUID,
+  p_placement TEXT,
+  p_after_id UUID,
+  p_max INTEGER
+) RETURNS SETOF list_categories AS $$
+DECLARE
+  v_count INTEGER;
+  v_pos INTEGER;
+BEGIN
+  PERFORM 1 FROM lists WHERE id = p_list_id FOR UPDATE;
+  SELECT count(*) INTO v_count FROM list_categories WHERE list_id = p_list_id;
+  IF v_count >= p_max THEN
+    RETURN;
+  END IF;
+  IF p_placement = 'first' THEN
+    v_pos := 0;
+  ELSIF p_placement = 'after' THEN
+    SELECT c.position + 1 INTO v_pos FROM list_categories c WHERE c.id = p_after_id AND c.list_id = p_list_id;
+  END IF;
+  IF v_pos IS NULL THEN
+    SELECT COALESCE(MAX(c.position) + 1, 0) INTO v_pos FROM list_categories c WHERE c.list_id = p_list_id;
+  ELSE
+    UPDATE list_categories SET position = position + 1 WHERE list_id = p_list_id AND position >= v_pos;
+  END IF;
+  RETURN QUERY
+    INSERT INTO list_categories (list_id, name_en, name_he, name_ru, position, created_by)
+    VALUES (p_list_id, p_name_en, p_name_he, p_name_ru, v_pos, p_created_by)
+    RETURNING *;
+END;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+-- Renumber a list's categories in one statement under the same lock. False (nothing written)
+-- unless p_ordered_ids is exactly the list's categories, each once.
+CREATE OR REPLACE FUNCTION reorder_list_categories(p_list_id UUID, p_ordered_ids UUID[])
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  PERFORM 1 FROM lists WHERE id = p_list_id FOR UPDATE;
+  SELECT count(*) INTO v_count FROM list_categories WHERE list_id = p_list_id;
+  IF v_count <> COALESCE(cardinality(p_ordered_ids), 0)
+     OR (SELECT count(DISTINCT x) FROM unnest(p_ordered_ids) AS x) <> v_count
+     OR EXISTS (
+       SELECT 1 FROM unnest(p_ordered_ids) AS x
+       WHERE NOT EXISTS (SELECT 1 FROM list_categories c WHERE c.id = x AND c.list_id = p_list_id)
+     ) THEN
+    RETURN false;
+  END IF;
+  UPDATE list_categories c
+  SET position = o.ord - 1
+  FROM unnest(p_ordered_ids) WITH ORDINALITY AS o(id, ord)
+  WHERE c.id = o.id AND c.list_id = p_list_id;
+  RETURN true;
+END;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+REVOKE ALL ON FUNCTION insert_list_category(UUID, TEXT, TEXT, TEXT, UUID, TEXT, UUID, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION insert_list_category(UUID, TEXT, TEXT, TEXT, UUID, TEXT, UUID, INTEGER) TO service_role;
+REVOKE ALL ON FUNCTION reorder_list_categories(UUID, UUID[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION reorder_list_categories(UUID, UUID[]) TO service_role;
+```
+
+`src/schemas/categories.ts`: `orderedIds` max becomes 100 (the RPC already demands the exact set;
+the zod max only bounds payload size, so a list that somehow exceeds 20 can still be reordered).
+
+PGlite checks to add (each mutated to prove it bites): insert first/after/last positions and
+shifting with gaps; 'after' a missing id goes last; cap returns no row and inserts nothing; reorder
+true writes 0..n-1; reorder false (missing id, extra id, duplicate, foreign id) writes nothing;
+EXECUTE denied to anon/authenticated for both; search_path pinned on both; column exists.
+
+### Task F2: Use the RPCs; limit and guard every AI call
+
+**Files:** `src/services/categorize-list.ts`, `app/api/lists/[id]/categories/route.ts`,
+`app/api/lists/[id]/categories/[categoryId]/route.ts`, `app/api/lists/[id]/categories/order/route.ts`,
+`src/lib/rate-limit.ts`, tests for each.
+
+- `rate-limit.ts`: per-list `categorizeRateLimiter` becomes 15 per `"1 m"` (slots free within a
+  minute, so the next sweep can retry); add `categorizeGlobalRateLimiter` 60 per `"1 m"`
+  (identifier `"global"`) and `categoryTranslateRateLimiter` 10 per `"1 m"` (per user). All used fail-closed.
+- `categorizeList` default `allowAiCall(listId)`: allowed only if the per-list AND the global limiter allow.
+- `categorizeList` new categories: no client-side position math. For each `newCategories` entry in
+  order, call `rpc("insert_list_category", { p_list_id, p_name_en, p_name_he, p_name_ru,
+  p_created_by: null, p_placement, p_after_id, p_max: MAX_CATEGORIES_PER_LIST })` where:
+  `after === null` → `'after'` the previous leading (after=null) new category if one was inserted,
+  else `'first'`; `after` names an existing key or an already inserted ref → `'after'` its id;
+  otherwise `'last'`. No row back (cap) → that ref is unmapped and its items stay uncategorized.
+  Remove the position-update loop and `orderWithNewCategories` + its test if nothing else uses them.
+- POST `/categories`: translate first (only if `categoryTranslateRateLimiter` for the user AND the
+  global limiter allow; otherwise use the typed name for all three), then `rpc("insert_list_category",
+  { placement 'last', p_created_by: userId, p_max: 20 })`; no row → 400 (cap); then
+  `update lists set categories_rescan_at = now()` for the list, then `after(rescan)`.
+- PATCH `/categories/[categoryId]`: read the category (`id, name_en, name_he, name_ru` scoped to the
+  list) first → 404 before any AI call; if the typed name equals the stored name for that locale,
+  return the row unchanged with no AI call; translation behind the same two limiters with the
+  typed-name fallback; a failed update returns 500 (not 404).
+- PUT `/order`: `rpc("reorder_list_categories", ...)`; `false` → 400; error → 500.
+- Tests must assert effects: unknown category → no `translateName` call; refused limiter → still
+  201/200 with the typed name in all three columns and no `translateName` call; cap → 400 and no
+  rescan scheduled; RPC args (placement/after ids) for first-scan, chained, and existing-key cases.
+
+### Task F3: No stranded sort requests; durable re-scan; sweep only grocery lists
+
+**Files:** `src/services/categorize-list.ts`, `app/api/lists/[id]/items/route.ts` (GET),
+`app/api/lists/route.ts` (PATCH type), tests.
+
+- `categorizeList` reads `lists.type, categories_rescan_at`. If `categories_rescan_at` is set, the run
+  is a `rescan` regardless of the requested mode. After a rescan round in which the AI answered
+  (result non-null) or there was nothing to sort, clear it with a compare-and-swap:
+  `update lists set categories_rescan_at = null where id = $1 and categories_rescan_at = <value read>`.
+  A refused or failed AI call leaves it set.
+- Lost wakeup: when `acquire` fails, `requestRerun`, then try `acquire` once more; if that succeeds,
+  fold any waiting request in with `takeRerun` (rescan wins) and run under that token.
+- Replace `MAX_ROUNDS = 3` with a wall-clock budget of 50 s (`deps.now` injectable): keep looping
+  while `takeRerun` returns a request and the budget is not spent; a request left at the budget is
+  picked up by the next trigger or the client retry (F4).
+- Pending runs wait `deps.settleMs` (default 1500 ms) after taking the lock in their first round,
+  before reading items, so near-simultaneous adds (comma lists, two people) share one AI call.
+  Tests pass `settleMs: 0`.
+- GET `/items`: read the list's `type, categories_rescan_at` once; schedule the pending run only for
+  a grocery list with an uncategorized item OR a set `categories_rescan_at`.
+- PATCH `/api/lists`: when the update sets `type` to `grocery`, `after(() => categorizeList({ supabase }, id, "pending"))`.
+- Tests (behavioral, with the existing fakes): an item added during the last round under the old cap
+  now gets sorted; the lost-wakeup interleaving ends with the item sorted; a refused rescan leaves
+  `categories_rescan_at` set and a later pending trigger runs it as a rescan; a successful rescan
+  clears it (CAS on the read value); GET on a regular list schedules nothing; GET with only an owed
+  rescan schedules a run; PATCH type → grocery schedules a run.
+
+### Task F4: Client: retry stuck "Sorting…" items; load categories on a switch to grocery
+
+**Files:** `src/hooks/useSortingRetry.ts` (new), `src/hooks/useListData.ts` (export `loadCategories`),
+`app/list/[id]/page.tsx`, tests.
+
+- `useSortingRetry({ sortingIds, refresh, delays = [30_000, 60_000, 120_000] })`: while `sortingIds`
+  (synced, non-pending items in the Sorting… group) is non-empty and unchanged, call `refresh()`
+  after each delay in turn, then stop; any change to the set restarts from the first delay; an empty
+  set cancels. Test with the slot-based React stand-in and fake timers.
+- `useListData` exposes `loadCategories()` (the grocery categories fetch, errors logged, never
+  throws) and uses it in `fetchItems` and `refreshItems`.
+- The settings type switch: when switching to `grocery`, wait for the PATCH, then `loadCategories()`.
+- Page: `useSortingRetry({ sortingIds: <ids of the Sorting… group's items that are not _pending>,
+  refresh: refreshItems })`.
+- Update the source-inspection tests that count `/categories\`` occurrences if the refactor changes
+  them; prefer behavioral tests of `useListData` (see `__tests__/unit/list-data-categories.test.ts`).
