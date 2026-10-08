@@ -7,7 +7,7 @@ import type { DragDropEvents } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 import type { ListCategory } from "@/src/types";
-import { categoryLabel } from "@/src/types/categories";
+import { categoryLabel, MAX_CATEGORIES_PER_LIST } from "@/src/types/categories";
 import { askConfirm } from "@/src/types/telegram";
 import { restoreCategory, restoreCategoryName, restorePositions, sortCategories } from "@/src/utils/category-state";
 import {
@@ -18,16 +18,19 @@ interface CategoriesSheetProps {
   listId: string;
   jwtRef: React.RefObject<string | null>;
   categories: ListCategory[];
+  /** Items still to buy per category id; a category missing here has none. */
+  counts: Map<string, number>;
   setCategories: React.Dispatch<React.SetStateAction<ListCategory[]>>;
   onClose: () => void;
 }
 
 function CategoryRow({
-  category, index, label, onRename, onDelete,
+  category, index, label, count, onRename, onDelete,
 }: {
   category: ListCategory;
   index: number;
   label: string;
+  count: number;
   onRename: (name: string) => void;
   onDelete: () => void;
 }) {
@@ -56,6 +59,10 @@ function CategoryRow({
           {label}
         </button>
       )}
+      <span className="shrink-0 min-w-5 text-end text-[13px] tabular-nums text-tg-hint">
+        <span aria-hidden="true">{count}</span>
+        <span className="sr-only">{t("categories.itemCount", { count })}</span>
+      </span>
       <button onClick={onDelete} className="p-1 text-tg-hint" aria-label={t("common.delete")}>
         <Trash2 className="w-4 h-4" />
       </button>
@@ -63,7 +70,7 @@ function CategoryRow({
   );
 }
 
-export default function CategoriesSheet({ listId, jwtRef, categories, setCategories, onClose }: CategoriesSheetProps) {
+export default function CategoriesSheet({ listId, jwtRef, categories, counts, setCategories, onClose }: CategoriesSheetProps) {
   const t = useTranslations();
   const locale = useLocale();
   const [newName, setNewName] = useState("");
@@ -124,7 +131,14 @@ export default function CategoriesSheet({ listId, jwtRef, categories, setCategor
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter" onClick={onClose}>
       <div className="bg-tg-bg w-full max-w-lg rounded-t-3xl p-6 pt-3 sheet-enter max-h-[80dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
-        <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-2">{t("categories.title")}</h2>
+        <div className="flex items-baseline justify-between gap-3 mb-2">
+          <h2 className="text-lg font-semibold tracking-tight text-tg-text">{t("categories.title")}</h2>
+          {ordered.length > 0 && (
+            <span className="text-[13px] tabular-nums text-tg-hint">
+              {t("categories.total", { count: ordered.length, max: MAX_CATEGORIES_PER_LIST })}
+            </span>
+          )}
+        </div>
         {ordered.length === 0 && <p className="text-sm text-tg-hint mb-3">{t("categories.empty")}</p>}
         <DragDropProvider onDragEnd={onDragEnd}>
           {ordered.map((c, index) => (
@@ -133,6 +147,7 @@ export default function CategoriesSheet({ listId, jwtRef, categories, setCategor
               category={c}
               index={index}
               label={categoryLabel(c, locale)}
+              count={counts.get(c.id) ?? 0}
               onRename={(name) => rename(c, name)}
               onDelete={() => askConfirm(t("categories.confirmDelete", { name: categoryLabel(c, locale) }), () => remove(c))}
             />

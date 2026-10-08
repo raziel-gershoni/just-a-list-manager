@@ -1,3 +1,6 @@
+/** A list's category limit, shared by the server (cap checks) and the Categories sheet. */
+export const MAX_CATEGORIES_PER_LIST = 20;
+
 export interface ListCategory {
   id: string;
   list_id: string;

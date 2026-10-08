@@ -244,6 +244,8 @@
   },
   "categories": {
     "sorting": "Sorting…",
+    "itemCount": "{count, plural, one {# item to buy} other {# items to buy}}",
+    "total": "{count} of {max}",
     "manage": "Categories",
     "title": "Categories",
     "add": "Add category",

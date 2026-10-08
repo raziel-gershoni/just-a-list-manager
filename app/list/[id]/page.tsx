@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { RefreshCw } from "lucide-react";
@@ -25,7 +25,7 @@ import { useListRealtime } from "@/src/hooks/useListRealtime";
 import { useListDerivedData } from "@/src/hooks/useListDerivedData";
 import { useSortingRetry } from "@/src/hooks/useSortingRetry";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
-import { SORTING_GROUP } from "@/src/utils/list-helpers";
+import { SORTING_GROUP, countByCategory } from "@/src/utils/list-helpers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
 import { DragDropProvider } from "@dnd-kit/react";
 
@@ -100,6 +100,8 @@ function ListContent() {
 
   const { activeItems, skippedItems, recurringItems, completedItems, completedGroups, categoryGroups, duplicateTexts } =
     useListDerivedData(items, t as (key: string) => string, { categories, locale, grouped: listType === "grocery" });
+
+  const categoryCounts = useMemo(() => countByCategory(activeItems), [activeItems]);
 
   const { handleDragStart, handleDragEnd, isDraggingRef } = useListDragDrop({
     items,
@@ -453,6 +455,7 @@ function ListContent() {
           listId={listId}
           jwtRef={jwtRef}
           categories={categories}
+          counts={categoryCounts}
           setCategories={setCategories}
           onClose={() => setShowCategories(false)}
         />

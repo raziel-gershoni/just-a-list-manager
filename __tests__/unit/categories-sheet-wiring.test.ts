@@ -17,7 +17,11 @@ describe("categories sheet wiring", () => {
     const at = page.indexOf("<CategoriesSheet");
     expect(at).toBeGreaterThan(-1);
     const el = page.slice(at, page.indexOf("/>", at));
-    for (const prop of ["categories={categories}", "setCategories={setCategories}", "listId={listId}"]) expect(el).toContain(prop);
+    for (const prop of ["categories={categories}", "setCategories={setCategories}", "listId={listId}", "counts={categoryCounts}"]) expect(el).toContain(prop);
+  });
+
+  it("counts each category's items to buy from the active items", () => {
+    expect(page).toMatch(/const categoryCounts = useMemo\(\(\) => countByCategory\(activeItems\), \[activeItems\]\);/);
   });
 
   it("the sheet calls every category endpoint helper", () => {

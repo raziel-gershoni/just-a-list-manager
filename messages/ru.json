@@ -244,6 +244,8 @@
   },
   "categories": {
     "sorting": "Сортируем…",
+    "itemCount": "{count, plural, one {# товар к покупке} few {# товара к покупке} many {# товаров к покупке} other {# товара к покупке}}",
+    "total": "{count} из {max}",
     "manage": "Категории",
     "title": "Категории",
     "add": "Добавить категорию",

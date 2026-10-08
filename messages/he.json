@@ -244,6 +244,8 @@
   },
   "categories": {
     "sorting": "ממיין…",
+    "itemCount": "{count, plural, one {פריט אחד לקנייה} other {# פריטים לקנייה}}",
+    "total": "{count} מתוך {max}",
     "manage": "קטגוריות",
     "title": "קטגוריות",
     "add": "הוסף קטגוריה",

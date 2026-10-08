@@ -107,3 +107,14 @@ export const isActiveItem = (i: ItemData): boolean =>
 // deleting is final, so a soft-deleted row is never listed.
 export const isParkedRecurringItem = (i: ItemData): boolean =>
   !!i.recurring && i.completed && !i.deleted_at;
+
+/** Items still to buy per category: what each header in the grouped list holds. */
+export function countByCategory(items: ItemData[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    if (isActiveItem(item) && item.category_id) {
+      counts.set(item.category_id, (counts.get(item.category_id) ?? 0) + 1);
+    }
+  }
+  return counts;
+}

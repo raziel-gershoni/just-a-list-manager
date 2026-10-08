@@ -16,7 +16,7 @@ import { serverEnv } from "@/src/lib/env";
 /** Same model as voice (src/services/voice-processor.ts). */
 export const CATEGORIZER_MODEL = "gemini-3.8-flash";
 /** At the cap the model may only use existing categories. */
-export const MAX_CATEGORIES_PER_LIST = 20;
+export { MAX_CATEGORIES_PER_LIST } from "@/src/types/categories";
 const TIMEOUT_MS = 25_000;
 /** One retry on 408/429/5xx (the SDK's default codes), as in voice. */
 const ATTEMPTS = 2;
