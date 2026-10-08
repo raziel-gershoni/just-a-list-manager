@@ -177,18 +177,23 @@ export async function categorizeList(
       .maybeSingle();
     if ((list as { type?: string } | null)?.type !== "grocery") return;
 
-    if (!(await full.lock.acquire(listId))) {
-      await full.lock.requestRerun(listId, mode);
-      return;
-    }
-    try {
-      let next: CategorizeMode | null = mode;
-      for (let round = 0; next && round < MAX_ROUNDS; round++) {
-        await runOnce(full, listId, next);
-        next = await full.lock.takeRerun(listId);
+    // The lock is taken per round, so each round gets a fresh expiry however slow the AI
+    // is. A trigger that finds it held leaves a request, and the holder looks for one
+    // after releasing, so a request made while it was releasing is not missed.
+    let next: CategorizeMode | null = mode;
+    for (let round = 0; next && round < MAX_ROUNDS; round++) {
+      const token = await full.lock.acquire(listId);
+      if (!token) {
+        await full.lock.requestRerun(listId, next);
+        return;
       }
-    } finally {
-      await full.lock.release(listId);
+      try {
+        await runOnce(full, listId, next);
+      } finally {
+        await full.lock.release(listId, token);
+      }
+      // At the cap, a waiting request stays for the next run.
+      next = round + 1 < MAX_ROUNDS ? await full.lock.takeRerun(listId) : null;
     }
   } catch (error) {
     console.error("[Categorizer] categorizeList failed", { listId, mode }, error);

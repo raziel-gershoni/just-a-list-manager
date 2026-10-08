@@ -21,8 +21,9 @@ function world(opts: {
   items?: Row[];
   result?: Categorization | null;
   aiAllowed?: boolean;
-  lockFree?: boolean;
+  lockFree?: boolean | boolean[]; // a list answers successive acquires (one per round)
   reruns?: (RerunMode | null)[];
+  listDeleted?: boolean;
   // PostgREST reports failures as { data: null, error } instead of throwing.
   failCategoriesRead?: boolean;
   failItemsRead?: boolean;
@@ -32,6 +33,9 @@ function world(opts: {
   let nextCategory = 0;
   const dbError = { message: "fetch failed", code: "" };
   const fake = fakeSupabase((call: FakeCall) => {
+    // A deleted list is found only by a query that does not filter out deleted lists.
+    if (call.table === "lists" && opts.listDeleted)
+      return { data: call.filters.includes("is:deleted_at=null") ? null : { type: "grocery" }, error: null };
     if (call.table === "lists") return { data: opts.type === undefined ? { type: "grocery" } : opts.type ? { type: opts.type } : null, error: null };
     if (call.table === "list_categories" && call.op === "select") {
       if (opts.failCategoriesRead) return { data: null, error: dbError };
@@ -53,12 +57,26 @@ function world(opts: {
     translateName: vi.fn(async () => null),
   };
   const reruns = [...(opts.reruns ?? [])];
-  const lock: ListLock & { requested: RerunMode[]; released: number } = {
-    requested: [], released: 0,
-    acquire: vi.fn(async () => opts.lockFree ?? true),
-    release: vi.fn(async () => { lock.released++; }),
-    requestRerun: vi.fn(async (_l: string, m: RerunMode) => { lock.requested.push(m); }),
-    takeRerun: vi.fn(async () => reruns.shift() ?? null),
+  const free = Array.isArray(opts.lockFree) ? [...opts.lockFree] : null;
+  let flag: RerunMode | null = null; // set by requestRerun, read by takeRerun, like the Redis flag
+  const lock: ListLock & { requested: RerunMode[]; acquired: string[]; released: string[] } = {
+    requested: [], acquired: [], released: [],
+    acquire: vi.fn(async () => {
+      if (!(free ? free.shift() ?? true : opts.lockFree ?? true)) return null;
+      const token = `tok-${lock.acquired.length + 1}`;
+      lock.acquired.push(token);
+      return token;
+    }),
+    release: vi.fn(async (_l: string, token: string) => { lock.released.push(token); }),
+    requestRerun: vi.fn(async (_l: string, m: RerunMode) => {
+      lock.requested.push(m);
+      if (m === "rescan" || !flag) flag = m;
+    }),
+    takeRerun: vi.fn(async () => {
+      const taken = flag ?? reruns.shift() ?? null;
+      flag = null;
+      return taken;
+    }),
   };
   const deps = { supabase: fake.client, categorizer, lock, allowAiCall: async () => opts.aiAllowed ?? true };
   const rpc = () => fake.calls.filter((c) => c.op === "rpc");
@@ -234,11 +252,62 @@ describe("categorizeList", () => {
     expect(w.categorizer.categorize).not.toHaveBeenCalled();
   });
 
-  it("runs again while reruns are requested, then releases the lock", async () => {
+  it("runs again while reruns are requested, taking the lock afresh for each round", async () => {
     const w = world({ items: [row({ id: "a", text: "milk" })], reruns: ["pending", null] });
     await categorizeList(w.deps, "L", "pending");
     expect(w.categorizer.categorize).toHaveBeenCalledTimes(2);
-    expect(w.lock.released).toBe(1);
+    // A new expiry per round: a slow AI call cannot run the lock out across rounds.
+    expect(w.lock.acquired).toEqual(["tok-1", "tok-2"]);
+    expect(w.lock.released).toEqual(["tok-1", "tok-2"]);
+  });
+
+  it("runs a requested rescan as a rescan, even when the run started as pending", async () => {
+    const w = world({
+      categories: [{ id: "dairy", name_en: "Dairy", position: 0 }],
+      items: [row({ id: "a", text: "milk", category_id: "dairy" }), row({ id: "b", text: "soap" })],
+      reruns: ["rescan", null],
+      result: { newCategories: [], assignments: [{ i: 0, category: "c1" }] },
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.inputs.map((input) => input.items.map((it) => it.text))).toEqual([["soap"], ["milk", "soap"]]);
+    expect(w.rpc().map((c) => (c.values as { p_only_null: boolean }).p_only_null)).toEqual([true, false]);
+  });
+
+  it("does not lose a request that lands just before the lock is released", async () => {
+    const w = world({ items: [row({ id: "a", text: "milk" })] });
+    const release = w.lock.release;
+    // Another trigger found the lock held and left its request just before the release.
+    w.lock.release = vi.fn(async (listId: string, token: string) => {
+      if (w.lock.released.length === 0) await w.lock.requestRerun(listId, "rescan");
+      await release(listId, token);
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.categorizer.categorize).toHaveBeenCalledTimes(2);
+  });
+
+  it("hands the rerun to whoever took the lock between rounds", async () => {
+    const w = world({ items: [row({ id: "a", text: "milk" })], lockFree: [true, false], reruns: ["rescan"] });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.categorizer.categorize).toHaveBeenCalledTimes(1);
+    expect(w.lock.requested).toEqual(["rescan"]);
+  });
+
+  it("stops after 3 rounds and leaves a further request for the next run", async () => {
+    const w = world({ items: [row({ id: "a", text: "milk" })] });
+    w.lock.takeRerun = vi.fn(async (): Promise<RerunMode | null> => "pending");
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.categorizer.categorize).toHaveBeenCalledTimes(3);
+    expect(w.lock.takeRerun).toHaveBeenCalledTimes(2);
+  });
+
+  it("releases the lock when a round throws", async () => {
+    const w = world({
+      categories: [{ id: "dairy", name_en: "Dairy", position: 0 }],
+      items: [row({ id: "old", text: "milk", category_id: "dairy" }), row({ id: "a", text: "milk" })],
+    });
+    w.deps.supabase = { from: w.fake.client.from, rpc: () => { throw new Error("db down"); } };
+    await expect(categorizeList(w.deps, "L", "pending")).resolves.toBeUndefined();
+    expect(w.lock.released).toEqual(["tok-1"]);
   });
 
   it("never throws", async () => {

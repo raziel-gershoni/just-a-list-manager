@@ -1,30 +1,39 @@
+import { randomUUID } from "crypto";
 import { getRedis } from "@/src/lib/redis";
 
 export type RerunMode = "pending" | "rescan";
 export interface ListLock {
-  acquire(listId: string): Promise<boolean>;
-  release(listId: string): Promise<void>;
+  /** A token to release with, or null while another run holds the lock. */
+  acquire(listId: string): Promise<string | null>;
+  /** Frees the lock only if it still holds this token. */
+  release(listId: string, token: string): Promise<void>;
   requestRerun(listId: string, mode: RerunMode): Promise<void>;
   takeRerun(listId: string): Promise<RerunMode | null>;
 }
 
+// Covers one round (categorizeList takes the lock per round): an AI call of at most
+// 2 x 25 s plus the reads and writes around it.
 const LOCK_TTL_SECONDS = 90;
 const RERUN_TTL_SECONDS = 120;
 const lockKey = (id: string) => `categorize:lock:${id}`;
 const rerunKey = (id: string) => `categorize:again:${id}`;
 
+// Delete only our own lock: if ours expired and another run took it, leave theirs.
+const RELEASE_SCRIPT = `if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end`;
+
 /** One categorization run per list at a time. Redis errors fail open, like the voice lock. */
 export const redisListLock: ListLock = {
   async acquire(listId) {
+    const token = randomUUID();
     try {
-      return (await getRedis().set(lockKey(listId), Date.now(), { nx: true, ex: LOCK_TTL_SECONDS })) === "OK";
+      return (await getRedis().set(lockKey(listId), token, { nx: true, ex: LOCK_TTL_SECONDS })) === "OK" ? token : null;
     } catch (error) {
       console.error("[Categorizer] lock error, running anyway:", error);
-      return true;
+      return token;
     }
   },
-  async release(listId) {
-    try { await getRedis().del(lockKey(listId)); } catch { /* expires on its own */ }
+  async release(listId, token) {
+    try { await getRedis().eval(RELEASE_SCRIPT, [lockKey(listId)], [token]); } catch { /* expires on its own */ }
   },
   async requestRerun(listId, mode) {
     try {
