@@ -20,11 +20,15 @@ export interface CategorizeDeps {
 }
 
 const MAX_ROUNDS = 3;
+// Items per AI call, so a list's long completed history cannot push the reply past the
+// 25 s AI timeout on every attempt.
+const AI_BATCH_LIMIT = 100;
 
 type CategoryRow = { id: string; name_en: string; position: number };
 type ItemRow = {
   id: string;
   text: string;
+  completed: boolean;
   category_id: string | null;
   category_locked: boolean;
   deleted_at: string | null;
@@ -71,7 +75,7 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
 
   const { data: itemData, error: itemError } = await supabase
     .from("items")
-    .select("id, text, category_id, category_locked, deleted_at, created_at")
+    .select("id, text, completed, category_id, category_locked, deleted_at, created_at")
     .eq("list_id", listId);
   if (itemError) {
     console.error("[Categorizer] could not load items", { listId, error: itemError });
@@ -96,7 +100,14 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
     }
   }
 
-  if (remaining.length > 0) {
+  // Items still to buy first, then the newest. Pending items left out stay uncategorized
+  // for the next run (the GET sweep); in a rescan they keep their current category.
+  const batch = remaining
+    .slice()
+    .sort((a, b) => Number(a.completed) - Number(b.completed) || b.created_at.localeCompare(a.created_at))
+    .slice(0, AI_BATCH_LIMIT);
+
+  if (batch.length > 0) {
     if (!(await allowAiCall(listId))) {
       console.warn("[Categorizer] per-list AI limit reached", { listId });
     } else {
@@ -104,7 +115,7 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
       const room = MAX_CATEGORIES_PER_LIST - categories.length;
       const result = await categorizer.categorize({
         categories: keyed.map(({ key, name }) => ({ key, name })),
-        items: remaining.map((r, i) => ({ i, text: r.text })),
+        items: batch.map((r, i) => ({ i, text: r.text })),
         allowNew: room > 0,
         maxNew: Math.max(room, 0),
       });
@@ -139,7 +150,7 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, mode: Cat
         }
         for (const a of result.assignments) {
           const categoryId = keyToId.get(a.category);
-          const item = remaining[a.i];
+          const item = batch[a.i];
           if (categoryId && item) assignments.push({ id: item.id, text: item.text, category_id: categoryId });
         }
       }

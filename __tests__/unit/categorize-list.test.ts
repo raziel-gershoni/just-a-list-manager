@@ -10,9 +10,9 @@ vi.mock("@/src/services/categorizer", async (importOriginal) => ({
   getCategorizer: () => { throw new Error("GEMINI_API_KEY missing"); },
 }));
 
-type Row = { id: string; text: string; category_id: string | null; category_locked: boolean; deleted_at: string | null; created_at: string };
+type Row = { id: string; text: string; completed: boolean; category_id: string | null; category_locked: boolean; deleted_at: string | null; created_at: string };
 const row = (over: Partial<Row> & { id: string; text: string }): Row => ({
-  category_id: null, category_locked: false, deleted_at: null, created_at: "2026-10-01T00:00:00Z", ...over,
+  completed: false, category_id: null, category_locked: false, deleted_at: null, created_at: "2026-10-01T00:00:00Z", ...over,
 });
 
 function world(opts: {
@@ -201,6 +201,28 @@ describe("categorizeList", () => {
     const moved = w.fake.calls.filter((c) => c.table === "list_categories" && c.op === "update");
     expect(moved.map((c) => [c.values, c.filters])).toEqual([[{ position: 2 }, ["eq:id=dairy", "eq:list_id=L"]]]);
     expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([{ id: "a", text: "bread", category_id: "new-1" }]);
+  });
+
+  it("sends at most 100 items per AI call: items still to buy first, then the newest", async () => {
+    // A long completed history, then one old item still to buy.
+    const history = Array.from({ length: 105 }, (_, k) =>
+      row({ id: `h${k}`, text: `h${k}`, completed: true, created_at: new Date(Date.UTC(2026, 1, 1) + k * 60_000).toISOString() })
+    );
+    const w = world({
+      categories: [{ id: "dairy", name_en: "Dairy", position: 0 }],
+      items: [...history, row({ id: "a", text: "apples", created_at: "2026-01-01T00:00:00Z" })],
+      result: { newCategories: [], assignments: [{ i: 0, category: "c1" }, { i: 99, category: "c1" }] },
+    });
+    await categorizeList(w.deps, "L", "pending");
+
+    const sent = w.inputs[0].items.map((it) => it.text);
+    expect(sent).toHaveLength(100);
+    expect(sent.slice(0, 3)).toEqual(["apples", "h104", "h103"]);
+    expect(sent.at(-1)).toBe("h6"); // h0..h5, the oldest, wait for the next run
+    expect((w.rpc()[0].values as { p_assignments: unknown[] }).p_assignments).toEqual([
+      { id: "a", text: "apples", category_id: "dairy" },
+      { id: "h6", text: "h6", category_id: "dairy" },
+    ]);
   });
 
   it("allows no new categories once the list has 20", async () => {
