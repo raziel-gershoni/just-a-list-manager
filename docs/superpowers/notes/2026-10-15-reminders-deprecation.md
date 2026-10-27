@@ -185,6 +185,24 @@ It is a constant, not an env var: the codebase has no flag convention and the cl
 - **Vercel Preview builds.** If they have `DATABASE_URL`, pushing a branch applies its migrations to
   production.
 
+## Known bug, left unfixed on purpose (2026-10-27)
+
+Repeating reminders drift an hour at every clock change. `getNextOccurrence` in
+`src/services/recurring.ts` adds days, weeks and months on the server's UTC clock, so the UTC time
+stays fixed. After Israel left summer time on 2026-10-25, every waiting repeating reminder fires an
+hour early (07:30 became 06:30). They jump back on 2027-03-26.
+
+The owner decided not to fix it, because reminders are being sunset. If they stay after all:
+- **Code:** step in the owner's `users.timezone` (`date-fns` + `@date-fns/tz`; Vercel's Node 24 has no
+  `Temporal`).
+- **Data:** in the same deploy, move the waiting rows back to their pre-switch local time. A
+  zone-aware fix keeps the current local time, so it would lock in the early time.
+- **Same mistake:**
+  - **Snooze:** "Tomorrow" in `bot.ts`.
+  - **Voice:** Gemini has to work out the offset from UTC itself.
+  - **Digest:** the day range on the evening before a change.
+  - **Monthly repeats:** the 29th-31st slide to another day.
+
 ## Open questions for the owner
 
 1. Pause or permanent? A pause skips the one-way extras.
