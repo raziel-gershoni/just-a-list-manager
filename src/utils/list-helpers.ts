@@ -1,3 +1,4 @@
+import { differenceInCalendarDays } from "date-fns";
 import type { ItemData, CompletedGroup, CategoryGroup, ListCategory } from "@/src/types";
 import { categoryLabel } from "@/src/types/categories";
 
@@ -18,42 +19,37 @@ export function groupByCompletionTime(
   items: ItemData[],
   t: (key: string) => string
 ): CompletedGroup[] {
-  const now = Date.now();
-  const hour = 3600_000;
-  const day = 24 * hour;
+  const now = new Date();
 
-  const buckets: { key: string; maxAge: number }[] = [
-    { key: "longAgo", maxAge: Infinity },
-    { key: "monthsAgo", maxAge: 180 * day },
-    { key: "monthAgo", maxAge: 60 * day },
-    { key: "weeksAgo", maxAge: 30 * day },
-    { key: "weekAgo", maxAge: 14 * day },
-    { key: "daysAgo", maxAge: 7 * day },
-    { key: "yesterday", maxAge: 2 * day },
-    { key: "today", maxAge: 1 * day },
+  // Age is counted in local calendar days (0 = today, 1 = yesterday), so an item
+  // done late last night is "Yesterday" this morning. Youngest first: an item
+  // goes to the first bucket whose limit is above its age.
+  const buckets: { key: string; maxDays: number }[] = [
+    { key: "today", maxDays: 1 },
+    { key: "yesterday", maxDays: 2 },
+    { key: "daysAgo", maxDays: 7 },
+    { key: "weekAgo", maxDays: 14 },
+    { key: "weeksAgo", maxDays: 30 },
+    { key: "monthAgo", maxDays: 60 },
+    { key: "monthsAgo", maxDays: 180 },
+    { key: "longAgo", maxDays: Infinity },
   ];
 
   const grouped = new Map<string, ItemData[]>();
   for (const b of buckets) grouped.set(b.key, []);
 
   for (const item of items) {
-    const age = item.completed_at
-      ? now - new Date(item.completed_at).getTime()
+    const days = item.completed_at
+      ? differenceInCalendarDays(now, new Date(item.completed_at))
       : Infinity;
-    // Find first bucket where age >= maxAge (oldest-first order)
-    let placed = false;
-    for (const b of buckets) {
-      if (age >= b.maxAge) {
-        grouped.get(b.key)!.push(item);
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) grouped.get("today")!.push(item);
+    // No completion time (or an unparseable one) matches no limit: longAgo.
+    const bucket = buckets.find((b) => days < b.maxDays) ?? buckets[buckets.length - 1];
+    grouped.get(bucket.key)!.push(item);
   }
 
-  // Return non-empty groups in oldest-first order (matches buckets array order)
-  return buckets
+  // Return non-empty groups oldest first, like the completed items themselves
+  return [...buckets]
+    .reverse()
     .filter((b) => grouped.get(b.key)!.length > 0)
     .map((b) => ({
       label: t(`items.completedTime.${b.key}`),

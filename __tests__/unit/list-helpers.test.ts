@@ -1,4 +1,8 @@
-import { describe, it, expect } from "vitest";
+// Pin a zone with daylight saving so the calendar-day tests are deterministic and
+// can cross a 23-hour day. Must run before any Date is created in this file.
+process.env.TZ = "Asia/Jerusalem";
+
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { groupByCompletionTime } from "@/src/utils/list-helpers";
 import type { ItemData } from "@/src/types";
 
@@ -23,155 +27,107 @@ function makeItem(overrides: Partial<ItemData> = {}): ItemData {
   };
 }
 
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
-
-function ago(ms: number): string {
-  return new Date(Date.now() - ms).toISOString();
+/** Local wall-clock time in the pinned zone (month is 1-12). */
+function local(y: number, m: number, d: number, h = 12, min = 0): Date {
+  return new Date(y, m - 1, d, h, min);
 }
 
-/*
- * Bucket logic in groupByCompletionTime:
- * Buckets are iterated oldest-first. An item is placed in the first bucket
- * where age >= bucket.maxAge.
- *
- *   longAgo:   age >= Infinity  (only null completed_at -> age=Infinity)
- *   monthsAgo: age >= 180d
- *   monthAgo:  age >= 60d
- *   weeksAgo:  age >= 30d
- *   weekAgo:   age >= 14d
- *   daysAgo:   age >= 7d
- *   yesterday:  age >= 2d
- *   today:     age >= 1d  (or fallback for age < 1d)
- */
+/** Label of the single group the item lands in, with "now" at the given local time. */
+function labelAt(now: Date, completedAt: Date | null): string {
+  vi.setSystemTime(now);
+  const result = groupByCompletionTime(
+    [makeItem({ completed_at: completedAt ? completedAt.toISOString() : null })],
+    t
+  );
+  expect(result).toHaveLength(1);
+  return result[0].label.replace("items.completedTime.", "");
+}
 
 describe("groupByCompletionTime", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("runs in a zone with daylight saving (guards the DST cases below)", () => {
+    expect(local(2026, 7, 1).getTimezoneOffset()).toBe(-180);
+    expect(local(2026, 12, 1).getTimezoneOffset()).toBe(-120);
+  });
+
   it("returns empty array for empty items", () => {
-    const result = groupByCompletionTime([], t);
-    expect(result).toEqual([]);
+    expect(groupByCompletionTime([], t)).toEqual([]);
   });
 
-  it("places item completed just now into 'today' bucket", () => {
-    const item = makeItem({ completed_at: ago(1000) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.today");
-    expect(result[0].items).toContain(item);
+  it("puts last night's item under Yesterday the next morning", () => {
+    expect(labelAt(local(2026, 10, 27, 8, 0), local(2026, 10, 26, 22, 0))).toBe("yesterday");
   });
 
-  it("places item completed 1.5 days ago into 'today' bucket (age >= 1d)", () => {
-    const item = makeItem({ completed_at: ago(1.5 * DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.today");
+  it("puts an item from 23:59 under Yesterday two minutes later", () => {
+    expect(labelAt(local(2026, 10, 27, 0, 1), local(2026, 10, 26, 23, 59))).toBe("yesterday");
   });
 
-  it("places item completed 3 days ago into 'yesterday' bucket (age >= 2d)", () => {
-    const item = makeItem({ completed_at: ago(3 * DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.yesterday");
+  it("keeps an item from just after midnight under Today late that evening", () => {
+    expect(labelAt(local(2026, 10, 27, 23, 30), local(2026, 10, 27, 0, 30))).toBe("today");
   });
 
-  it("places item completed 10 days ago into 'daysAgo' bucket (age >= 7d)", () => {
-    const item = makeItem({ completed_at: ago(10 * DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.daysAgo");
+  it("puts an item from two calendar days ago under A few days ago", () => {
+    expect(labelAt(local(2026, 10, 27, 8, 0), local(2026, 10, 25, 22, 0))).toBe("daysAgo");
   });
 
-  it("places item completed 20 days ago into 'weekAgo' bucket (age >= 14d)", () => {
-    const item = makeItem({ completed_at: ago(20 * DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.weekAgo");
+  it.each([
+    [6, "daysAgo"],
+    [7, "weekAgo"],
+    [13, "weekAgo"],
+    [14, "weeksAgo"],
+    [29, "weeksAgo"],
+    [30, "monthAgo"],
+    [59, "monthAgo"],
+    [60, "monthsAgo"],
+    [179, "monthsAgo"],
+    [180, "longAgo"],
+  ])("puts an item from %i calendar days ago under %s", (days, expected) => {
+    const now = local(2026, 10, 27, 12, 0);
+    const completed = local(2026, 10, 27 - days, 12, 0);
+    expect(labelAt(now, completed)).toBe(expected);
   });
 
-  it("places item completed 45 days ago into 'weeksAgo' bucket (age >= 30d)", () => {
-    const item = makeItem({ completed_at: ago(45 * DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.weeksAgo");
+  it("counts calendar days across the 23-hour spring-forward day", () => {
+    // 2027-03-26 has 23 hours in Israel: 00:10 that day to 00:30 the next is
+    // only 23h20m, but it is still yesterday.
+    expect(labelAt(local(2027, 3, 27, 0, 30), local(2027, 3, 26, 0, 10))).toBe("yesterday");
   });
 
-  it("places item completed 90 days ago into 'monthAgo' bucket (age >= 60d)", () => {
-    const item = makeItem({ completed_at: ago(90 * DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.monthAgo");
+  it("puts an item completed a little in the future (clock skew) under Today", () => {
+    expect(labelAt(local(2026, 10, 27, 8, 0), local(2026, 10, 27, 8, 2))).toBe("today");
   });
 
-  it("places item completed 200 days ago into 'monthsAgo' bucket (age >= 180d)", () => {
-    const item = makeItem({ completed_at: ago(200 * DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.monthsAgo");
-  });
-
-  it("places item with null completed_at into 'longAgo' bucket (age = Infinity)", () => {
-    const item = makeItem({ completed_at: null });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.longAgo");
+  it("places item with null completed_at into 'longAgo'", () => {
+    expect(labelAt(local(2026, 10, 27), null)).toBe("longAgo");
   });
 
   it("groups multiple items in the same bucket together", () => {
-    const item1 = makeItem({ text: "a", completed_at: ago(1000) });
-    const item2 = makeItem({ text: "b", completed_at: ago(2000) });
+    vi.setSystemTime(local(2026, 10, 27, 12, 0));
+    const item1 = makeItem({ text: "a", completed_at: local(2026, 10, 27, 9, 0).toISOString() });
+    const item2 = makeItem({ text: "b", completed_at: local(2026, 10, 27, 10, 0).toISOString() });
     const result = groupByCompletionTime([item1, item2], t);
     expect(result).toHaveLength(1);
     expect(result[0].label).toBe("items.completedTime.today");
-    expect(result[0].items).toHaveLength(2);
+    expect(result[0].items).toEqual([item1, item2]);
   });
 
-  it("returns groups in oldest-first order", () => {
-    const todayItem = makeItem({ text: "today", completed_at: ago(1000) });
-    const longAgoItem = makeItem({
-      text: "long ago",
-      completed_at: null,
-    });
-    const yesterdayItem = makeItem({
-      text: "yesterday",
-      completed_at: ago(3 * DAY),
-    });
+  it("returns only non-empty groups, oldest first", () => {
+    vi.setSystemTime(local(2026, 10, 27, 12, 0));
+    const todayItem = makeItem({ text: "today", completed_at: local(2026, 10, 27, 9, 0).toISOString() });
+    const longAgoItem = makeItem({ text: "long ago", completed_at: null });
+    const yesterdayItem = makeItem({ text: "yesterday", completed_at: local(2026, 10, 26, 9, 0).toISOString() });
 
-    const result = groupByCompletionTime(
-      [todayItem, longAgoItem, yesterdayItem],
-      t
-    );
-    expect(result).toHaveLength(3);
-    expect(result[0].label).toBe("items.completedTime.longAgo");
-    expect(result[1].label).toBe("items.completedTime.yesterday");
-    expect(result[2].label).toBe("items.completedTime.today");
-  });
-
-  it("places item at exactly 1d boundary into 'today' bucket", () => {
-    // age = exactly 1 * DAY, bucket today has maxAge=1*DAY, so age >= maxAge -> today
-    const item = makeItem({ completed_at: ago(DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.today");
-  });
-
-  it("places item at exactly 2d boundary into 'yesterday' bucket", () => {
-    // age = exactly 2 * DAY, bucket yesterday has maxAge=2*DAY, so age >= maxAge -> yesterday
-    const item = makeItem({ completed_at: ago(2 * DAY) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.yesterday");
-  });
-
-  it("places item just under 2d into 'today' bucket", () => {
-    const item = makeItem({ completed_at: ago(2 * DAY - 1) });
-    const result = groupByCompletionTime([item], t);
-    expect(result).toHaveLength(1);
-    expect(result[0].label).toBe("items.completedTime.today");
-  });
-
-  it("omits empty groups from result", () => {
-    const item = makeItem({ completed_at: ago(1000) });
-    const result = groupByCompletionTime([item], t);
-    // Only one group should be returned (today), not all 8
-    expect(result).toHaveLength(1);
+    const result = groupByCompletionTime([todayItem, longAgoItem, yesterdayItem], t);
+    expect(result.map((g) => g.label)).toEqual([
+      "items.completedTime.longAgo",
+      "items.completedTime.yesterday",
+      "items.completedTime.today",
+    ]);
   });
 });
