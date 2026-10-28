@@ -33,7 +33,9 @@ export const redisListLock: ListLock = {
     }
   },
   async release(listId, token) {
-    try { await getRedis().eval(RELEASE_SCRIPT, [lockKey(listId)], [token]); } catch { /* expires on its own */ }
+    try { await getRedis().eval(RELEASE_SCRIPT, [lockKey(listId)], [token]); } catch (error) {
+      console.error("[Categorizer] lock release error, it will expire on its own:", { listId }, error);
+    }
   },
   async requestRerun(listId, mode) {
     try {
@@ -48,7 +50,8 @@ export const redisListLock: ListLock = {
     try {
       const value = await getRedis().getdel<string>(rerunKey(listId));
       return value === "rescan" || value === "pending" ? value : null;
-    } catch {
+    } catch (error) {
+      console.error("[Categorizer] rerun flag read error:", { listId }, error);
       return null;
     }
   },

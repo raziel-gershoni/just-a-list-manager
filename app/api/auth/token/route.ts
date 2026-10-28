@@ -54,7 +54,8 @@ export async function GET(request: NextRequest) {
 
       const token = await signToken(userId, telegramId);
       return NextResponse.json({ token });
-    } catch {
+    } catch (err) {
+      console.warn("[Auth] Token refresh failed:", err);
       return NextResponse.json(
         { error: "Token expired. Please reopen the app." },
         { status: 401 }

@@ -90,7 +90,8 @@ export default function ShareDialog({
       await navigator.clipboard.writeText(inviteLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } catch (err) {
+      console.warn("[ShareDialog] Clipboard copy failed:", err);
       // Fallback for TG WebView
       const tg = getTelegramWebApp();
       if (tg?.openLink) {

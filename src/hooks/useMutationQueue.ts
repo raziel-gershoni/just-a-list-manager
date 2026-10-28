@@ -64,7 +64,7 @@ export function useMutationQueue(
           message.includes("Failed to fetch") ||
           !navigator.onLine
         ) {
-          console.log("[MutationQueue] Offline — queued for later:", id);
+          console.warn("[MutationQueue] Offline — queued for later:", id, type, error);
           return;
         }
 
@@ -74,7 +74,7 @@ export function useMutationQueue(
 
         // 4xx client errors (except 408 timeout / 429 rate limit) won't succeed on retry — dequeue
         if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 408 && httpStatus !== 429) {
-          console.log("[MutationQueue] Client error — dropping:", id, httpStatus);
+          console.error("[MutationQueue] Client error — dropping:", id, type, httpStatus, error);
           queueRef.current.dequeue(id);
           pendingExecutors.current.delete(id);
           onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: true, payload });
@@ -82,7 +82,7 @@ export function useMutationQueue(
         }
 
         // 5xx server errors, 408, 429, or unknown — keep in queue for retry
-        console.error("[MutationQueue] Error (will retry):", id, message);
+        console.error("[MutationQueue] Error (will retry):", id, type, error);
         onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: false, payload });
       } finally {
         queueRef.current.clearInFlight(id);

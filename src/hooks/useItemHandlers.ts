@@ -667,7 +667,10 @@ export function useItemHandlers({
           setTimeout(() => setErrorToast(null), 3000);
           return;
         }
-        const data = await res.json().catch(() => ({ sent: 0 }));
+        const data = await res.json().catch((err) => {
+          console.warn(`[List] ${endpoint} response was not valid JSON, assuming sent: 0:`, err);
+          return { sent: 0 };
+        });
         setReminderToast(t(data.sent === 0 ? "items.signalNoRecipients" : successKey));
         setTimeout(() => setReminderToast(null), 2500);
       } catch (e) {

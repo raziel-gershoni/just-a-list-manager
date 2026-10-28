@@ -111,8 +111,8 @@ export default function LoginPage() {
       } else {
         resolved = resolveLocale(navigator.language);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn("[Login] Could not read the cached locale:", err);
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing locale from localStorage on mount
     if (resolved) setLocale(resolved);

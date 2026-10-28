@@ -3,7 +3,7 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { unskipAllSchema } from "@/src/schemas/items";
-import { parseBody } from "@/src/lib/api-validation";
+import { describeBodyParseError, parseBody } from "@/src/lib/api-validation";
 
 export async function POST(
   request: NextRequest,
@@ -21,7 +21,11 @@ export async function POST(
     );
   }
 
-  const parsed = parseBody(unskipAllSchema, await request.json().catch(() => null));
+  const body = await request.json().catch((err) => {
+    console.warn("[items/unskip-all/POST] Could not parse request body:", describeBodyParseError(err));
+    return null;
+  });
+  const parsed = parseBody(unskipAllSchema, body);
   if (!parsed.success) return parsed.response;
 
   const supabase = createServerClient();

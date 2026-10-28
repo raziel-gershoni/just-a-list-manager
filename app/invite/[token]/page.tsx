@@ -57,7 +57,8 @@ function InviteContent() {
       setListId(data.listId || "");
       setCollaboratorId(data.collaboratorId || "");
       setStatus("waiting");
-    } catch {
+    } catch (err) {
+      console.error("[Invite] Failed to accept invite:", err);
       setErrorMessage("Something went wrong. Please try again.");
       setStatus("error");
     }
@@ -84,8 +85,8 @@ function InviteContent() {
         method: "DELETE",
         headers,
       });
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn("[Invite] Failed to cancel join request, collaboratorId:", collaboratorId, err);
     }
     router.push("/");
   };

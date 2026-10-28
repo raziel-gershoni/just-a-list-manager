@@ -5,6 +5,7 @@ import {
 } from "@/src/lib/telegram-oauth";
 import { createServerClient } from "@/src/lib/supabase";
 import { signToken } from "@/src/lib/jwt";
+import { describeBodyParseError } from "@/src/lib/api-validation";
 import {
   authIpRateLimiter,
   authUserRateLimiter,
@@ -27,7 +28,8 @@ export async function POST(request: NextRequest) {
   let body: { code?: string; code_verifier?: string };
   try {
     body = await request.json();
-  } catch {
+  } catch (err) {
+    console.warn("[TelegramOAuth] Could not parse login request body:", describeBodyParseError(err));
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 

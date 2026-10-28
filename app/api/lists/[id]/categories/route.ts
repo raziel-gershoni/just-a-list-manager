@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
-import { parseBody } from "@/src/lib/api-validation";
+import { describeBodyParseError, parseBody } from "@/src/lib/api-validation";
 import { categoryNameSchema } from "@/src/schemas/categories";
 import { MAX_CATEGORIES_PER_LIST } from "@/src/services/categorizer";
 import { categorizeList } from "@/src/services/categorize-list";
@@ -35,7 +35,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "You don't have permission to edit this list" }, { status: 403 });
   }
 
-  const parsed = parseBody(categoryNameSchema, await request.json().catch(() => null));
+  const body = await request.json().catch((err) => {
+    console.warn("[categories/POST] Could not parse request body:", describeBodyParseError(err));
+    return null;
+  });
+  const parsed = parseBody(categoryNameSchema, body);
   if (!parsed.success) return parsed.response;
   const { name, locale } = parsed.data;
 

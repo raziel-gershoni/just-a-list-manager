@@ -82,7 +82,8 @@ function HomeContent() {
   useEffect(() => {
     try {
       setHomeScreenDismissed(localStorage.getItem("homescreen_banner_dismissed") === "true");
-    } catch {
+    } catch (err) {
+      console.warn("[Home] Could not read the home-screen banner flag:", err);
       setHomeScreenDismissed(false);
     }
     // Detect web app mode (no Telegram Mini App — script exists but initData is empty)
@@ -494,7 +495,9 @@ function HomeContent() {
                 setHomeScreenDismissed(true);
                 try {
                   localStorage.setItem("homescreen_banner_dismissed", "true");
-                } catch {}
+                } catch (err) {
+                  console.warn("[Home] Could not persist the home-screen banner dismissal:", err);
+                }
               }}
               aria-label={t('common.close')}
               className="p-1 text-tg-hint shrink-0"

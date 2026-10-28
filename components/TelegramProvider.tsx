@@ -243,7 +243,9 @@ export default function TelegramProvider({
           if (cached && ["en", "he", "ru"].includes(cached)) {
             applyLocale(cached as SupportedLocale);
           }
-        } catch {}
+        } catch (err) {
+          console.warn("[TelegramProvider] Could not read cached locale from localStorage:", err);
+        }
 
         setIsReady(true);
         setOrchestratorState("idle");
@@ -268,7 +270,8 @@ export default function TelegramProvider({
           const resolved = resolveLocale(userData.language_code);
           applyLocale(resolved);
         }
-      } catch {
+      } catch (err) {
+        console.warn("[TelegramProvider] Locale cache unavailable, falling back to Telegram language_code:", err);
         const resolved = resolveLocale(userData.language_code);
         applyLocale(resolved);
       }

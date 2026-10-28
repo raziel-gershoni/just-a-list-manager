@@ -12,7 +12,9 @@ export function useLocaleSync(jwtRef: React.RefObject<string | null>) {
     document.documentElement.lang = lang;
     try {
       localStorage.setItem("app_locale", lang);
-    } catch {}
+    } catch (err) {
+      console.warn("[LocaleSync] Could not cache locale in localStorage:", err);
+    }
   }, []);
 
   const setLanguage = useCallback(

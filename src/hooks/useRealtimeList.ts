@@ -124,7 +124,10 @@ export function useRealtimeList(
         reject(new Error("Resubscribe timed out"));
       }, RESUBSCRIBE_TIMEOUT_MS);
 
-      channel.subscribe((status) => {
+      channel.subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[RealtimeList] Resubscribe channel error:", status, "listId:", listId, err);
+        }
         if (settled) return;
         if (status === "SUBSCRIBED") {
           settled = true;
@@ -161,9 +164,11 @@ export function useRealtimeList(
       const channelName = `list:${listId}:${subscribeCountRef.current}`;
       const channel = createChannel(supabaseClient, channelName);
 
-      channel.subscribe((status) => {
+      channel.subscribe((status, err) => {
         if (status === "SUBSCRIBED") {
           channelRef.current = channel;
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[RealtimeList] Initial subscribe failed:", status, "listId:", listId, err);
         }
       });
     }

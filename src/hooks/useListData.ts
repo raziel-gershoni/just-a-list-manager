@@ -115,7 +115,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ itemId: base.id, skipped: false }),
-            }).catch(() => {});
+            }).catch((err) => {
+              console.warn(`[List] Auto-unskip PATCH failed for item ${base.id} in list ${listId}:`, err);
+            });
             return { ...base, skipped_at: null };
           }
           // Auto-respawn recurring items past the same 4-hour threshold.
@@ -129,7 +131,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ itemId: base.id, restoreRecurring: true }),
-            }).catch(() => {});
+            }).catch((err) => {
+              console.warn(`[List] Auto-respawn PATCH failed for item ${base.id} in list ${listId}:`, err);
+            });
             return { ...base, completed: false, completed_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
           }
           return base;

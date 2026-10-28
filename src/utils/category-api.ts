@@ -35,7 +35,8 @@ export async function runCategoryAction(
   if (!jwt) return onFail();
   try {
     await action(jwt);
-  } catch {
+  } catch (err) {
+    console.error("[CategoriesSheet] Category action failed:", err);
     onFail();
   }
 }

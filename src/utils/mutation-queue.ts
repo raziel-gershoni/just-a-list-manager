@@ -28,7 +28,8 @@ export class MutationQueue {
     try {
       const raw = localStorage.getItem(this.storageKey);
       return raw ? JSON.parse(raw) : [];
-    } catch {
+    } catch (err) {
+      console.error(`[MutationQueue] Could not read the offline queue (${this.storageKey}):`, err);
       return [];
     }
   }
@@ -36,7 +37,8 @@ export class MutationQueue {
   private saveQueue(queue: QueuedMutation[]) {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(queue));
-    } catch {
+    } catch (err) {
+      console.error(`[MutationQueue] Could not persist the offline queue (${this.storageKey}, ${queue.length} entries):`, err);
       // localStorage full or unavailable
     }
   }
@@ -67,8 +69,8 @@ export class MutationQueue {
   clear() {
     try {
       localStorage.removeItem(this.storageKey);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn(`[MutationQueue] Could not clear the offline queue (${this.storageKey}):`, err);
     }
   }
 

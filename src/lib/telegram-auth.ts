@@ -109,19 +109,3 @@ export function verifyUserAccess(
   if (!user) return false;
   return user.id === requestedUserId;
 }
-
-/**
- * Extract user ID from initData without full validation (for logging)
- */
-export function extractUserId(initData: string): number | null {
-  try {
-    const params = parseInitData(initData);
-    if (params.user) {
-      const user = JSON.parse(params.user) as TelegramUser;
-      return user.id;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}

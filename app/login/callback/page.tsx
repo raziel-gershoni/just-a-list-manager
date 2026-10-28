@@ -59,7 +59,8 @@ function CallbackContent() {
         sessionStorage.removeItem("oauth_state");
         sessionStorage.removeItem("oauth_code_verifier");
         window.location.href = "/";
-      } catch {
+      } catch (err) {
+        console.error("[LoginCallback] Telegram login exchange failed:", err);
         setError(t("login.callbackError"));
       }
     }
@@ -102,9 +103,10 @@ export default function CallbackPage() {
       } else {
         resolved = resolveLocale(navigator.language);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn("[LoginCallback] Could not read the cached locale:", err);
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing locale from localStorage on mount
     if (resolved) setLocale(resolved);
   }, []);
 

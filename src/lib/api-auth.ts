@@ -66,7 +66,8 @@ export async function verifyUserAuth(
       }
 
       return { success: true, userId, telegramUserId };
-    } catch {
+    } catch (err) {
+      console.warn(`[${endpointName}] JWT verification failed:`, err);
       return {
         success: false,
         response: NextResponse.json(

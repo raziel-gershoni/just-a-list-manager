@@ -375,7 +375,9 @@ function ListContent() {
                       })
                         // Nothing loaded categories while the list was another type.
                         .then(() => (tp === "grocery" ? loadCategories() : undefined))
-                        .catch(() => {});
+                        .catch((err) => {
+                          console.error("[List] Failed to update list type, listId:", listId, "type:", tp, err);
+                        });
                     }
                   }}
                   className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${

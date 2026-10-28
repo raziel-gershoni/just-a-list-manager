@@ -58,7 +58,9 @@ export async function handleVoiceMessage(
         chatId,
         getMsg(lang, "voice.rateLimited")
       );
-    } catch {}
+    } catch (err) {
+      console.error("[VoiceHandler] Failed to send rate-limited notice, chatId:", chatId, err);
+    }
     return;
   }
 
@@ -99,7 +101,9 @@ export async function handleVoiceMessage(
             },
           }
         );
-      } catch {}
+      } catch (err) {
+        console.error("[VoiceHandler] Failed to send no-user notice, chatId:", chatId, err);
+      }
       return;
     }
 
@@ -166,7 +170,9 @@ export async function handleVoiceMessage(
             },
           }
         );
-      } catch {}
+      } catch (err) {
+        console.error("[VoiceHandler] Failed to send no-lists notice, chatId:", chatId, err);
+      }
       return;
     }
 
@@ -177,12 +183,16 @@ export async function handleVoiceMessage(
           chatId,
           getMsg(lang, "voice.tooLong")
         );
-      } catch {}
+      } catch (err) {
+        console.error("[VoiceHandler] Failed to send too-long notice (pre-download), chatId:", chatId, err);
+      }
       return;
     }
 
     // Show typing indicator immediately
-    try { await bot.sendChatAction(chatId, "typing"); } catch {}
+    try { await bot.sendChatAction(chatId, "typing"); } catch (err) {
+      console.warn("[VoiceHandler] Failed to send initial typing action, chatId:", chatId, err);
+    }
 
     // Download voice file
     const fileUrl = await bot.getFileLink(voice.file_id);
@@ -195,15 +205,21 @@ export async function handleVoiceMessage(
           chatId,
           getMsg(lang, "voice.tooLong")
         );
-      } catch {}
+      } catch (err) {
+        console.error("[VoiceHandler] Failed to send too-long notice (post-download), chatId:", chatId, err);
+      }
       return;
     }
 
     // Keep typing indicator alive during Gemini processing
     const typingInterval = setInterval(() => {
-      bot.sendChatAction(chatId, "typing").catch(() => {});
+      bot.sendChatAction(chatId, "typing").catch((err) => {
+        console.warn("[VoiceHandler] Failed to send keep-alive typing action, chatId:", chatId, err);
+      });
     }, 4000);
-    try { await bot.sendChatAction(chatId, "typing"); } catch {}
+    try { await bot.sendChatAction(chatId, "typing"); } catch (err) {
+      console.warn("[VoiceHandler] Failed to send typing action before Gemini, chatId:", chatId, err);
+    }
 
     // Process with Gemini
     const processor = getVoiceProcessor();
@@ -221,7 +237,9 @@ export async function handleVoiceMessage(
           chatId,
           getMsg(lang, "voice.error")
         );
-      } catch {}
+      } catch (err) {
+        console.error("[VoiceHandler] Failed to send no-items error message, chatId:", chatId, err);
+      }
       return;
     }
 
@@ -266,7 +284,9 @@ export async function handleVoiceMessage(
               chatId,
               getMsg(lang, "voice.listNotFound").replace("{listName}", () => voiceItem.targetList || "")
             );
-          } catch {}
+          } catch (err) {
+            console.error("[VoiceHandler] Failed to send list-not-found notice, chatId:", chatId, err);
+          }
           continue;
         }
       }
@@ -343,7 +363,9 @@ export async function handleVoiceMessage(
         chatId,
         getMsg(lang, "voice.error")
       );
-    } catch {}
+    } catch (sendErr) {
+      console.error("[VoiceHandler] Failed to send error message to user, chatId:", chatId, sendErr);
+    }
   } finally {
     await releaseVoiceLock(voice.file_unique_id);
   }
@@ -503,7 +525,9 @@ async function processRemoveItem(
           .replace("{item}", () => completedMatch[0].text)
           .replace("{listName}", () => listName)
       );
-    } catch {}
+    } catch (err) {
+      console.error("[VoiceHandler] Failed to send already-checked-off notice, chatId:", chatId, "listId:", listId, err);
+    }
     return;
   }
 
@@ -514,7 +538,9 @@ async function processRemoveItem(
         .replace("{item}", () => voiceItem.text)
         .replace("{listName}", () => listName)
     );
-  } catch {}
+  } catch (err) {
+    console.error("[VoiceHandler] Failed to send item-not-found notice, chatId:", chatId, "listId:", listId, err);
+  }
 }
 
 // Simple text similarity (Dice coefficient on character bigrams)

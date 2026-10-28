@@ -45,7 +45,7 @@ async function run() {
       count++;
       console.log(`[Migrate] Applied: ${file}`);
     } catch (err) {
-      console.error(`[Migrate] Failed on ${file}:`, err.message);
+      console.error(`[Migrate] Failed on ${file}:`, err);
       process.exit(1);
     }
   }

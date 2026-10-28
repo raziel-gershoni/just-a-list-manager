@@ -184,7 +184,14 @@ export async function POST(
       .not("idempotency_key", "is", null)
       .lt("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .limit(10)
-      .then(() => {}, () => {});
+      .then(
+        ({ error: cleanupError }) => {
+          if (cleanupError) console.warn("[items/POST] Idempotency key cleanup failed, listId:", listId, cleanupError);
+        },
+        (err) => {
+          console.warn("[items/POST] Idempotency key cleanup failed, listId:", listId, err);
+        }
+      );
 
     scheduleCategorize(supabase, listId);
     return NextResponse.json(

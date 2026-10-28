@@ -39,7 +39,7 @@ export default function RootLayout({
             }
             if (lc === 'he') { document.documentElement.dir = 'rtl'; document.documentElement.lang = 'he'; }
             else if (lc === 'ru') { document.documentElement.lang = 'ru'; }
-          } catch(e) {}
+          } catch(e) { console.warn('[Layout] Pre-hydration locale init failed:', e); }
         `}} />
       </head>
       <body

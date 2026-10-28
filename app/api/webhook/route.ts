@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { serverEnv } from "@/src/lib/env";
+import { describeBodyParseError } from "@/src/lib/api-validation";
 import type TelegramBot from "node-telegram-bot-api";
 import type { TgVoice, TgFrom } from "@/src/services/voice-handler";
 
@@ -30,7 +31,8 @@ export async function POST(request: NextRequest) {
   let body: TelegramUpdate;
   try {
     body = await request.json();
-  } catch {
+  } catch (err) {
+    console.warn("[Webhook] Could not parse update body:", describeBodyParseError(err));
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
