@@ -27,8 +27,6 @@ import { GeminiVoiceProcessor } from "@/src/services/voice-processor";
 
 const AUDIO = Buffer.from("fake-ogg-bytes");
 const LISTS = ["Groceries", "קניות", "Дом"];
-const TZ = "Asia/Jerusalem";
-const NOW = "2026-10-07T18:00:00.000Z";
 
 function okResponse(payload: unknown) {
   return {
@@ -39,7 +37,12 @@ function okResponse(payload: unknown) {
 }
 
 async function run() {
-  return new GeminiVoiceProcessor().process(AUDIO, LISTS, TZ, NOW);
+  return new GeminiVoiceProcessor().process(AUDIO, LISTS);
+}
+
+function sentPrompt(): string {
+  const { contents } = h.generateContent.mock.calls[0][0];
+  return contents.find((p: { text?: string }) => typeof p.text === "string").text;
 }
 
 beforeEach(() => {
@@ -88,7 +91,6 @@ describe("GeminiVoiceProcessor request", () => {
     const item = schema.properties.items.items;
     expect(item.properties.action).toEqual({ type: "string", enum: ["add", "remove"] });
     expect(item.required).toEqual(["text", "action"]);
-    expect(item.properties.remind_at.type).toEqual(["string", "null"]);
   });
 
   it("sends the prompt as text plus the voice note as inline base64 audio/ogg", async () => {
@@ -99,19 +101,51 @@ describe("GeminiVoiceProcessor request", () => {
     const textPart = contents.find((p: { text?: string }) => typeof p.text === "string");
     const audioPart = contents.find((p: { inlineData?: unknown }) => p.inlineData);
     for (const name of LISTS) expect(textPart.text).toContain(name);
-    expect(textPart.text).toContain(TZ);
-    expect(textPart.text).toContain(NOW);
     expect(audioPart.inlineData).toEqual({ mimeType: "audio/ogg", data: AUDIO.toString("base64") });
+  });
+
+  it("offers the model only text, action and targetList, with no reminder fields", async () => {
+    h.generateContent.mockResolvedValue(okResponse({ items: [] }));
+    await run();
+
+    const item = h.generateContent.mock.calls[0][0].config.responseJsonSchema.properties.items.items;
+    expect(Object.keys(item.properties).sort()).toEqual(["action", "targetList", "text"]);
+    expect(item.properties).not.toHaveProperty("remind_at");
+    expect(item.properties).not.toHaveProperty("recurrence");
+  });
+
+  it("tells the model to drop command words and keep time words in the item text", async () => {
+    h.generateContent.mockResolvedValue(okResponse({ items: [] }));
+    await run();
+
+    const prompt = sentPrompt();
+    for (const command of ['"remind me to"', '"add"', '"put on the list"']) {
+      expect(prompt).toContain(command);
+    }
+    expect(prompt).toMatch(/keep any time or date words/i);
+    expect(prompt).toContain('"remind me to call mom at 9" -> "call mom at 9"');
+    // The old rule stripped them ("no time words") so that remind_at could carry the time.
+    expect(prompt).not.toMatch(/no time words/i);
+    expect(prompt).not.toMatch(/remind_at|recurrence/);
+  });
+
+  it("sends no current time or time zone, since nothing reads them any more", async () => {
+    h.generateContent.mockResolvedValue(okResponse({ items: [] }));
+    await run();
+
+    const prompt = sentPrompt();
+    expect(prompt).not.toMatch(/Now:|TZ:/);
+    expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
   });
 });
 
 describe("GeminiVoiceProcessor response handling", () => {
-  it("returns valid items, including a timed recurring reminder", async () => {
+  it("returns valid items with only text, action and targetList", async () => {
     h.generateContent.mockResolvedValue(
       okResponse({
         items: [
-          { text: "חלב", action: "add", targetList: "קניות", remind_at: null, recurrence: null },
-          { text: "вынести мусор", action: "add", targetList: "Дом", remind_at: "2026-10-08T09:00:00+03:00", recurrence: "weekly" },
+          { text: "חלב", action: "add", targetList: "קניות" },
+          { text: "вынести мусор в четверг", action: "add", targetList: "Дом" },
           { text: "eggs", action: "remove", targetList: null },
         ],
       })
@@ -119,11 +153,31 @@ describe("GeminiVoiceProcessor response handling", () => {
 
     const result = await run();
     expect(h.generateContent).toHaveBeenCalledOnce();
-    expect(result.items).toEqual([
-      { text: "חלב", action: "add", targetList: "קניות", remind_at: null, recurrence: null },
-      { text: "вынести мусор", action: "add", targetList: "Дом", remind_at: "2026-10-08T06:00:00.000Z", recurrence: "weekly" },
-      { text: "eggs", action: "remove", targetList: null, remind_at: null, recurrence: null },
+    expect(result.items).toStrictEqual([
+      { text: "חלב", action: "add", targetList: "קניות" },
+      { text: "вынести мусор в четверг", action: "add", targetList: "Дом" },
+      { text: "eggs", action: "remove", targetList: null },
     ]);
+  });
+
+  it("ignores a stray remind_at or recurrence and keeps the item text with its time words", async () => {
+    h.generateContent.mockResolvedValue(
+      okResponse({
+        items: [
+          { text: "call mom at 9", action: "add", targetList: "Дом", remind_at: "2026-10-08T09:00:00+03:00", recurrence: "daily" },
+          { text: "pay rent tomorrow", action: "add", targetList: "Дом", remind_at: "tomorrow 9am", recurrence: "weekly" },
+        ],
+      })
+    );
+
+    const result = await run();
+    expect(h.generateContent).toHaveBeenCalledOnce();
+    expect(result.items).toStrictEqual([
+      { text: "call mom at 9", action: "add", targetList: "Дом" },
+      { text: "pay rent tomorrow", action: "add", targetList: "Дом" },
+    ]);
+    // Nothing parses the field any more, so nothing warns about it either.
+    expect(console.warn).not.toHaveBeenCalled();
   });
 
   it("drops items whose action is not exactly add/remove instead of letting them reach the remove branch", async () => {
@@ -143,66 +197,6 @@ describe("GeminiVoiceProcessor response handling", () => {
     const result = await run();
     expect(h.generateContent).toHaveBeenCalledOnce();
     expect(result.items.map((i) => [i.text, i.action])).toEqual([["eggs", "add"]]);
-  });
-
-  it("keeps a remind_at in any offset spelling Postgres accepts, as one canonical UTC instant", async () => {
-    // Every row is Tuesday 2026-10-13 20:00 in Israel (+03:00) = 17:00 UTC.
-    const spellings = [
-      "2026-10-13T20:00:00+03:00",
-      "2026-10-13T20:00:00+0300",
-      "2026-10-13T20:00:00+03",
-      "2026-10-13T17:00:00Z",
-      "2026-10-13T17:00:00z",
-      "2026-10-13 20:00:00+03:00",
-      "2026-10-13T20:00+03:00",
-      " 2026-10-13T20:00:00+03:00 ",
-    ];
-    h.generateContent.mockResolvedValue(
-      okResponse({
-        items: spellings.map((remind_at, i) => ({ text: `t${i}`, action: "add", remind_at, recurrence: "weekly" })),
-      })
-    );
-
-    const result = await run();
-    expect(h.generateContent).toHaveBeenCalledOnce();
-    expect(result.items.map((i) => [i.remind_at, i.recurrence])).toEqual(
-      spellings.map(() => ["2026-10-13T17:00:00.000Z", "weekly"])
-    );
-    expect(console.warn).not.toHaveBeenCalled();
-  });
-
-  it("nulls and logs a remind_at without an offset or that is not a real time, and drops an unknown recurrence", async () => {
-    h.generateContent.mockResolvedValue(
-      okResponse({
-        items: [
-          // No offset: the reminder row would store it as UTC, 3 hours late in Israel.
-          { text: "a", action: "add", remind_at: "2026-10-08T09:00:00", recurrence: "daily" },
-          { text: "b", action: "add", remind_at: "tomorrow 9am", recurrence: null },
-          // Well-formed but not a real time: the reminder insert would fail and the receipt say "Invalid Date".
-          { text: "c", action: "add", remind_at: "2026-10-08T25:00:00+03:00", recurrence: "daily" },
-          { text: "d", action: "add", remind_at: "2026-10-08T09:00:00+03:00", recurrence: " Weekly " },
-          { text: "e", action: "add", remind_at: "2026-10-08T09:00:00+03:00", recurrence: "none" },
-          { text: "f", action: "add", remind_at: "2026-10-08T09:00:00+03:00", recurrence: "yearly" },
-          // A recurrence without a time has nothing to repeat.
-          { text: "g", action: "add", remind_at: null, recurrence: "daily" },
-        ],
-      })
-    );
-
-    const result = await run();
-    expect(h.generateContent).toHaveBeenCalledOnce();
-    expect(result.items.map((i) => [i.text, i.remind_at, i.recurrence])).toEqual([
-      ["a", null, null],
-      ["b", null, null],
-      ["c", null, null],
-      ["d", "2026-10-08T06:00:00.000Z", "weekly"],
-      ["e", "2026-10-08T06:00:00.000Z", null],
-      ["f", "2026-10-08T06:00:00.000Z", null],
-      ["g", null, null],
-    ]);
-    // A dropped reminder is otherwise invisible: the item is still added, just without a time.
-    expect(console.warn).toHaveBeenCalledWith("[VoiceProcessor] dropped unusable remind_at", { remind_at: "tomorrow 9am" });
-    expect(console.warn).toHaveBeenCalledWith("[VoiceProcessor] dropped unusable remind_at", { remind_at: "2026-10-08T25:00:00+03:00" });
   });
 
   it("normalizes a missing, blank or non-string targetList to null", async () => {

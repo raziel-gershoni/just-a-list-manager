@@ -77,7 +77,7 @@ export async function handleVoiceMessage(
     // Look up user
     const { data: user } = await supabase
       .from("users")
-      .select("id, language, timezone")
+      .select("id, language")
       .eq("telegram_id", telegramUserId)
       .single();
 
@@ -210,7 +210,7 @@ export async function handleVoiceMessage(
     const listNames = uniqueLists.map((l) => l.name);
     let result: Awaited<ReturnType<typeof processor.process>>;
     try {
-      result = await processor.process(audioBuffer, listNames, user.timezone || "UTC", new Date().toISOString());
+      result = await processor.process(audioBuffer, listNames);
     } finally {
       clearInterval(typingInterval);
     }
@@ -278,7 +278,7 @@ export async function handleVoiceMessage(
       };
 
       if (voiceItem.action === "add") {
-        const itemId = await processAddItem(
+        await processAddItem(
           supabase,
           bot,
           chatId,
@@ -288,33 +288,6 @@ export async function handleVoiceMessage(
           receipt,
           lang
         );
-
-        // Create reminder if voice included a time
-        if (itemId && voiceItem.remind_at) {
-          await supabase
-            .from("item_reminders")
-            .update({ cancelled_at: new Date().toISOString() })
-            .eq("item_id", itemId)
-            .eq("created_by", user.id)
-            .is("sent_at", null)
-            .is("cancelled_at", null);
-
-          await supabase.from("item_reminders").insert({
-            item_id: itemId,
-            list_id: targetList.id,
-            created_by: user.id,
-            remind_at: voiceItem.remind_at,
-            is_shared: false,
-            recurrence: voiceItem.recurrence ?? null,
-          });
-
-          // Format reminder time for receipt
-          const tz = user.timezone || "UTC";
-          const remindDate = new Date(voiceItem.remind_at);
-          const timeStr = remindDate.toLocaleString(lang || "en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz });
-          const recLabel = voiceItem.recurrence ? ` (${voiceItem.recurrence})` : "";
-          receipt.added[receipt.added.length - 1] += ` \u23F0 ${timeStr}${recLabel}`;
-        }
       } else {
         await processRemoveItem(
           supabase,

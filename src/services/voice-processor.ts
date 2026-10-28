@@ -38,8 +38,6 @@ const voiceResultSchema = {
           text: { type: "string" },
           action: { type: "string", enum: ["add", "remove"] },
           targetList: { type: ["string", "null"] },
-          remind_at: { type: ["string", "null"] },
-          recurrence: { type: ["string", "null"] },
         },
         required: ["text", "action"],
       },
@@ -52,8 +50,6 @@ export interface VoiceItem {
   text: string;
   action: "add" | "remove";
   targetList: string | null;
-  remind_at?: string | null;
-  recurrence?: string | null;
 }
 
 export interface VoiceResult {
@@ -61,30 +57,15 @@ export interface VoiceResult {
 }
 
 export interface VoiceProcessor {
-  process(audio: Buffer, listNames: string[], timezone: string, currentTime: string): Promise<VoiceResult>;
-}
-
-// Same set the reminder API accepts (src/schemas/reminders.ts).
-const RECURRENCES = new Set(["daily", "weekly", "monthly"]);
-// Date, T or space, time, then a required offset in any spelling Postgres accepts:
-// Z, +03:00, +0300 or +03 (matched after upper-casing). An offset-less time would be stored as UTC.
-const REMIND_AT = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}(?::?\d{2})?)$/;
-
-/** The instant as a canonical UTC ISO string, or null when it has no offset or isn't a real time. */
-function parseRemindAt(value: string): string | null {
-  const m = REMIND_AT.exec(value.trim().toUpperCase());
-  if (!m) return null;
-  const [, date, time, rawOffset] = m;
-  // Rewrite +03 and +0300 as +03:00, the offset form ECMAScript's date format defines. Z is unchanged.
-  const offset = rawOffset.replace(/^([+-]\d{2}):?(\d{2})?$/, (_, hh: string, mm?: string) => `${hh}:${mm ?? "00"}`);
-  const ms = Date.parse(`${date}T${time}${offset}`);
-  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+  process(audio: Buffer, listNames: string[]): Promise<VoiceResult>;
 }
 
 /**
  * Parse the model's JSON and drop anything the handler must not act on. Structured output
  * guarantees the shape, not the values: an action other than "add" would otherwise reach
- * the handler's remove branch. Throws when the text is not JSON or has no items array.
+ * the handler's remove branch. Only text, action and targetList are copied, so a stray
+ * field from an older schema never reaches the handler. Throws when the text is not
+ * JSON or has no items array.
  */
 function parseVoiceResult(text: string): VoiceResult {
   const rawItems = (JSON.parse(text) as { items?: unknown } | null)?.items;
@@ -99,22 +80,10 @@ function parseVoiceResult(text: string): VoiceResult {
     if (typeof r.text !== "string" || !r.text.trim()) continue;
     if (r.action !== "add" && r.action !== "remove") continue;
 
-    const remindAt = typeof r.remind_at === "string" ? parseRemindAt(r.remind_at) : null;
-    if (!remindAt && r.remind_at != null && r.remind_at !== "") {
-      // The item is still added, just without a time; log it so the drop is visible.
-      console.warn("[VoiceProcessor] dropped unusable remind_at", { remind_at: r.remind_at });
-    }
-    const recurrence =
-      remindAt && typeof r.recurrence === "string" && RECURRENCES.has(r.recurrence.trim().toLowerCase())
-        ? r.recurrence.trim().toLowerCase()
-        : null;
-
     items.push({
       text: r.text.trim(),
       action: r.action,
       targetList: typeof r.targetList === "string" && r.targetList.trim() ? r.targetList : null,
-      remind_at: remindAt,
-      recurrence,
     });
   }
 
@@ -132,16 +101,15 @@ export class GeminiVoiceProcessor implements VoiceProcessor {
     this.ai = new GoogleGenAI({ apiKey: serverEnv().GEMINI_API_KEY, vertexai: false });
   }
 
-  async process(audio: Buffer, listNames: string[], timezone: string, currentTime: string): Promise<VoiceResult> {
+  async process(audio: Buffer, listNames: string[]): Promise<VoiceResult> {
     const listNamesStr = listNames.join(", ");
 
-    const prompt = `Shopping/task list assistant. Lists: [${listNamesStr}]. Now: ${currentTime}, TZ: ${timezone}.
+    const prompt = `Shopping/task list assistant. Lists: [${listNamesStr}].
 
 Extract items to add/remove. Rules:
 - Match list names from available lists, or infer from context. One list = assign all to it.
 - Mixed languages OK (Hebrew, English, Russian).
-- Each item = separate entry. Item text = just the task name, no time words.
-- ONLY if user says a time/schedule: set remind_at (ISO 8601 with offset) and optionally recurrence (daily/weekly/monthly). Otherwise leave them null.`;
+- Each item = separate entry. Item text = the item itself: drop command words in any language (e.g. "remind me to", "add", "put on the list"). Keep any time or date words: "remind me to call mom at 9" -> "call mom at 9".`;
 
     const config: GenerateContentConfig = {
       responseMimeType: "application/json",

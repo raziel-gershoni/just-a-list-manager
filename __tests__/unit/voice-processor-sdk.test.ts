@@ -52,7 +52,7 @@ afterEach(() => {
 });
 
 async function run() {
-  return new GeminiVoiceProcessor().process(AUDIO, ["Groceries"], "Asia/Jerusalem", "2026-10-07T18:00:00.000Z");
+  return new GeminiVoiceProcessor().process(AUDIO, ["Groceries"]);
 }
 
 describe("GeminiVoiceProcessor over the real SDK", () => {
@@ -75,9 +75,7 @@ describe("GeminiVoiceProcessor over the real SDK", () => {
     expect(body.contents[0].parts).toContainEqual({
       inlineData: { mimeType: "audio/ogg", data: AUDIO.toString("base64") },
     });
-    expect(result.items).toEqual([
-      { text: "milk", action: "add", targetList: "Groceries", remind_at: null, recurrence: null },
-    ]);
+    expect(result.items).toStrictEqual([{ text: "milk", action: "add", targetList: "Groceries" }]);
   });
 
   it("retries once after a 503 and returns the second attempt's items", async () => {
