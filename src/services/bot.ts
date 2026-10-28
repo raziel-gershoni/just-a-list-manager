@@ -7,6 +7,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import { createServerClient } from "@/src/lib/supabase";
 import { serverEnv } from "@/src/lib/env";
+import { redactTelegramErrors } from "@/src/lib/telegram-errors";
 import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
 import ruMessages from "@/messages/ru.json";
@@ -30,6 +31,7 @@ export function getMsg(lang: string | undefined, path: string): string {
 let _bot: TelegramBot | null = null;
 function getBot(): TelegramBot {
   if (!_bot) {
+    redactTelegramErrors(TelegramBot);
     _bot = new TelegramBot(serverEnv().TELEGRAM_BOT_TOKEN, {
       polling: false,
     });
@@ -50,9 +52,21 @@ function getAppUrl(): string {
   return serverEnv().NEXT_PUBLIC_APP_URL;
 }
 
+type CommandHandler = (msg: TelegramBot.Message, match: RegExpExecArray | null) => Promise<void>;
+
+// onText drops the promise an async handler returns, so a failure would otherwise be an
+// unhandled rejection. Log it here instead, with the chat it came from.
+function logFailures(command: string, handler: CommandHandler) {
+  return (msg: TelegramBot.Message, match: RegExpExecArray | null) => {
+    handler(msg, match).catch((err) => {
+      console.error(`[Bot] ${command} handler failed, chatId:`, msg.chat.id, err);
+    });
+  };
+}
+
 function registerBotHandlers(botInstance: TelegramBot) {
   // Register /start command handler
-  botInstance.onText(/\/start(.*)/, async (msg, match) => {
+  botInstance.onText(/\/start(.*)/, logFailures("/start", async (msg, match) => {
     const chatId = msg.chat.id;
     const telegramId = msg.from!.id;
     const firstName = msg.from!.first_name;
@@ -126,10 +140,10 @@ function registerBotHandlers(botInstance: TelegramBot) {
     } catch (e) {
       console.error("[Bot] Failed to set menu button:", e);
     }
-  });
+  }));
 
   // /help command
-  botInstance.onText(/\/help/, async (msg) => {
+  botInstance.onText(/\/help/, logFailures("/help", async (msg) => {
     const chatId = msg.chat.id;
     const lang = msg.from?.language_code;
 
@@ -144,7 +158,7 @@ function registerBotHandlers(botInstance: TelegramBot) {
         },
       }
     );
-  });
+  }));
 }
 
 export default bot;
