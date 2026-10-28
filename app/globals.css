@@ -48,7 +48,7 @@
   /* Surface tokens */
   --color-separator: var(--separator);
 
-  /* Active interactive state (set reminder, recurring on, etc.) — the only
+  /* Active interactive state (recurring on, etc.) — the only
      chromatic accent in the app's grayscale palette. */
   --color-tg-active: var(--tg-active);
 }
@@ -229,89 +229,5 @@
       opacity: 1;
       transform: translateY(0) scale(1);
     }
-  }
-
-  .bell-pulse {
-    animation: bell-ring 2s ease-in-out infinite;
-  }
-
-  @keyframes bell-ring {
-    0%, 100% { transform: rotate(0deg); }
-    10% { transform: rotate(6deg); }
-    20% { transform: rotate(-6deg); }
-    30% { transform: rotate(3deg); }
-    40% { transform: rotate(0deg); }
-  }
-
-  /* DateTime wheel picker */
-  .time-picker-wrapper {
-    background: var(--tg-theme-secondary-bg-color, oklch(0.965 0.002 247.86));
-    border-radius: 1rem;
-    padding: 0.25rem 0;
-    overflow: hidden;
-  }
-  .time-picker [data-rwp]:first-child {
-    flex: 1.8;
-  }
-  /* Hour (5th child) and minute (last child) only display 2-digit numbers —
-     give them less width so the day column has room for Hebrew labels like "יום ה' 07". */
-  .time-picker [data-rwp]:nth-child(5),
-  .time-picker [data-rwp]:last-child {
-    flex: 0.65;
-  }
-  .time-picker [data-rwp-option],
-  .time-picker [data-rwp-highlight-item] {
-    white-space: nowrap;
-  }
-  .time-picker {
-    height: 160px;
-    /* The library sets each [data-rwp] to a calculated 3D-perspective height
-       (~231px for optionItemHeight=36 / visibleCount=20). The default flex
-       align-items: stretch doesn't stretch explicit-height children, so they
-       sit at flex-start and the highlight (at the child's 50%) lands below
-       the wrapper's center. Centering the children clips them equally top
-       and bottom so the highlight lands on the wrapper's center — where the
-       colon already sits. !important is required because the library's
-       [data-rwp-wrapper] rule is unlayered and beats this @layer utilities
-       rule via the cascade-layer ordering. */
-    align-items: center !important;
-  }
-  .time-picker-colon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
-    width: 0.5rem;
-    flex-shrink: 0;
-  }
-  .time-picker-divider {
-    width: 1px;
-    margin: 1.25rem 0.5rem;
-    background: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
-    opacity: 0.2;
-    flex-shrink: 0;
-  }
-  .time-picker [data-rwp-option] {
-    font-size: 0.9375rem;
-    color: var(--tg-theme-hint-color, oklch(0.556 0.016 247.86));
-    font-variant-numeric: tabular-nums;
-  }
-  .time-picker [data-rwp-highlight-item] {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--tg-theme-text-color, oklch(0.205 0.012 247.86));
-    font-variant-numeric: tabular-nums;
-  }
-  .time-picker [data-rwp-highlight-wrapper] {
-    background: var(--tg-theme-bg-color, oklch(1 0 0));
-    border-radius: 0.5rem;
-  }
-  /* Today's date in the day wheel — accent color so it stands out from the
-     gray options and the dark selected/centered item. */
-  .time-picker-today {
-    color: var(--tg-theme-link-color, oklch(0.55 0.18 247.86));
-    font-weight: 600;
   }
 }

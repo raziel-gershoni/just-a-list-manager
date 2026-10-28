@@ -8,19 +8,18 @@ import type { ItemData } from "@/src/types";
 import { computeSuggestions, type Suggestion } from "@/src/utils/search-completed-items";
 
 interface AddItemInputProps {
-  listType?: "regular" | "reminders" | "grocery";
   items: ItemData[];
   onAddItem: (text: string, recycleId?: string) => void;
 }
 
-export default function AddItemInput({ listType = "regular", items, onAddItem }: AddItemInputProps) {
+export default function AddItemInput({ items, onAddItem }: AddItemInputProps) {
   const t = useTranslations();
   const [value, setValue] = useState("");
   // Only the open/closed flag is state; the list is derived so it can never go stale.
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestions = useMemo(
-    () => computeSuggestions(listType, items, value),
-    [listType, items, value]
+    () => computeSuggestions(items, value),
+    [items, value]
   );
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -97,7 +96,7 @@ export default function AddItemInput({ listType = "regular", items, onAddItem }:
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onFocus={() => setShowSuggestions(true)}
-              placeholder={listType === "reminders" ? t('items.addReminderPlaceholder') : t('items.addPlaceholder')}
+              placeholder={t('items.addPlaceholder')}
               className="w-full px-4 py-3 rounded-2xl bg-tg-secondary-bg text-tg-text placeholder:text-tg-hint/70 outline-none text-base focus:ring-2 focus:ring-tg-button/20"
             />
           </div>

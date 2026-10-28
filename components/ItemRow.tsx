@@ -2,22 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Bell, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, Truck, X } from "lucide-react";
+import { Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, Truck, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
-
-function formatShortTime(iso: string, tomLabel: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const isTomorrow = d.toDateString() === tomorrow.toDateString();
-
-  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (isToday) return time;
-  if (isTomorrow) return `${tomLabel} ${time}`;
-  return d.toLocaleDateString([], { weekday: "short" }) + ` ${time}`;
-}
 
 interface ItemRowProps {
   id: string;
@@ -39,10 +25,6 @@ interface ItemRowProps {
   recurring?: boolean;
   onToggleRecurring?: (id: string, recurring: boolean) => void;
   onRemoveDuplicates?: (text: string) => void;
-  reminderAt?: string | null;
-  recurrence?: string | null;
-  onReminderTap?: (id: string) => void;
-  isOverdue?: boolean;
   isExiting?: boolean;
   isJustAdded?: boolean;
 }
@@ -67,10 +49,6 @@ export default function ItemRow({
   recurring,
   onToggleRecurring,
   onRemoveDuplicates,
-  reminderAt,
-  recurrence,
-  onReminderTap,
-  isOverdue,
   isExiting,
   isJustAdded,
 }: ItemRowProps) {
@@ -252,34 +230,6 @@ export default function ItemRow({
             strokeWidth={recurring ? 3 : 2}
           />
         </button>
-      )}
-
-      {onReminderTap && !completed && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onReminderTap(id);
-          }}
-          className="p-1.5 rounded-full shrink-0 flex items-center gap-1"
-        >
-          {recurrence ? (
-            <span className={`relative shrink-0 ${isOverdue ? "text-amber-500" : reminderAt ? "text-tg-active" : "text-tg-hint"}`}>
-              <Bell className={`w-[18px] h-[18px] ${isOverdue ? "bell-pulse" : ""}`} />
-              <Repeat className="w-[9px] h-[9px] absolute -bottom-0.5 -right-0.5 stroke-[3]" />
-            </span>
-          ) : (
-            <Bell className={`w-[18px] h-[18px] ${isOverdue ? "text-amber-500 bell-pulse" : reminderAt ? "text-tg-active" : "text-tg-hint"}`} />
-          )}
-          {reminderAt && (
-            <span className={`text-[11px] tracking-wide ${isOverdue ? "text-amber-500" : "text-tg-active"}`}>{formatShortTime(reminderAt, t("tom"))}</span>
-          )}
-        </button>
-      )}
-      {completed && reminderAt && (
-        <span className="text-[11px] tracking-wide text-tg-hint shrink-0 flex items-center gap-1">
-          {recurrence && <Repeat className="w-[10px] h-[10px]" />}
-          {formatShortTime(reminderAt, t("tom"))}
-        </span>
       )}
 
       <button

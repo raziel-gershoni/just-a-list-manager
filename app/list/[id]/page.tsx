@@ -9,7 +9,6 @@ import AddItemInput from "@/components/AddItemInput";
 import SortableItem from "@/components/SortableItem";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import ShareDialog from "@/components/ShareDialog";
-import ReminderSheet from "@/components/ReminderSheet";
 import ListHeader from "@/components/list/ListHeader";
 import SignalSheet from "@/components/list/SignalSheet";
 import CategoriesSheet from "@/components/list/CategoriesSheet";
@@ -52,7 +51,6 @@ function ListContent() {
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
-  const isReminders = listType === "reminders";
 
   const [showCompleted, setShowCompleted] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -71,8 +69,6 @@ function ListContent() {
   });
   const [showShare, setShowShare] = useState(false);
   const [showSignals, setShowSignals] = useState(false);
-  const [reminderItem, setReminderItem] = useState<string | null>(null);
-  const [pendingReminderText, setPendingReminderText] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<{
     message: string;
     undo: () => void;
@@ -124,7 +120,7 @@ function ListContent() {
     refresh: retrySorting,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -139,16 +135,6 @@ function ListContent() {
       listType,
       t: t as (key: string, values?: Record<string, unknown>) => string,
     });
-
-  // Auto-open ReminderSheet when a newly added item gets its real ID
-  useEffect(() => {
-    if (!pendingReminderText) return;
-    const item = items.find((i) => i.text === pendingReminderText && !i._pending && !i.completed && !i.deleted_at);
-    if (item) {
-      setReminderItem(item.id);
-      setPendingReminderText(null);
-    }
-  }, [items, pendingReminderText]);
 
   const onListDeleted = useCallback(() => router.push("/"), [router]);
 
@@ -223,154 +209,123 @@ function ListContent() {
 
       <OfflineIndicator />
 
-      <AddItemInput
-        listType={listType}
-        items={items}
-        onAddItem={(text, recycleId) => {
-          handleAddItem(text, recycleId);
-          // Auto-open ReminderSheet after item syncs in reminders lists
-          if (isReminders) {
-            setPendingReminderText(text);
-          }
-        }}
-      />
+      <AddItemInput items={items} onAddItem={handleAddItem} />
 
       {/* Item list */}
       <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y">
-        {isReminders ? (
-          /* Reminders list: items sorted by remind_at with date group headers */
-          <ReminderItemsList
-            items={activeItems}
-            completedItems={completedItems}
-            showCompleted={showCompleted}
-            setShowCompleted={setShowCompleted}
-            isShared={isShared}
-            userId={userId}
-            duplicateTexts={duplicateTexts}
-            onToggle={handleToggle}
-            onDelete={handleDelete}
-            onEdit={handleEditItem}
-            onReminderTap={(id) => setReminderItem(id)}
-            onClearCompleted={handleClearCompleted}
-            t={t}
-          />
-        ) : (
-          <>
-            {/* Regular list: position-ordered with drag-to-reorder */}
-            <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-              {categoryGroups
-                ? /* Grocery list: a header per category in walk order. Headers and rows stay
-                     siblings (no wrapper per group): dnd-kit moves a dragged row's DOM node
-                     into the other category, and React must find it under the same parent. */
-                  categoryGroups.flatMap((group, groupIndex) => [
-                    // A quiet label lined up with the item text (past the 22px checkbox and its
-                    // 12px gap), so it reads as part of its items rather than a bar across the list.
-                    <div
-                      key={`group-${group.key}`}
-                      role="heading"
-                      aria-level={3}
-                      className={`ps-[54px] pe-5 pb-1 text-[13px] leading-5 font-medium text-tg-hint ${
-                        groupIndex === 0 ? "pt-2" : "pt-5"
-                      } ${group.key === SORTING_GROUP ? "motion-safe:animate-pulse" : ""}`}
-                    >
-                      {group.label}
-                    </div>,
-                    ...group.items.map((item, indexInGroup) => (
-                      <SortableItem
-                        key={item.id}
-                        id={item.id}
-                        index={indexInGroup}
-                        group={group.key}
-                        disabled={group.key === SORTING_GROUP}
-                        text={item.text}
-                        isPending={item._pending}
-                        isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
-                        creatorName={isShared ? item.creator_name : null}
-                        isOwnItem={item.created_by === userId}
-                        editorName={isShared ? item.editor_name : null}
-                        isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-                        onToggle={handleToggle}
-                        onDelete={handleDelete}
-                        onEdit={handleEditItem}
-                        onSkip={handleSkip}
-                        ordered={item.ordered_at != null}
-                        onOrder={handleOrder}
-                        recurring={item.recurring}
-                        onToggleRecurring={handleSetRecurring}
-                        onRemoveDuplicates={handleRemoveDuplicates}
-                        isExiting={item._exiting}
-                        isJustAdded={item._justAdded}
-                      />
-                    )),
-                  ])
-                : activeItems.map((item, index) => (
-                    <SortableItem
-                      key={item.id}
-                      id={item.id}
-                      index={index}
-                      text={item.text}
-                      isPending={item._pending}
-                      isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
-                      creatorName={isShared ? item.creator_name : null}
-                      isOwnItem={item.created_by === userId}
-                      editorName={isShared ? item.editor_name : null}
-                      isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-                      onToggle={handleToggle}
-                      onDelete={handleDelete}
-                      onEdit={handleEditItem}
-                      onSkip={listType === "grocery" ? handleSkip : undefined}
-                      ordered={item.ordered_at != null}
-                      onOrder={listType === "grocery" ? handleOrder : undefined}
-                      recurring={item.recurring}
-                      onToggleRecurring={listType === "grocery" ? handleSetRecurring : undefined}
-                      onRemoveDuplicates={handleRemoveDuplicates}
-                      isExiting={item._exiting}
-                      isJustAdded={item._justAdded}
-                    />
-                  ))}
-            </DragDropProvider>
-
-            {listType === "grocery" && (
-              <>
-                <SkippedItemsSection
-                  skippedItems={skippedItems}
-                  showSkipped={showSkipped}
-                  setShowSkipped={setShowSkipped}
-                  duplicateTexts={duplicateTexts}
-                  isShared={isShared}
-                  userId={userId}
+        {/* Regular list: position-ordered with drag-to-reorder */}
+        <DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          {categoryGroups
+            ? /* Grocery list: a header per category in walk order. Headers and rows stay
+                 siblings (no wrapper per group): dnd-kit moves a dragged row's DOM node
+                 into the other category, and React must find it under the same parent. */
+              categoryGroups.flatMap((group, groupIndex) => [
+                // A quiet label lined up with the item text (past the 22px checkbox and its
+                // 12px gap), so it reads as part of its items rather than a bar across the list.
+                <div
+                  key={`group-${group.key}`}
+                  role="heading"
+                  aria-level={3}
+                  className={`ps-[54px] pe-5 pb-1 text-[13px] leading-5 font-medium text-tg-hint ${
+                    groupIndex === 0 ? "pt-2" : "pt-5"
+                  } ${group.key === SORTING_GROUP ? "motion-safe:animate-pulse" : ""}`}
+                >
+                  {group.label}
+                </div>,
+                ...group.items.map((item, indexInGroup) => (
+                  <SortableItem
+                    key={item.id}
+                    id={item.id}
+                    index={indexInGroup}
+                    group={group.key}
+                    disabled={group.key === SORTING_GROUP}
+                    text={item.text}
+                    isPending={item._pending}
+                    isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
+                    creatorName={isShared ? item.creator_name : null}
+                    isOwnItem={item.created_by === userId}
+                    editorName={isShared ? item.editor_name : null}
+                    isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
+                    onToggle={handleToggle}
+                    onDelete={handleDelete}
+                    onEdit={handleEditItem}
+                    onSkip={handleSkip}
+                    ordered={item.ordered_at != null}
+                    onOrder={handleOrder}
+                    recurring={item.recurring}
+                    onToggleRecurring={handleSetRecurring}
+                    onRemoveDuplicates={handleRemoveDuplicates}
+                    isExiting={item._exiting}
+                    isJustAdded={item._justAdded}
+                  />
+                )),
+              ])
+            : activeItems.map((item, index) => (
+                <SortableItem
+                  key={item.id}
+                  id={item.id}
+                  index={index}
+                  text={item.text}
+                  isPending={item._pending}
+                  isDuplicate={duplicateTexts.has(normalizeForCompare(item.text))}
+                  creatorName={isShared ? item.creator_name : null}
+                  isOwnItem={item.created_by === userId}
+                  editorName={isShared ? item.editor_name : null}
+                  isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
                   onToggle={handleToggle}
                   onDelete={handleDelete}
                   onEdit={handleEditItem}
-                  onSkip={handleSkip}
-                  onRestoreAll={handleRestoreSkipped}
+                  onSkip={listType === "grocery" ? handleSkip : undefined}
+                  ordered={item.ordered_at != null}
+                  onOrder={listType === "grocery" ? handleOrder : undefined}
+                  recurring={item.recurring}
+                  onToggleRecurring={listType === "grocery" ? handleSetRecurring : undefined}
+                  onRemoveDuplicates={handleRemoveDuplicates}
+                  isExiting={item._exiting}
+                  isJustAdded={item._justAdded}
                 />
-                <RecurringItemsSection
-                  recurringItems={recurringItems}
-                  showRecurring={showRecurring}
-                  setShowRecurring={setShowRecurring}
-                  onRestoreRecurring={handleRestoreRecurring}
-                  onToggleRecurring={handleSetRecurring}
-                />
-              </>
-            )}
+              ))}
+        </DragDropProvider>
 
-            <CompletedItemsSection
-              completedItems={completedItems}
-              completedGroups={completedGroups}
-              showCompleted={showCompleted}
-              setShowCompleted={setShowCompleted}
+        {listType === "grocery" && (
+          <>
+            <SkippedItemsSection
+              skippedItems={skippedItems}
+              showSkipped={showSkipped}
+              setShowSkipped={setShowSkipped}
               duplicateTexts={duplicateTexts}
               isShared={isShared}
               userId={userId}
               onToggle={handleToggle}
               onDelete={handleDelete}
               onEdit={handleEditItem}
-              onClearCompleted={handleClearCompleted}
-              onUnmarkAllDone={listType === "regular" ? handleUnmarkAllDone : undefined}
+              onSkip={handleSkip}
+              onRestoreAll={handleRestoreSkipped}
+            />
+            <RecurringItemsSection
+              recurringItems={recurringItems}
+              showRecurring={showRecurring}
+              setShowRecurring={setShowRecurring}
+              onRestoreRecurring={handleRestoreRecurring}
+              onToggleRecurring={handleSetRecurring}
             />
           </>
         )}
+
+        <CompletedItemsSection
+          completedItems={completedItems}
+          completedGroups={completedGroups}
+          showCompleted={showCompleted}
+          setShowCompleted={setShowCompleted}
+          duplicateTexts={duplicateTexts}
+          isShared={isShared}
+          userId={userId}
+          onToggle={handleToggle}
+          onDelete={handleDelete}
+          onEdit={handleEditItem}
+          onClearCompleted={handleClearCompleted}
+          onUnmarkAllDone={listType === "regular" ? handleUnmarkAllDone : undefined}
+        />
 
         {activeItems.length === 0 && skippedItems.length === 0 && recurringItems.length === 0 && completedItems.length === 0 && (
           <div className="text-center text-tg-hint py-16">
@@ -407,7 +362,7 @@ function ListContent() {
             <div className="w-10 h-1 rounded-full bg-tg-hint/30 mx-auto mb-4" />
             <h2 className="text-lg font-semibold tracking-tight text-tg-text mb-4">{t('settings.listSettings')}</h2>
             <div className="flex bg-tg-secondary-bg rounded-2xl p-1 mb-4">
-              {(["regular", "grocery", "reminders"] as const).map((tp) => (
+              {(["regular", "grocery"] as const).map((tp) => (
                 <button
                   key={tp}
                   onClick={() => {
@@ -428,7 +383,7 @@ function ListContent() {
                     listType === tp ? "bg-tg-button text-tg-button-text shadow-sm" : "text-tg-hint"
                   }`}
                 >
-                  {tp === "regular" ? t('lists.typeRegular') : tp === "grocery" ? t('lists.typeGrocery') : t('lists.typeReminders')}
+                  {tp === "regular" ? t('lists.typeRegular') : t('lists.typeGrocery')}
                 </button>
               ))}
             </div>
@@ -460,181 +415,7 @@ function ListContent() {
           onClose={() => setShowCategories(false)}
         />
       )}
-
-      {reminderItem && (() => {
-        const item = items.find((i) => i.id === reminderItem);
-        if (!item) return null;
-        return (
-          <ReminderSheet
-            itemId={item.id}
-            itemText={item.text}
-            listId={listId}
-            isShared={isShared}
-            isOpen={true}
-            onClose={() => setReminderItem(null)}
-            onSetReminder={handleSetReminder}
-            onUpdateReminder={handleUpdateReminder}
-            onCancelReminder={handleCancelReminder}
-            existingReminder={
-              item.my_reminder_id
-                ? { id: item.my_reminder_id, remind_at: item.my_remind_at!, is_shared: item.my_reminder_shared ?? false, recurrence: item.my_reminder_recurrence ?? undefined }
-                : null
-            }
-          />
-        );
-      })()}
     </div>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function groupByDate(items: ItemData[], t: any) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-  const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
-
-  const groups: { label: string; items: ItemData[] }[] = [];
-  const sorted = [...items].sort((a, b) => {
-    const ta = a.my_remind_at ? new Date(a.my_remind_at).getTime() : Infinity;
-    const tb = b.my_remind_at ? new Date(b.my_remind_at).getTime() : Infinity;
-    return ta - tb;
-  });
-
-  const buckets: Record<string, ItemData[]> = {};
-  for (const item of sorted) {
-    const d = item.my_remind_at ? new Date(item.my_remind_at) : null;
-    let key: string;
-    if (!d) key = t('items.laterGroup');
-    else if (d.getTime() < now.getTime()) key = t('items.overdue');
-    else if (d < tomorrow) key = t('items.todayGroup');
-    else if (d < new Date(tomorrow.getTime() + 86400000)) key = t('items.tomorrowGroup');
-    else if (d < nextWeek) key = t('items.thisWeekGroup');
-    else key = t('items.laterGroup');
-
-    if (!buckets[key]) buckets[key] = [];
-    buckets[key].push(item);
-  }
-
-  const order = [t('items.overdue'), t('items.todayGroup'), t('items.tomorrowGroup'), t('items.thisWeekGroup'), t('items.laterGroup')];
-  for (const label of order) {
-    if (buckets[label]?.length) groups.push({ label, items: buckets[label] });
-  }
-  return groups;
-}
-
-import ItemRow from "@/components/ItemRow";
-import type { ItemData } from "@/src/types";
-import { CheckCircle2, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
-
-function ReminderItemsList({
-  items,
-  completedItems,
-  showCompleted,
-  setShowCompleted,
-  isShared,
-  userId,
-  duplicateTexts,
-  onToggle,
-  onDelete,
-  onEdit,
-  onReminderTap,
-  onClearCompleted,
-  t,
-}: {
-  items: ItemData[];
-  completedItems: ItemData[];
-  showCompleted: boolean;
-  setShowCompleted: React.Dispatch<React.SetStateAction<boolean>>;
-  isShared: boolean;
-  userId: string | null;
-  duplicateTexts: Set<string>;
-  onToggle: (id: string, completed: boolean) => void;
-  onDelete: (id: string) => void;
-  onEdit: (id: string, newText: string) => void;
-  onReminderTap: (id: string) => void;
-  onClearCompleted: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  t: any;
-}) {
-  const groups = groupByDate(items, t);
-  return (
-    <>
-      {groups.map((group) => (
-        <div key={group.label}>
-          <div className="px-5 pt-4 pb-1.5 text-[11px] text-tg-hint/70 font-semibold tracking-widest uppercase bg-tg-secondary-bg/80 backdrop-blur-md">
-            {group.label}
-          </div>
-          {group.items.map((item) => (
-            <ItemRow
-              key={item.id}
-              id={item.id}
-              text={item.text}
-              completed={false}
-              isPending={item._pending}
-              isOverdue={group.label === t('items.overdue')}
-              isExiting={item._exiting}
-              isJustAdded={item._justAdded}
-              creatorName={isShared ? item.creator_name : null}
-              isOwnItem={item.created_by === userId}
-              editorName={isShared ? item.editor_name : null}
-              isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-              onToggle={onToggle}
-              onDelete={onDelete}
-              onEdit={onEdit}
-              reminderAt={item.my_remind_at}
-              recurrence={item.my_reminder_recurrence}
-              onReminderTap={onReminderTap}
-            />
-          ))}
-        </div>
-      ))}
-
-      {items.length === 0 && completedItems.length === 0 && (
-        <div className="text-center text-tg-hint py-16">
-          <p className="text-lg mb-1">{t('items.emptyTitle')}</p>
-          <p className="text-sm">{t('items.emptyDescription')}</p>
-        </div>
-      )}
-
-      {/* Completed section for reminders */}
-      {completedItems.length > 0 && (
-        <>
-          <button
-            onClick={() => setShowCompleted((p) => { localStorage.setItem("panel_completed", String(!p)); return !p; })}
-            className="sticky top-0 z-20 flex items-center gap-2.5 w-full px-5 py-3.5 text-[13px] font-medium tracking-wide text-tg-hint bg-tg-secondary-bg/80 backdrop-blur-md border-t border-separator"
-          >
-            {showCompleted ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 rtl:scale-x-[-1]" />}
-            <CheckCircle2 className="w-3.5 h-3.5" style={{ color: "var(--list-emerald)" }} strokeWidth={2.5} />
-            {t('items.completedSection', { count: completedItems.length })}
-            <button
-              onClick={(e) => { e.stopPropagation(); onClearCompleted(); }}
-              className="ms-auto text-tg-destructive/80 text-[12px] font-medium tracking-wide flex items-center gap-1"
-            >
-              <Trash2 className="w-3 h-3" />
-              {t('items.clearCompleted')}
-            </button>
-          </button>
-          {showCompleted && (<div className="item-enter">{completedItems.map((item) => (
-            <ItemRow
-              key={item.id}
-              id={item.id}
-              text={item.text}
-              completed={true}
-              creatorName={isShared ? item.creator_name : null}
-              isOwnItem={item.created_by === userId}
-              editorName={isShared ? item.editor_name : null}
-              isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
-              onToggle={onToggle}
-              onDelete={onDelete}
-              onEdit={onEdit}
-              reminderAt={item.my_remind_at}
-              recurrence={item.my_reminder_recurrence}
-            />
-          ))}</div>)}
-        </>
-      )}
-    </>
   );
 }
 

@@ -699,14 +699,6 @@ function CreateListSheet({
           >
             {t('lists.typeGrocery')}
           </button>
-          <button
-            onClick={() => onTypeChange("reminders")}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              listType === "reminders" ? "bg-tg-button text-tg-button-text shadow-sm" : "text-tg-hint"
-            }`}
-          >
-            {t('lists.typeReminders')}
-          </button>
         </div>
         <input
           type="text"

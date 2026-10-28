@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import type { ItemData } from "@/src/types";
-import { searchCompletedItems, shouldSearchWhileTyping, computeSuggestions } from "@/src/utils/search-completed-items";
+import { searchCompletedItems, computeSuggestions } from "@/src/utils/search-completed-items";
 
 function item(over: Partial<ItemData> & { id: string; text: string }): ItemData {
   return {
@@ -89,29 +89,16 @@ describe("searchCompletedItems", () => {
   });
 });
 
-describe("shouldSearchWhileTyping", () => {
-  it("is off for reminders only", () => {
-    expect(shouldSearchWhileTyping("reminders")).toBe(false);
-    expect(shouldSearchWhileTyping("regular")).toBe(true);
-    expect(shouldSearchWhileTyping("grocery")).toBe(true);
-  });
-});
-
 describe("computeSuggestions", () => {
   const items = [item({ id: "m", text: "Milk" }), item({ id: "e", text: "Eggs" })];
 
-  it("is empty for reminders even when a completed item matches", () => {
-    expect(computeSuggestions("reminders", items, "mil")).toEqual([]);
-  });
-
-  it("matches for regular and grocery lists", () => {
-    expect(ids(computeSuggestions("regular", items, "mil"))).toEqual(["m"]);
-    expect(ids(computeSuggestions("grocery", items, "mil"))).toEqual(["m"]);
+  it("suggests a completed item that matches what is typed", () => {
+    expect(ids(computeSuggestions(items, "mil"))).toEqual(["m"]);
   });
 
   it("searches only the segment after the last comma", () => {
-    expect(ids(computeSuggestions("regular", items, "eggs, mil"))).toEqual(["m"]);
-    expect(computeSuggestions("regular", items, "eggs, ")).toEqual([]);
+    expect(ids(computeSuggestions(items, "eggs, mil"))).toEqual(["m"]);
+    expect(computeSuggestions(items, "eggs, ")).toEqual([]);
   });
 });
 
@@ -131,7 +118,7 @@ describe("source wiring", () => {
     const src = read("components/AddItemInput.tsx");
     expect(src).not.toContain("/items/search");
     expect(src).not.toMatch(/fetch\(/);
-    expect(src).toMatch(/useMemo\(\s*\(\)\s*=>\s*computeSuggestions\(listType, items, value\)/);
+    expect(src).toMatch(/useMemo\(\s*\(\)\s*=>\s*computeSuggestions\(items, value\)/);
   });
 
   it("page passes items to AddItemInput", () => {

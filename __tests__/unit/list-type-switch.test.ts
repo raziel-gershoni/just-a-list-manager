@@ -61,7 +61,6 @@ vi.mock("@/components/ItemRow", () => ({ default: () => null }));
 vi.mock("@/components/AddItemInput", () => ({ default: () => null }));
 vi.mock("@/components/OfflineIndicator", () => ({ default: () => null }));
 vi.mock("@/components/ShareDialog", () => ({ default: () => null }));
-vi.mock("@/components/ReminderSheet", () => ({ default: () => null }));
 vi.mock("@/components/list/ListHeader", () => ({ default: () => null }));
 vi.mock("@/components/list/SignalSheet", () => ({ default: () => null }));
 vi.mock("@/components/list/CategoriesSheet", () => ({ default: () => null }));
@@ -72,6 +71,8 @@ vi.mock("@/components/list/ToastContainer", () => ({ default: () => null }));
 
 import ListPage from "@/app/list/[id]/page";
 import ListHeader from "@/components/list/ListHeader";
+import CompletedItemsSection from "@/components/list/CompletedItemsSection";
+import { DragDropProvider } from "@dnd-kit/react";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 
@@ -94,6 +95,17 @@ function find(node: unknown, match: (el: El) => boolean): El | undefined {
   if (!node || typeof node !== "object" || !("props" in node)) return undefined;
   const el = node as El;
   return match(el) ? el : find(el.props.children, match);
+}
+
+function findAll(node: unknown, match: (el: El) => boolean, out: El[] = []): El[] {
+  if (Array.isArray(node)) {
+    for (const child of node) findAll(child, match, out);
+    return out;
+  }
+  if (!node || typeof node !== "object" || !("props" in node)) return out;
+  const el = node as El;
+  if (match(el)) out.push(el);
+  return findAll(el.props.children, match, out);
 }
 
 // Opens the settings sheet and presses the button for a list type.
@@ -150,8 +162,8 @@ describe("switching a list's type in settings", () => {
   });
 
   it("switching to another type loads no categories", async () => {
-    chooseType("reminders");
-    expect(setListType).toHaveBeenCalledWith("reminders");
+    chooseType("regular");
+    expect(setListType).toHaveBeenCalledWith("regular");
     patch.resolve({ ok: true, status: 200 });
     await settle();
     expect(loadCategories).not.toHaveBeenCalled();
@@ -172,5 +184,20 @@ describe("switching a list's type in settings", () => {
     }
     expect(loadCategories).not.toHaveBeenCalled();
     expect(unhandled).toEqual([]);
+  });
+});
+
+describe("the list page", () => {
+  it("offers exactly Regular and Grocery in the settings sheet", () => {
+    const header = find(render(), (el) => el.type === ListHeader);
+    (header!.props.onSettings as () => void)();
+    const typeKeys = findAll(render(), (el) => el.type === "button" && typeof el.key === "string" && ["regular", "grocery", "reminders"].includes(el.key)).map((el) => el.key);
+    expect(typeKeys).toEqual(["regular", "grocery"]);
+  });
+
+  it("renders the drag area and the Done section for a regular list", () => {
+    const tree = render();
+    expect(find(tree, (el) => el.type === DragDropProvider)).toBeDefined();
+    expect(find(tree, (el) => el.type === CompletedItemsSection)).toBeDefined();
   });
 });

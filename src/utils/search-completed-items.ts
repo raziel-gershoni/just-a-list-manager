@@ -6,11 +6,6 @@ export interface Suggestion {
   text: string;
 }
 
-/** Whether the add-item input should suggest completed items while typing. */
-export function shouldSearchWhileTyping(listType: "regular" | "reminders" | "grocery"): boolean {
-  return listType !== "reminders";
-}
-
 function ts(s: string | null): number | null {
   if (!s) return null;
   const n = new Date(s).getTime();
@@ -48,15 +43,10 @@ export function searchCompletedItems(items: ItemData[], query: string, limit = 1
 }
 
 /**
- * Suggestions for the add-item input: searches only the text after the last comma,
- * and is off entirely for reminders lists. Pure so it can be derived from live items.
+ * Suggestions for the add-item input: searches only the text after the last comma.
+ * Pure so it can be derived from live items.
  */
-export function computeSuggestions(
-  listType: "regular" | "reminders" | "grocery",
-  items: ItemData[],
-  value: string
-): Suggestion[] {
-  if (!shouldSearchWhileTyping(listType)) return [];
+export function computeSuggestions(items: ItemData[], value: string): Suggestion[] {
   const segments = value.split(",");
   const currentSegment = segments[segments.length - 1].trim();
   return searchCompletedItems(items, currentSegment);

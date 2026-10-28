@@ -113,7 +113,6 @@ vi.mock("@/components/ItemRow", () => ({ default: () => null }));
 vi.mock("@/components/AddItemInput", () => ({ default: () => null }));
 vi.mock("@/components/OfflineIndicator", () => ({ default: () => null }));
 vi.mock("@/components/ShareDialog", () => ({ default: () => null }));
-vi.mock("@/components/ReminderSheet", () => ({ default: () => null }));
 vi.mock("@/components/list/ListHeader", () => ({ default: () => null }));
 vi.mock("@/components/list/SignalSheet", () => ({ default: () => null }));
 vi.mock("@/components/list/SkippedItemsSection", () => ({ default: () => null }));

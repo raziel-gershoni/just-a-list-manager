@@ -31,8 +31,6 @@ interface SortableItemProps {
   recurring?: boolean;
   onToggleRecurring?: (id: string, recurring: boolean) => void;
   onRemoveDuplicates?: (text: string) => void;
-  reminderAt?: string | null;
-  onReminderTap?: (id: string) => void;
   isExiting?: boolean;
   isJustAdded?: boolean;
 }
@@ -58,8 +56,6 @@ export default function SortableItem({
   recurring,
   onToggleRecurring,
   onRemoveDuplicates,
-  reminderAt,
-  onReminderTap,
   isExiting,
   isJustAdded,
 }: SortableItemProps) {
@@ -95,8 +91,6 @@ export default function SortableItem({
         recurring={recurring}
         onToggleRecurring={onToggleRecurring}
         onRemoveDuplicates={onRemoveDuplicates}
-        reminderAt={reminderAt}
-        onReminderTap={onReminderTap}
         isExiting={isExiting}
         isJustAdded={isJustAdded}
       />
