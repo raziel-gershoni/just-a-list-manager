@@ -7,7 +7,6 @@ import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "
 import { parseBody } from "@/src/lib/api-validation";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { pickRecyclable } from "@/src/utils/pick-recyclable";
-import { completeItemRespectingRecurrence, isPureCompletion } from "@/src/services/recurring";
 import { categorizeList } from "@/src/services/categorize-list";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
@@ -331,25 +330,6 @@ export async function PATCH(
     }
   }
 
-  // A pure "mark completed" on an item with a live recurring reminder must advance
-  // the series, whoever completes it. A collaborator's client can't take the
-  // complete-recurring route itself: it never sees someone else's reminder
-  // (reminders GET is scoped to created_by = caller).
-  if (isPureCompletion(updates)) {
-    const outcome = await completeItemRespectingRecurrence(supabase, { itemId, listId });
-    if (outcome.status === "error") {
-      // 500 so the client mutation queue retries (it drops 4xx); the helper
-      // already released its claim, so the retry can win again.
-      return NextResponse.json({ error: "Failed to complete item" }, { status: 500 });
-    }
-    if (outcome.status !== "not-recurring") {
-      // created or already-completed: respond as the plain path would
-      const { data: done } = await supabase
-        .from("items").select().eq("id", itemId).eq("list_id", listId).single();
-      return NextResponse.json(done ?? { id: itemId, completed: true });
-    }
-  }
-
   const patchData: Record<string, unknown> = {};
 
   if (typeof updates.completed === "boolean") {
@@ -447,9 +427,6 @@ export async function PATCH(
     scheduleCategorize(supabase, listId);
   }
 
-  // Don't cancel reminders on completion — the cron handles cleanup for completed items,
-  // and the frontend needs the reminder to display the original time in the done section.
-
   return NextResponse.json(item);
 }
 
@@ -492,17 +469,5 @@ export async function DELETE(
     return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
 
-  // Deliberately does NOT cancel reminders on the deleted item. Both undo
-  // paths that restore from this soft-delete (useItemHandlers.ts single-delete
-  // undo and remove-duplicates undo) only ever PATCH deleted_at back to null,
-  // never un-cancel anything — so cancelling here made undo lossy (identical
-  // bug to the one 9551051 removed from clear-completed). It's safe to leave
-  // the reminder alone: if the item was completed first (deleting from the
-  // done section), the cron checks item.completed FIRST and silently stamps
-  // sent_at whenever the reminder comes due; its deleted_at branch right
-  // after is only the fallback for a row deleted without ever being
-  // completed, which cancels it instead (app/api/cron/reminders/route.ts).
-  // Either way the digest skips items with no live reminders, so nothing
-  // ever fires for a row that stays deleted.
   return NextResponse.json({ success: true });
 }

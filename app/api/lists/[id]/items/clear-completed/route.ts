@@ -43,18 +43,6 @@ export async function POST(
     );
   }
 
-  // Deliberately does NOT cancel reminders on cleared items here. Completing an
-  // item never cancels its reminder (a completed item still shows the
-  // reminder's original time), so a completed item routinely carries a live
-  // reminder — and undo (useItemHandlers.ts) only ever PATCHes deleted_at back
-  // to null, never un-cancels anything. Cancelling here made undo lossy. It's
-  // safe to leave the reminder alone: a cleared item is always completed (see
-  // the .eq("completed", true) filter above), and the cron checks
-  // item.completed FIRST, silently stamping the reminder's sent_at whenever it
-  // comes due — the deleted_at branch right after it is only the fallback for
-  // a row deleted without ever being completed (app/api/cron/reminders/route.ts).
-  // Either way the digest skips items with no live reminders, so nothing ever
-  // fires for a row that stays cleared.
   return NextResponse.json({
     cleared: (cleared || []).length,
     clearedIds: (cleared || []).map((i) => i.id),
