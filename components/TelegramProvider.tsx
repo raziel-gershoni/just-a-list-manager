@@ -232,17 +232,6 @@ export default function TelegramProvider({
                 username: userData.username,
               });
             }
-            // Sync timezone if changed
-            try {
-              const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-              if (tz && userData?.timezone !== tz) {
-                fetch("/api/user", {
-                  method: "PATCH",
-                  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                  body: JSON.stringify({ timezone: tz }),
-                }).catch(() => {});
-              }
-            } catch {}
           }
         } catch (e) {
           console.error("[TelegramProvider] Web user registration error:", e);
@@ -336,23 +325,9 @@ export default function TelegramProvider({
               const serverLocale = resolveLocale(userData2.language);
               applyLocale(serverLocale);
             }
-            // Sync timezone if changed. Language is user-controlled via the
-            // language sheet — never overwrite it from Telegram's language_code,
-            // since unsupported codes (e.g. "en-US") would be normalized to "en"
-            // by resolveLocale and clobber the user's explicit choice.
-            try {
-              const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-              if (tz && userData2?.timezone !== tz) {
-                const currentToken = jwtRef.current;
-                if (currentToken) {
-                  fetch("/api/user", {
-                    method: "PATCH",
-                    headers: { Authorization: `Bearer ${currentToken}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ timezone: tz }),
-                  }).catch(() => {});
-                }
-              }
-            } catch {}
+            // Language is user-controlled via the language sheet — never overwrite it from
+            // Telegram's language_code, since unsupported codes (e.g. "en-US") would be
+            // normalized to "en" by resolveLocale and clobber the user's explicit choice.
           }
         } catch (e) {
           console.error("[TelegramProvider] User registration error:", e);
