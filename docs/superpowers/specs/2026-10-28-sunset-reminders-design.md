@@ -1,7 +1,7 @@
 # Sunset reminders: design
 
 **Date:** 2026-10-28
-**Status:** awaiting owner approval
+**Status:** approved by the owner (2026-10-28)
 **Background:** the spike in `docs/superpowers/notes/2026-10-15-reminders-deprecation.md`. Its
 inventory was re-checked against HEAD `685eb83` on 2026-10-28.
 
@@ -183,8 +183,8 @@ both the table and the column.
 
 - **Docs and memory:** delete the parked spike note and update README and memory. That includes the
   search-while-typing note "off in reminders lists".
-- **Lint:** the reminder-only lint problems disappear with the deleted code. The other problems are
-  in the login callback and an unused variable on the list page, and they stay as they are.
+- **Lint:** the reminder-only lint problems disappear with the deleted code, including the two on
+  the list page. The only one left is the pre-existing error in the login callback, which stays.
 
 ## Non-goals
 
