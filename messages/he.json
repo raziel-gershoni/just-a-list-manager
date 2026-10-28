@@ -206,6 +206,7 @@
     "itemReminder": "תזכורת: \"{itemText}\" ברשימה \"{listName}\"",
     "itemReminderShared": "{senderName} מזכיר לך: \"{itemText}\" ברשימה \"{listName}\"",
     "openList": "פתח רשימה",
+    "remindersRemoved": "התזכורות הוסרו מהאפליקציה.",
     "openApp": "פתח אפליקציה",
     "digestMorning": "בוקר טוב! התזכורות שלך להיום:",
     "digestEvening": "שים לב — התזכורות של מחר:"

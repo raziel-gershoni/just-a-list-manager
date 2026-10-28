@@ -206,6 +206,7 @@
     "itemReminder": "Напоминание: \"{itemText}\" в списке \"{listName}\"",
     "itemReminderShared": "{senderName} напоминает: \"{itemText}\" в \"{listName}\"",
     "openList": "Открыть список",
+    "remindersRemoved": "Напоминаний в приложении больше нет.",
     "openApp": "Открыть приложение",
     "digestMorning": "Доброе утро! Напоминания на сегодня:",
     "digestEvening": "Напоминания на завтра:"

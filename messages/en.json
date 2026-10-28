@@ -206,6 +206,7 @@
     "itemReminder": "Reminder: \"{itemText}\" on your list \"{listName}\"",
     "itemReminderShared": "{senderName} reminds you: \"{itemText}\" on \"{listName}\"",
     "openList": "Open List",
+    "remindersRemoved": "Reminders have been removed from the app.",
     "openApp": "Open App",
     "digestMorning": "Good morning! Here are today's reminders:",
     "digestEvening": "Heads up — tomorrow's reminders:"
