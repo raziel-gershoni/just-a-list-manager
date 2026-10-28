@@ -14,18 +14,18 @@
 
 **🔗 Live demo:** https://just-a-list-manager.vercel.app _(sign in with Telegram)_
 
-A real-time collaborative list app for two-person households, built to run both as a Telegram Mini App and as a standalone web app. Two people share a shopping or to-do list, edit it at the same time, and can update it hands-free: record a Telegram voice message and Google Gemini transcribes and parses it into structured add/remove actions against the right list — including reminders and recurring items. The interesting part is not the CRUD; it's the voice-to-list AI pipeline, the custom Telegram auth wired into Supabase Row-Level Security, and the offline-first collaborative sync underneath.
+A real-time collaborative list app for two-person households, built to run both as a Telegram Mini App and as a standalone web app. Two people share a shopping or to-do list, edit it at the same time, and can update it hands-free: record a Telegram voice message and Google Gemini transcribes and parses it into structured add/remove actions against the right list. The interesting part is not the CRUD; it's the voice-to-list AI pipeline, the custom Telegram auth wired into Supabase Row-Level Security, and the offline-first collaborative sync underneath.
 
 <!-- Screenshot placeholder: leave exactly this HTML comment so the owner can drop an image in later:
      ![screenshot](docs/screenshot.png) -->
 
 ## ✨ Features
 
-- **Voice-driven editing** — send a Telegram voice message ("add milk and eggs, remove bread") and it lands as parsed items on the correct list, with reminders and recurrence pulled from natural speech.
+- **Voice-driven editing** — send a Telegram voice message ("add milk and eggs, remove bread") and it lands as parsed items on the correct list.
 - **Real-time collaboration** — multiple people edit the same list simultaneously with live sync; edits are attributed to who made them.
 - **Offline-first** — optimistic edits apply instantly and queue locally, then reconcile automatically on reconnect, so the app stays usable on a spotty phone connection.
 - **Share with permissions** — invite a collaborator by link with view-only or edit access.
-- **Reminders, recurrence, and daily digests** — set per-item reminders, mark items as recurring, and receive scheduled reminder/digest messages in Telegram.
+- **Recurring grocery staples** — mark a grocery item as recurring and it returns to the list four hours after you check it off.
 - **Smart de-duplication** — completed items are recycled instead of duplicated; typos and near-matches are caught with fuzzy matching.
 - **Household hand-off signals** — "ready for you" and "remind to update" cues coordinate the two people around a shared list.
 - **Reorder by drag-and-drop**, list icons/colors, and item sections.
@@ -33,7 +33,7 @@ A real-time collaborative list app for two-person households, built to run both 
 
 ## 🏗️ How it works
 
-**Voice-to-list AI pipeline.** A Telegram voice note arrives as OGG audio on the bot webhook. Before doing anything expensive, the handler enforces a per-user rate limit (fail-closed, to protect the Gemini quota) and acquires a distributed Redis lock keyed on the audio's `file_unique_id`, so Telegram's webhook retries can't double-process the same message. The audio is sent inline to Gemini 3.8 Flash with a strict JSON response schema, returning a list of `{ text, action, targetList, remind_at, recurrence }` entries; each entry is validated before anything acts on it. The pipeline then resolves each entry to a concrete list the user owns or can edit (exact name match → substring fuzzy match → sole-list fallback), and applies it: adds run through server-side recycling, removes soft-delete the best active match, and any `remind_at` becomes a reminder row. The user gets a per-list receipt back in chat. The processor sits behind a `VoiceProcessor` interface so the model provider is swappable.
+**Voice-to-list AI pipeline.** A Telegram voice note arrives as OGG audio on the bot webhook. Before doing anything expensive, the handler enforces a per-user rate limit (fail-closed, to protect the Gemini quota) and acquires a distributed Redis lock keyed on the audio's `file_unique_id`, so Telegram's webhook retries can't double-process the same message. The audio is sent inline to Gemini 3.8 Flash with a strict JSON response schema, returning a list of `{ text, action, targetList }` entries; each entry is validated before anything acts on it. The pipeline then resolves each entry to a concrete list the user owns or can edit (exact name match → substring fuzzy match → sole-list fallback), and applies it: adds run through server-side recycling, removes soft-delete the best active match. The user gets a per-list receipt back in chat. The processor sits behind a `VoiceProcessor` interface so the model provider is swappable.
 
 **Server-side fuzzy matching to avoid duplicates.** New items aren't blindly inserted. A Postgres `pg_trgm` similarity search (via an RPC) finds recyclable completed items; a Dice-coefficient bigram check gates auto-recycling at a confidence threshold, and low-confidence matches fall through to creating a fresh item. Removals do exact-`ILIKE`-then-fuzzy matching and distinguish "already checked off" from "not found." All text is normalized to a canonical form before matching, and `ILIKE` wildcards are escaped to prevent injection.
 
@@ -41,7 +41,7 @@ A real-time collaborative list app for two-person households, built to run both 
 
 **Offline-first collaborative sync.** The client keeps a per-list mutation queue: edits apply optimistically, and if the request fails while offline they stay queued (with a 24-hour max age) rather than being lost. Idempotency keys make retried mutations safe against the server, and a reconnect orchestrator re-flushes the queue and resubscribes to Realtime when the connection returns — so two collaborators editing at once converge without stomping each other.
 
-**Scheduled work and a build-time migration runner.** Reminders and daily digests are driven by Supabase `pg_cron`, which uses `pg_net` to call authenticated API routes on a schedule, with the calling secret stored in Supabase Vault rather than in the schema. The database itself is 23 sequential SQL migrations applied by a small custom runner (`scripts/migrate.mjs`) that tracks applied files in a `_migrations` table and is wired into the `build` step so deploys stay in sync. The project is spec-driven: each feature has a design spec and implementation plan under `docs/`.
+**Scheduled cleanup and a build-time migration runner.** A daily Supabase `pg_cron` job purges soft-deleted items, lists and stale pending collaborator requests. The database schema is a series of numbered SQL migrations applied by a small custom runner (`scripts/migrate.mjs`) that tracks applied files in a `_migrations` table and is wired into the `build` step so deploys stay in sync. The project is spec-driven: each feature has a design spec and implementation plan under `docs/`.
 
 ## 🛠️ Tech stack
 
@@ -49,7 +49,7 @@ A real-time collaborative list app for two-person households, built to run both 
 - **Backend / API:** Next.js Route Handlers, `node-telegram-bot-api` (webhook), Telegram Mini App `initData` + Telegram OAuth 2.0 / OIDC with PKCE, `jose` (JWT), `zod` validation
 - **Data:** Supabase Postgres with Row-Level Security, Realtime, and `pg_trgm`; `postgres` (postgres-js); custom SQL migration runner
 - **AI:** Gemini 3.8 Flash (`@google/genai`) with a strict response schema for audio → structured actions
-- **Infra:** Vercel; Upstash Redis + Ratelimit (rate limiting and distributed voice-processing locks); Supabase `pg_cron` + `pg_net` + Vault for scheduled reminders/digests
+- **Infra:** Vercel; Upstash Redis + Ratelimit (rate limiting and distributed voice-processing locks); Supabase `pg_cron` for the daily soft-delete cleanup
 - **Testing:** Vitest, Testing Library
 
 ## 🚀 Getting started
@@ -83,7 +83,6 @@ Set these in `.env.local` for development (and in your host's environment for de
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (rate limits + locks) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 | `NEXT_PUBLIC_APP_URL` | Public base URL of the deployed app |
-| `CRON_SECRET` | Bearer secret authorizing scheduled cron calls (provided by the host in production) |
 
 ### Install & run
 
@@ -117,7 +116,7 @@ npm run test:run
 
 ## 📦 Deployment
 
-Deployed on Vercel. Database schema changes ship automatically via the migration runner in the build step, and scheduled reminders and daily digests run inside Supabase through `pg_cron` + `pg_net` calling the app's authenticated cron routes.
+Deployed on Vercel. Database schema changes ship automatically via the migration runner in the build step, and a daily Supabase `pg_cron` job purges soft-deleted rows.
 
 ## 📄 License
 
