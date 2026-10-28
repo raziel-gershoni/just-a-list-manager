@@ -161,7 +161,7 @@ describe("switching a list's type in settings", () => {
     expect(loadCategories).toHaveBeenCalledTimes(1);
   });
 
-  it("switching to another type loads no categories", async () => {
+  it("choosing a non-grocery type loads no categories", async () => {
     chooseType("regular");
     expect(setListType).toHaveBeenCalledWith("regular");
     patch.resolve({ ok: true, status: 200 });

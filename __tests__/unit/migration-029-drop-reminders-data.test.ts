@@ -74,13 +74,11 @@ function walk(dir: string, acc: string[] = []): string[] {
 describe("release 2 precondition", () => {
   it("no app code or script reads item_reminders or users.timezone", () => {
     const root = process.cwd();
-    const patterns = [
-      /\.from\(\s*["'`]item_reminders["'`]\s*\)/,
-      /\.select\(\s*["'`][^"'`]*\btimezone\b[^"'`]*["'`]/,
-      /\.timezone\b/,
-    ];
+    // Any mention counts: writes, embedded selects, destructuring and raw SQL all slip past a
+    // call-shape check. Case-sensitive, so timeZone and getTimezoneOffset are not flagged.
+    const patterns = [/\bitem_reminders\b/, /\btimezone\b/];
     const offenders: string[] = [];
-    for (const dir of ["app", "src", "components", "scripts"].map((d) => resolve(root, d))) {
+    for (const dir of ["app", "src", "components", "scripts", "lib"].map((d) => resolve(root, d))) {
       for (const file of walk(dir)) {
         const text = readFileSync(file, "utf8");
         if (patterns.some((p) => p.test(text))) offenders.push(file.replace(root + "/", ""));

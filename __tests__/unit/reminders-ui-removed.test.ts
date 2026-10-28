@@ -21,7 +21,7 @@ describe("reminder components are deleted", () => {
     expect(lock.packages["node_modules/@ncdai/react-wheel-picker"]).toBeUndefined();
   });
 
-  it("globals.css has no bell or wheel-picker rules, and its utilities layer still closes", () => {
+  it("globals.css has no bell or wheel-picker rules, and keeps the dropdown-pop keyframes", () => {
     const css = read("app/globals.css");
     expect(css).not.toMatch(/bell-pulse|bell-ring|time-picker|data-rwp/);
     expect(css).not.toMatch(/set reminder/);
