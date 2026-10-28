@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { LIST_ICON_NAMES, LIST_COLORS } from "@/src/lib/list-icons";
 
-export const listTypeEnum = z.enum(["regular", "reminders", "grocery"]);
+export const listTypeEnum = z.enum(["regular", "grocery"]);
 export const listIconEnum = z.enum(LIST_ICON_NAMES as [string, ...string[]]);
 export const listColorEnum = z.enum(LIST_COLORS as unknown as [string, ...string[]]);
 

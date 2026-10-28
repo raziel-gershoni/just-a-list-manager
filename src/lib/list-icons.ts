@@ -135,13 +135,13 @@ export const LIST_COLORS = [
 ] as const;
 export type ListColor = (typeof LIST_COLORS)[number];
 
-export type ListType = "regular" | "reminders" | "grocery";
+export type ListType = "regular" | "grocery";
 
 export const defaultIconFor = (t: ListType): ListIconName =>
-  t === "grocery" ? "ShoppingCart" : t === "reminders" ? "Bell" : "ListChecks";
+  t === "grocery" ? "ShoppingCart" : "ListChecks";
 
 export const defaultColorFor = (t: ListType): ListColor =>
-  t === "grocery" ? "emerald" : t === "reminders" ? "blue" : "slate";
+  t === "grocery" ? "emerald" : "slate";
 
 export const resolveIcon = (
   icon: ListIconName | string | null | undefined,

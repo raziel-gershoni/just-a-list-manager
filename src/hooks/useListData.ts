@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { ItemData, ListCategory } from "@/src/types";
-import type { ListColor, ListIconName } from "@/src/lib/list-icons";
+import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 import { shouldRespawn } from "@/src/utils/recurring-respawn";
 import { sortCategories } from "@/src/utils/category-state";
 
@@ -21,7 +21,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [isShared, setIsShared] = useState(false);
-  const [listType, setListType] = useState<"regular" | "reminders" | "grocery">("regular");
+  const [listType, setListType] = useState<ListType>("regular");
   const [listIcon, setListIcon] = useState<ListIconName | null>(null);
   const [listColor, setListColor] = useState<ListColor | null>(null);
   const [categories, setCategories] = useState<ListCategory[]>([]);
@@ -50,7 +50,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     try {
       setError(false);
       // Fetch list info
-      let currentListType: string = "regular";
+      let currentListType: ListType = "regular";
       type ListSummary = {
         id: string;
         name: string;
@@ -79,8 +79,10 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       if (currentList) {
         setListName(currentList.name);
         setIsShared(currentList.is_shared ?? false);
-        currentListType = currentList.type ?? "regular";
-        setListType(currentListType as "regular" | "reminders" | "grocery");
+        // A list an old app version created with the retired reminders type during the deploy window reads as a
+        // regular list until migration 029 retires the value.
+        currentListType = currentList.type === "grocery" ? "grocery" : "regular";
+        setListType(currentListType);
         setListIcon((currentList.icon ?? null) as ListIconName | null);
         setListColor((currentList.color ?? null) as ListColor | null);
       }

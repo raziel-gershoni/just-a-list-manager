@@ -76,6 +76,14 @@ describe("useListData categories", () => {
     expect(f.mock.calls.length).toBeGreaterThan(0);
   });
 
+  it("opens a list still stored with the retired reminders type as a regular list", async () => {
+    // An old app version can create one during the deploy window; migration 029 retires the value.
+    const f = stubFetch([], "reminders");
+    await render().fetchItems();
+    expect(render().listType).toBe("regular");
+    expect(f.mock.calls.map(([url]) => url)).not.toContain("/api/lists/L/categories");
+  });
+
   it("loads a grocery list's categories in walk order", async () => {
     stubFetch([
       { id: "dairy", list_id: "L", name_en: "Dairy", name_he: "", name_ru: "", position: 1, created_by: null },
