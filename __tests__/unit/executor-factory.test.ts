@@ -39,13 +39,12 @@ describe("createExecutorFactory", () => {
   });
 });
 
-// Regression: a "toggle" mutation queued while offline for a recurring Done tap
-// must replay through complete-recurring on reload, exactly like the inline
-// closure in useItemHandlers.ts does. If the rebuilt executor instead does a
-// plain PATCH, the item is marked done and no successor is ever created — the
-// series ends silently and the queue reports success. See FINDING 2 in
-// docs/superpowers/specs/2026-09-15-recurring-occurrence-integrity-design.md.
-describe("createExecutorFactory - toggle routing", () => {
+// Offline replay of a toggle is a plain PATCH to the items route. A toggle queued
+// by an older version of the app (the queue keeps mutations for up to 24 hours) can
+// still carry remindAt / recurrence / isShared in its stored payload. Those keys
+// must be ignored: the item is marked done and nothing is sent to the removed
+// complete-recurring route, which would 404 and make the queue drop the tap.
+describe("createExecutorFactory - toggle", () => {
   const factory = createExecutorFactory();
   const getJwt = () => "jwt";
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -62,7 +61,24 @@ describe("createExecutorFactory - toggle routing", () => {
     vi.unstubAllGlobals();
   });
 
-  it("routes a toggle payload carrying recurrence + remindAt to complete-recurring", async () => {
+  it("routes a plain toggle payload to the items PATCH", async () => {
+    const mutation: QueuedMutation = {
+      id: "m2",
+      type: "toggle",
+      payload: { listId: "l1", itemId: "i1", completed: true },
+      timestamp: 0,
+    };
+
+    const executor = factory(mutation, getJwt);
+    await executor!();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/lists/l1/items");
+    expect(init.method).toBe("PATCH");
+  });
+
+  it("replays a stale queued toggle that still carries remindAt/recurrence as a plain PATCH", async () => {
     const mutation: QueuedMutation = {
       id: "m1",
       type: "toggle",
@@ -82,30 +98,10 @@ describe("createExecutorFactory - toggle routing", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/lists/l1/items/i1/complete-recurring");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body)).toEqual({
-      remindAt: "2026-09-20T04:30:00.000Z",
-      recurrence: "weekly",
-      isShared: false,
-    });
-  });
-
-  it("routes a plain toggle payload (no recurrence context) to the items PATCH", async () => {
-    const mutation: QueuedMutation = {
-      id: "m2",
-      type: "toggle",
-      payload: { listId: "l1", itemId: "i1", completed: true },
-      timestamp: 0,
-    };
-
-    const executor = factory(mutation, getJwt);
-    await executor!();
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/lists/l1/items");
     expect(init.method).toBe("PATCH");
+    expect(init.headers.Authorization).toBe("Bearer jwt");
+    expect(JSON.parse(init.body)).toEqual({ itemId: "i1", completed: true });
   });
 });
 

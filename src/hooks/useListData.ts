@@ -6,33 +6,12 @@ import type { ListColor, ListIconName } from "@/src/lib/list-icons";
 import { shouldRespawn } from "@/src/utils/recurring-respawn";
 import { sortCategories } from "@/src/utils/category-state";
 
-type Reminder = {
-  id: string;
-  remind_at: string;
-  is_shared: boolean;
-  recurrence?: string;
-  sent_at?: string;
-};
-
-// Pick the reminder that should drive an item's display.
-// Sent (fired) wins over unsent; among sent keep latest; among unsent keep earliest.
-function pickPreferredReminder(existing: Reminder | undefined, candidate: Reminder): Reminder {
-  if (!existing) return candidate;
-  const eSent = !!existing.sent_at;
-  const cSent = !!candidate.sent_at;
-  if (!eSent && cSent) return candidate;
-  if (eSent && !cSent) return existing;
-  if (eSent && cSent) return candidate.remind_at > existing.remind_at ? candidate : existing;
-  return candidate.remind_at < existing.remind_at ? candidate : existing;
-}
-
 // The list cap is 500 non-deleted items (insert_item_if_under_limit uses the same
 // predicate as GET /items), so limit=500 covers every normal case. It is a cap, not a
-// guarantee: the voice insert (src/services/voice-handler.ts), the recurring successor
-// insert (src/services/recurring.ts) and the PATCH undo-restore
-// (app/api/lists/[id]/items/route.ts) bypass the cap RPC, so a list can exceed 500 and
-// GET then drops the lowest positions. The route defaults to 200 and we ignore
-// nextCursor, which would silently truncate.
+// guarantee: the voice insert (src/services/voice-handler.ts) and the PATCH
+// undo-restore (app/api/lists/[id]/items/route.ts) bypass the cap RPC, so a list can
+// exceed 500 and GET then drops the lowest positions. The route defaults to 200 and we
+// ignore nextCursor, which would silently truncate.
 const ITEMS_FETCH_LIMIT = 500;
 const ITEMS_URL_SUFFIX = `?limit=${ITEMS_FETCH_LIMIT}`;
 
@@ -114,24 +93,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         const { items: fetchedItems } = await res.json();
         const FOUR_HOURS = 4 * 60 * 60 * 1000;
         const now = Date.now();
-        // Fetch reminders for all items in this list
-        // For reminders-type lists, include sent reminders so fired items keep their time
-        const remindersUrl = currentListType === "reminders"
-          ? `/api/lists/${listId}/reminders?include_sent=1`
-          : `/api/lists/${listId}/reminders`;
-        const remindersRes = await fetch(remindersUrl, {
-          headers: { Authorization: `Bearer ${jwt}` },
-        });
-        const remindersByItem = new Map<string, Reminder>();
-        if (remindersRes.ok) {
-          const { reminders } = await remindersRes.json();
-          for (const r of reminders || []) {
-            remindersByItem.set(r.item_id, pickPreferredReminder(remindersByItem.get(r.item_id), r));
-          }
-        }
-
         const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string; skipped_at?: string | null; recurring?: boolean; completed?: boolean; completed_at?: string | null; deleted_at?: string | null }) => {
-          const reminder = remindersByItem.get(item.id as string);
           const base = {
             ...item,
             creator_name: item.users?.name ?? null,
@@ -139,10 +101,6 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
             _pending: false,
             users: undefined,
             editor: undefined,
-            my_remind_at: reminder?.remind_at ?? null,
-            my_reminder_id: reminder?.id ?? null,
-            my_reminder_shared: reminder?.is_shared ?? false,
-            my_reminder_recurrence: reminder?.recurrence ?? null,
           };
           // Auto-unskip items older than 4 hours
           if (base.skipped_at && now - new Date(base.skipped_at).getTime() > FOUR_HOURS) {
@@ -197,23 +155,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       if (!res.ok) return;
       const { items: fetchedItems } = await res.json();
 
-      // Re-fetch reminders so items keep their reminder data after reconnect
-      const remindersUrl = listType === "reminders"
-        ? `/api/lists/${listId}/reminders?include_sent=1`
-        : `/api/lists/${listId}/reminders`;
-      const remindersRes = await fetch(remindersUrl, {
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
-      const remindersByItem = new Map<string, Reminder>();
-      if (remindersRes.ok) {
-        const { reminders } = await remindersRes.json();
-        for (const r of reminders || []) {
-          remindersByItem.set(r.item_id, pickPreferredReminder(remindersByItem.get(r.item_id), r));
-        }
-      }
-
       const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string }) => {
-        const reminder = remindersByItem.get(item.id);
         return {
           ...item,
           creator_name: item.users?.name ?? null,
@@ -221,10 +163,6 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           _pending: false,
           users: undefined,
           editor: undefined,
-          my_remind_at: reminder?.remind_at ?? null,
-          my_reminder_id: reminder?.id ?? null,
-          my_reminder_shared: reminder?.is_shared ?? false,
-          my_reminder_recurrence: reminder?.recurrence ?? null,
         };
       });
       setItems((prev) => {

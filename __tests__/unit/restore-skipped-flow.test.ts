@@ -141,7 +141,7 @@ function world(opts: { extraItems?: ItemData[] } = {}) {
       listId: "L", jwtRef, userId: "u", items, setItems,
       addMutation: q.addMutation, setUndoAction,
       setDuplicateWarning: noop, setReminderToast: noop, setErrorToast: noop,
-      listType: "grocery", t,
+      t,
     } as unknown as Parameters<typeof useItemHandlers>[0]);
     return { q, h };
   };

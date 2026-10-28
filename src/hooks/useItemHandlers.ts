@@ -24,7 +24,6 @@ interface UseItemHandlersParams {
   setDuplicateWarning: React.Dispatch<React.SetStateAction<string | null>>;
   setReminderToast: React.Dispatch<React.SetStateAction<string | null>>;
   setErrorToast: React.Dispatch<React.SetStateAction<string | null>>;
-  listType?: "regular" | "reminders" | "grocery";
   t: (key: string, values?: Record<string, unknown>) => string;
 }
 
@@ -39,7 +38,6 @@ export function useItemHandlers({
   setDuplicateWarning,
   setReminderToast,
   setErrorToast,
-  listType,
   t,
 }: UseItemHandlersParams) {
   const addSingleItem = useCallback(
@@ -110,18 +108,16 @@ export function useItemHandlers({
       // No JWT guard here — items are added optimistically and queued.
       // The executor reads jwtRef.current at execution time (after reconnect).
 
-      // Check for duplicate (skip in reminders lists — duplicates are expected)
-      if (listType !== "reminders") {
-        const normalized = normalizeForCompare(text);
-        const existing = items.find(
-          (i) => !i.completed && !i.deleted_at && !i.skipped_at && normalizeForCompare(i.text) === normalized
-        );
-        if (existing) {
-          const tg = getTelegramWebApp();
-          tg?.HapticFeedback?.notificationOccurred("warning");
-          setDuplicateWarning(t("items.duplicateWarning"));
-          setTimeout(() => setDuplicateWarning(null), 2500);
-        }
+      // Check for duplicate
+      const normalized = normalizeForCompare(text);
+      const existing = items.find(
+        (i) => !i.completed && !i.deleted_at && !i.skipped_at && normalizeForCompare(i.text) === normalized
+      );
+      if (existing) {
+        const tg = getTelegramWebApp();
+        tg?.HapticFeedback?.notificationOccurred("warning");
+        setDuplicateWarning(t("items.duplicateWarning"));
+        setTimeout(() => setDuplicateWarning(null), 2500);
       }
 
       if (recycleId) {
@@ -170,8 +166,6 @@ export function useItemHandlers({
 
   const handleToggle = useCallback(
     async (itemId: string, completed: boolean) => {
-      const item = items.find((i) => i.id === itemId);
-
       // Animate out then update
       if (completed) {
         setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, _exiting: true } : i));
@@ -192,96 +186,27 @@ export function useItemHandlers({
         )
       );
 
-      // Computed once and shared by the payload (below) and the execute closure:
-      // the payload carries the recurring context into localStorage so that an
-      // offline replay (which rebuilds its executor from the payload via
-      // executor-factory.ts, not this closure) still routes through
-      // complete-recurring instead of a plain PATCH — see FINDING 2 in
-      // docs/superpowers/specs/2026-09-15-recurring-occurrence-integrity-design.md.
-      const isRecurringDone = completed && listType === "reminders" && item?.my_reminder_recurrence && item?.my_remind_at;
-
       const mutId = genMutId();
       addMutation({
         id: mutId,
         type: "toggle",
-        payload: {
-          listId,
-          itemId,
-          completed,
-          ...(isRecurringDone
-            ? {
-                remindAt: item.my_remind_at,
-                recurrence: item.my_reminder_recurrence,
-                isShared: item.my_reminder_shared ?? false,
-              }
-            : {}),
-        },
+        payload: { listId, itemId, completed },
         execute: async () => {
           const jwt = jwtRef.current;
-
-          if (isRecurringDone) {
-            // Recurring completion: complete-recurring endpoint owns the full transition
-            // (marks item completed + creates next occurrence). No separate PATCH.
-            const recurRes = await fetch(`/api/lists/${listId}/items/${itemId}/complete-recurring`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${jwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                remindAt: item.my_remind_at,
-                recurrence: item.my_reminder_recurrence,
-                isShared: item.my_reminder_shared ?? false,
-              }),
-              keepalive: true,
-            });
-            if (!recurRes.ok) throw new Error(`Recurring complete failed: ${recurRes.status}`);
-            const recurBody = await recurRes.json();
-            // Another caller already created this occurrence — its row arrives via
-            // Realtime. Inserting here would put a second copy in local state.
-            if (recurBody.alreadyCompleted || !recurBody.newItemId) return;
-            const { newItemId, nextRemindAt } = recurBody;
-            // Add new occurrence to state immediately so Realtime INSERT skips it (ID match)
-            setItems((prev) => [
-              {
-                id: newItemId,
-                text: item.text,
-                completed: false,
-                completed_at: null,
-                deleted_at: null,
-                skipped_at: null,
-                ordered_at: null,
-                recurring: false,
-                position: Date.now(),
-                created_by: null,
-                creator_name: null,
-                edited_by: null,
-                editor_name: null,
-                _pending: false,
-                my_remind_at: nextRemindAt,
-                my_reminder_id: null,
-                my_reminder_shared: item.my_reminder_shared ?? false,
-                my_reminder_recurrence: item.my_reminder_recurrence,
-              },
-              ...prev,
-            ]);
-          } else {
-            // Normal toggle (non-recurring complete, uncomplete, non-reminders list)
-            const res = await fetch(`/api/lists/${listId}/items`, {
-              method: "PATCH",
-              headers: {
-                Authorization: `Bearer ${jwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ itemId, completed }),
-              keepalive: true,
-            });
-            if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
-          }
+          const res = await fetch(`/api/lists/${listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId, completed }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
         },
       });
     },
-    [jwtRef, listId, listType, items, addMutation, setItems]
+    [jwtRef, listId, addMutation, setItems]
   );
 
   const handleDelete = useCallback(
@@ -764,99 +689,5 @@ export function useItemHandlers({
     [sendSignal]
   );
 
-  const handleSetReminder = useCallback(
-    async (itemId: string, remindAt: string, isSharedReminder: boolean, recurrence?: string) => {
-      const jwt = jwtRef.current;
-      if (!jwt) return;
-      try {
-        const res = await fetch(`/api/lists/${listId}/items/${itemId}/reminder`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${jwt}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ remind_at: remindAt, is_shared: isSharedReminder, recurrence }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => null);
-          setReminderToast(err?.error || "Failed to set reminder");
-          setTimeout(() => setReminderToast(null), 3000);
-          return;
-        }
-        const data = await res.json();
-        // Update local state with the reminder info
-        setItems((prev) =>
-          prev.map((i) =>
-            i.id === itemId
-              ? { ...i, my_remind_at: data.remind_at, my_reminder_id: data.id, my_reminder_shared: data.is_shared, my_reminder_recurrence: data.recurrence }
-              : i
-          )
-        );
-        setReminderToast(t("reminder.sent"));
-        setTimeout(() => setReminderToast(null), 2500);
-      } catch (e) {
-        console.error("[List] Set reminder error:", e);
-      }
-    },
-    [jwtRef, listId, t, setItems, setReminderToast]
-  );
-
-  const handleCancelReminder = useCallback(
-    async (itemId: string, reminderId: string) => {
-      const jwt = jwtRef.current;
-      if (!jwt) return;
-      try {
-        const res = await fetch(`/api/lists/${listId}/items/${itemId}/reminder/${reminderId}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${jwt}` },
-        });
-        if (!res.ok) throw new Error(`Cancel reminder failed: ${res.status}`);
-        setItems((prev) =>
-          prev.map((i) =>
-            i.id === itemId
-              ? { ...i, my_remind_at: null, my_reminder_id: null, my_reminder_shared: false, my_reminder_recurrence: null }
-              : i
-          )
-        );
-        setReminderToast(t("reminder.cancelled"));
-        setTimeout(() => setReminderToast(null), 2500);
-      } catch (e) {
-        console.error("[List] Cancel reminder error:", e);
-      }
-    },
-    [jwtRef, listId, t, setItems, setReminderToast]
-  );
-
-  const handleUpdateReminder = useCallback(
-    async (itemId: string, reminderId: string, updates: { recurrence?: string; is_shared?: boolean }) => {
-      const jwt = jwtRef.current;
-      if (!jwt) return;
-      try {
-        const res = await fetch(`/api/lists/${listId}/items/${itemId}/reminder/${reminderId}`, {
-          method: "PATCH",
-          headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
-          body: JSON.stringify(updates),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => null);
-          setReminderToast(err?.error || "Failed to update reminder");
-          setTimeout(() => setReminderToast(null), 3000);
-          return;
-        }
-        const data = await res.json();
-        setItems((prev) =>
-          prev.map((i) =>
-            i.id === itemId
-              ? { ...i, my_reminder_recurrence: data.recurrence, my_reminder_shared: data.is_shared }
-              : i
-          )
-        );
-      } catch (e) {
-        console.error("[List] Update reminder error:", e);
-      }
-    },
-    [jwtRef, listId, setItems, setReminderToast]
-  );
-
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady, handleSetReminder, handleUpdateReminder, handleCancelReminder };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady };
 }

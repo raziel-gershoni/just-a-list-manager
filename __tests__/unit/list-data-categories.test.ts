@@ -38,7 +38,6 @@ function stubFetch(categories: "fail" | 500 | unknown[], type = "grocery") {
     if (url.startsWith("/api/lists/L/items")) {
       return json({ items: [{ id: "a", text: "milk", completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, recurring: false, position: 1, category_id: null }] });
     }
-    if (url.startsWith("/api/lists/L/reminders")) return json({ reminders: [] });
     if (url === "/api/lists/L/categories") {
       if (categories === "fail") throw new TypeError("Failed to fetch");
       if (categories === 500) return { ok: false, status: 500, json: async () => ({ error: "Failed to load categories" }) };
@@ -160,7 +159,6 @@ describe("useListData loadCategories", () => {
         const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
         if (url === "/api/lists") return json([{ id: "L", name: "Groceries", type: "grocery" }]);
         if (url.startsWith("/api/lists/L/items")) return json({ items: state.items });
-        if (url.startsWith("/api/lists/L/reminders")) return json({ reminders: [] });
         if (url === "/api/lists/L/categories") return json({ categories: state.categories });
         throw new Error(`unexpected ${url}`);
       });
@@ -197,5 +195,36 @@ describe("useListData loadCategories", () => {
       }
       expect(f).not.toHaveBeenCalled();
     });
+  });
+});
+
+// Reminders were removed: opening or refreshing a list asks only for the list, its
+// items and (on a grocery list) its categories, and no item carries reminder fields.
+describe("useListData item loading", () => {
+  it("never asks for reminders when a list opens or refreshes", async () => {
+    for (const type of ["regular", "grocery"]) {
+      R.slots = [];
+      const f = stubFetch([], type);
+      await render().fetchItems();
+      await render().refreshItems();
+
+      const urls = f.mock.calls.map(([url]) => url);
+      expect(urls.filter((u) => u.includes("/reminders"))).toEqual([]);
+      expect(render().error).toBe(false);
+      expect(render().items.map((i) => i.id)).toEqual(["a"]);
+    }
+  });
+
+  it("maps fetched and refreshed items without any reminder fields", async () => {
+    stubFetch([], "regular");
+    await render().fetchItems();
+    const fetched = render().items[0] as unknown as Record<string, unknown>;
+    await render().refreshItems();
+    const refreshed = render().items[0] as unknown as Record<string, unknown>;
+
+    for (const item of [fetched, refreshed]) {
+      expect(item.id).toBe("a");
+      expect(Object.keys(item).filter((k) => k.startsWith("my_remind"))).toEqual([]);
+    }
   });
 });

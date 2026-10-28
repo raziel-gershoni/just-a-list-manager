@@ -10,11 +10,10 @@ import { resolve } from "path";
 // disagree about the request to send, the app behaves differently online vs.
 // after a reload -- silently.
 //
-// This already happened in production: the "toggle" case POSTed to
-// /complete-recurring when online but did a plain PATCH /items on replay.
-// Tapping Done on a recurring reminder while offline, then reopening the app,
-// marked the item complete and never created the next occurrence -- silently
-// ending the user's recurring series. Fixed in 5f3dd51.
+// This already happened in production (fixed in 5f3dd51): one mutation type
+// sent one request online and a different one on replay, so a tap made offline
+// did something else once the app was reopened, and the queue still reported
+// success. The feature involved is gone; the class of bug is not.
 //
 // __tests__/unit/executor-factory.test.ts already asserts every mutation type
 // HAS a factory case -- it catches a missing case, not a divergent one, which
@@ -28,7 +27,7 @@ import { resolve } from "path";
 // the factory structurally can't reproduce) -- unifying them was considered
 // and rejected. Only the request shape needs to agree, so this is a
 // source-inspection test (pattern: recycle-scoping.test.ts,
-// no-deleted-item-leak.test.ts, reminder-callback-auth.test.ts) rather than a
+// no-deleted-item-leak.test.ts, restore-skipped-wiring.test.ts) rather than a
 // behavioral one: vitest runs in node here, with no jsdom, so the inline
 // closures (which live inside React hooks) cannot actually be invoked.
 
@@ -230,7 +229,7 @@ describe("mutation request parity: online (inline) vs. replay (factory)", () => 
       expect(
         inlineSet,
         `mutation type "${type}" diverges between online and replay -- this is the exact class of ` +
-          `bug fixed in 5f3dd51 (recurring "toggle" silently ending the series on replay).\n` +
+          `bug fixed in 5f3dd51 (a mutation sending one request online and another on replay).\n` +
           `  inline (online, useItemHandlers.ts / useListDragDrop.ts): ${pairSetToString(inlinePairs)}\n` +
           `  factory (replay, executor-factory.ts):                    ${pairSetToString(factoryPairs)}`
       ).toEqual(factorySet);
