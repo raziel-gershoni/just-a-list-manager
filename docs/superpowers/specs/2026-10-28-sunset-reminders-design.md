@@ -1,7 +1,7 @@
 # Sunset reminders: design
 
 **Date:** 2026-10-28
-**Status:** approved by the owner (2026-10-28)
+**Status:** shipped 2026-10-28 (release 1 `a48c90f`, release 2 `b6cdf95`)
 **Background:** the spike in `docs/superpowers/notes/2026-10-15-reminders-deprecation.md`. Its
 inventory was re-checked against HEAD `685eb83` on 2026-10-28.
 
