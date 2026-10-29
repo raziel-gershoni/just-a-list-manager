@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { NextRequest, NextResponse, after } from "next/server";
 import { verifyUserAuth } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
@@ -298,6 +299,13 @@ export async function DELETE(request: NextRequest) {
       { error: "Missing list ID" },
       { status: 400 }
     );
+  }
+
+  // The id comes from the query string. A non-uuid would reach Postgres as a 22P02 and read as a
+  // server failure (a logged 500); it can never succeed, so answer a 4xx the offline queue drops.
+  if (!z.string().uuid().safeParse(id).success) {
+    console.warn("[lists/DELETE] Rejected a non-uuid list id");
+    return NextResponse.json({ error: "Invalid list ID" }, { status: 400 });
   }
 
   const supabase = createServerClient();

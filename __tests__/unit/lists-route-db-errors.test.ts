@@ -177,3 +177,13 @@ describe("owner checks on undo-delete, edit and delete", () => {
     expect(console.error).toHaveBeenCalledWith(line, { listId: LIST }, boom);
   });
 });
+
+describe("DELETE with a malformed list id", () => {
+  it("answers 400 without touching the database or logging an error", async () => {
+    fakeDb(() => ({ data: { owner_id: "u1" }, error: null }));
+    const res = await DELETE(new NextRequest("https://app.test/api/lists?id=not-a-uuid", { method: "DELETE" }));
+    expect(res.status).toBe(400);
+    expect(h.fake.calls).toEqual([]);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+});
