@@ -4,6 +4,7 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { unskipAllSchema } from "@/src/schemas/items";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { dbError } from "@/src/lib/api-errors";
 
 export async function POST(
   request: NextRequest,
@@ -39,12 +40,7 @@ export async function POST(
     .not("skipped_at", "is", null)
     .select("id");
 
-  if (error) {
-    return NextResponse.json(
-      { error: "Failed to restore items" },
-      { status: 500 }
-    );
-  }
+  if (error) return dbError("items/unskip-all/POST", "Unskip", error, { listId });
 
   return NextResponse.json({
     restored: (restored || []).length,

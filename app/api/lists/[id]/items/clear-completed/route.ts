@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
+import { dbError } from "@/src/lib/api-errors";
 
 export async function POST(
   request: NextRequest,
@@ -36,12 +37,7 @@ export async function POST(
     .is("deleted_at", null)
     .select("id");
 
-  if (error) {
-    return NextResponse.json(
-      { error: "Failed to clear items" },
-      { status: 500 }
-    );
-  }
+  if (error) return dbError("items/clear-completed/POST", "Clear completed", error, { listId });
 
   return NextResponse.json({
     cleared: (cleared || []).length,

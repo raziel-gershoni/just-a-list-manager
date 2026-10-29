@@ -3,6 +3,7 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { dbError } from "@/src/lib/api-errors";
 import { categoryNameSchema } from "@/src/schemas/categories";
 import { MAX_CATEGORIES_PER_LIST } from "@/src/services/categorizer";
 import { categorizeList } from "@/src/services/categorize-list";
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     .select(COLUMNS)
     .eq("list_id", listId)
     .order("position", { ascending: true });
-  if (error) return NextResponse.json({ error: "Failed to load categories" }, { status: 500 });
+  if (error) return dbError("categories/GET", "Categories read", error, { listId });
   return NextResponse.json({ categories: data ?? [] });
 }
 
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .select("id")
     .eq("list_id", listId)
     .limit(MAX_CATEGORIES_PER_LIST);
-  if (readError) return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
+  if (readError) return dbError("categories/POST", "Category count read", readError, { listId });
   if ((existing ?? []).length >= MAX_CATEGORIES_PER_LIST) {
     return NextResponse.json({ error: "A list can have at most 20 categories" }, { status: 400 });
   }
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     p_after_id: null,
     p_max: MAX_CATEGORIES_PER_LIST,
   });
-  if (error) return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
+  if (error) return dbError("categories/POST", "Category insert", error, { listId });
   const category = Array.isArray(rows) ? rows[0] : rows;
   if (!category) {
     return NextResponse.json({ error: "A list can have at most 20 categories" }, { status: 400 });

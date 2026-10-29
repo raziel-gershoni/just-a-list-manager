@@ -5,6 +5,7 @@ import { createServerClient } from "@/src/lib/supabase";
 import { findRecyclableItems, recycleItem, type RecyclableItem } from "@/src/services/item-recycler";
 import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { dbError } from "@/src/lib/api-errors";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { pickRecyclable } from "@/src/utils/pick-recyclable";
 import { categorizeList } from "@/src/services/categorize-list";
@@ -54,14 +55,14 @@ export async function GET(
   }
 
   // The list's type and owed re-scan decide the sweep below; read alongside the items.
-  const [{ data: items, error }, { data: list }] = await Promise.all([
+  const [{ data: items, error }, { data: list, error: listError }] = await Promise.all([
     query,
     supabase.from("lists").select("type, categories_rescan_at").eq("id", listId).maybeSingle(),
   ]);
 
-  if (error) {
-    return NextResponse.json({ error: "Failed to fetch items" }, { status: 500 });
-  }
+  if (error) return dbError("items/GET", "Items read", error, { listId });
+  // Only the sweep needs the list's type: without it, skip the sweep for this load.
+  if (listError) console.warn("[items/GET] List type read failed, skipping the category sweep:", { listId }, listError);
 
   const nextCursor =
     items && items.length === limit
@@ -119,13 +120,15 @@ export async function POST(
       );
     }
 
-    // Check for existing item with same idempotency key
-    const { data: existing } = await supabase
+    // Check for existing item with same idempotency key. maybeSingle: no row is the normal
+    // answer, so `error` is a real failure (500, the queue retries).
+    const { data: existing, error: lookupError } = await supabase
       .from("items")
       .select()
       .eq("list_id", listId)
       .eq("idempotency_key", parsed.data.idempotencyKey)
-      .single();
+      .maybeSingle();
+    if (lookupError) return dbError("items/POST", "Idempotency lookup", lookupError, { listId });
 
     if (existing) {
       // Duplicate — return existing item without creating a new one
@@ -141,12 +144,14 @@ export async function POST(
       ? parsed.data.position
       : null;
     if (position === null) {
-      const { data: maxPosResult } = await supabase
+      const { data: maxPosResult, error: maxPosError } = await supabase
         .from("items")
         .select("position")
         .eq("list_id", listId)
         .order("position", { ascending: false })
         .limit(1);
+      // Falling back to 1 would bury the new item at the bottom of the list.
+      if (maxPosError) return dbError("items/POST", "Max position read", maxPosError, { listId });
       position = (maxPosResult?.[0]?.position || 0) + 1;
     }
 
@@ -231,13 +236,15 @@ export async function POST(
     );
   }
 
-  // Get current max position
-  const { data: maxPosResult } = await supabase
+  // Get current max position. Checked before the loop, so nothing is inserted or recycled
+  // at a wrong position.
+  const { data: maxPosResult, error: maxPosError } = await supabase
     .from("items")
     .select("position")
     .eq("list_id", listId)
     .order("position", { ascending: false })
     .limit(1);
+  if (maxPosError) return dbError("items/POST", "Max position read", maxPosError, { listId });
 
   let nextPosition = (maxPosResult?.[0]?.position || 0) + 1;
 
@@ -343,7 +350,7 @@ export async function PATCH(
       .maybeSingle();
     if (categoryError) {
       // 500, not 400: the mutation queue drops 4xx, and this move should be retried.
-      return NextResponse.json({ error: "Failed to check category" }, { status: 500 });
+      return dbError("items/PATCH", "Category check", categoryError, { listId, categoryId: updates.categoryId });
     }
     if (!category) {
       return NextResponse.json({ error: "Unknown category" }, { status: 400 });
@@ -485,9 +492,7 @@ export async function DELETE(
     .eq("id", itemId)
     .eq("list_id", listId);
 
-  if (error) {
-    return NextResponse.json({ error: "Delete failed" }, { status: 500 });
-  }
+  if (error) return dbError("items/DELETE", "Delete", error, { listId, itemId });
 
   return NextResponse.json({ success: true });
 }

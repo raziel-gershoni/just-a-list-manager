@@ -3,6 +3,7 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { dbError } from "@/src/lib/api-errors";
 import { categoryOrderSchema } from "@/src/schemas/categories";
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -25,7 +26,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     p_list_id: listId,
     p_ordered_ids: orderedIds,
   });
-  if (error) return NextResponse.json({ error: "Failed to reorder" }, { status: 500 });
+  if (error) return dbError("categories/order/PUT", "Category reorder", error, { listId });
   if (!applied) {
     return NextResponse.json({ error: "Order must list every category of this list once" }, { status: 400 });
   }

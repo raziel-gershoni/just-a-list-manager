@@ -4,6 +4,7 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { sendListReady } from "@/src/services/bot";
 import { resolveListRecipients } from "@/src/lib/list-notify";
+import { dbError } from "@/src/lib/api-errors";
 
 export async function POST(
   request: NextRequest,
@@ -23,21 +24,25 @@ export async function POST(
 
   const supabase = createServerClient();
 
-  const { data: list } = await supabase
+  const { data: list, error: listError } = await supabase
     .from("lists")
     .select("name")
     .eq("id", listId)
-    .single();
+    .maybeSingle();
+  if (listError) return dbError("Ready", "List read", listError, { listId });
 
   if (!list) {
     return NextResponse.json({ error: "List not found" }, { status: 404 });
   }
 
-  const { data: sender } = await supabase
+  const { data: sender, error: senderError } = await supabase
     .from("users")
     .select("name")
     .eq("id", auth.userId)
-    .single();
+    .maybeSingle();
+  // A message signed by the wrong person can't be taken back: send nothing if the name
+  // can't be read. "Someone" is only for a sender with no row.
+  if (senderError) return dbError("Ready", "Sender read", senderError, { listId, userId: auth.userId });
 
   const senderName = sender?.name || "Someone";
 

@@ -3,6 +3,7 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { dbError } from "@/src/lib/api-errors";
 import { categoryNameSchema } from "@/src/schemas/categories";
 import { categorizeList } from "@/src/services/categorize-list";
 import { categoryNames } from "@/src/services/category-names";
@@ -43,7 +44,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     .eq("id", categoryId)
     .eq("list_id", listId)
     .maybeSingle();
-  if (readError) return NextResponse.json({ error: "Failed to rename category" }, { status: 500 });
+  if (readError) return dbError("categories/PATCH", "Category read", readError, { listId, categoryId });
   if (!current) return NextResponse.json({ error: "Category not found" }, { status: 404 });
   if ((current as Record<string, unknown>)[`name_${locale}`] === name) {
     return NextResponse.json({ category: current });
@@ -57,7 +58,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     .eq("list_id", listId)
     .select(COLUMNS)
     .maybeSingle();
-  if (error) return NextResponse.json({ error: "Failed to rename category" }, { status: 500 });
+  if (error) return dbError("categories/PATCH", "Category rename", error, { listId, categoryId });
   if (!category) return NextResponse.json({ error: "Category not found" }, { status: 404 });
   return NextResponse.json({ category });
 }
@@ -74,14 +75,14 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     .update({ category_id: null, category_locked: false })
     .eq("category_id", categoryId)
     .eq("list_id", listId);
-  if (releaseError) return NextResponse.json({ error: "Failed to delete category" }, { status: 500 });
+  if (releaseError) return dbError("categories/DELETE", "Item release", releaseError, { listId, categoryId });
 
   const { error } = await supabase
     .from("list_categories")
     .delete()
     .eq("id", categoryId)
     .eq("list_id", listId);
-  if (error) return NextResponse.json({ error: "Failed to delete category" }, { status: 500 });
+  if (error) return dbError("categories/DELETE", "Category delete", error, { listId, categoryId });
 
   after(() => categorizeList({ supabase }, listId, "pending"));
   return NextResponse.json({ success: true });

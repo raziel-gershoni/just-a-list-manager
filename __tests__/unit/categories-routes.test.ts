@@ -324,3 +324,30 @@ describe("writes need edit permission", () => {
     expect(h.after).toEqual([]);
   });
 });
+
+// Every failed database call answers 500 and leaves its cause, with the ids, in the logs.
+describe("failed database calls are logged", () => {
+  const boom = { code: "57014", message: "canceling statement due to statement timeout" };
+  const stored = { id: A, list_id: "L", name_en: "Pets", name_he: "חיות", name_ru: "Питомцы", position: 2, created_by: null };
+  const ids = { listId: "L", categoryId: A };
+  const cases: [string, (c: FakeCall) => boolean, () => Promise<Response>, string, Record<string, unknown>][] = [
+    ["GET's read", (c) => c.table === "list_categories", () => GET(req("GET"), listParams), "[categories/GET] Categories read failed:", { listId: "L" }],
+    ["POST's cap pre-check", (c) => c.table === "list_categories", () => POST(req("POST", { name: "Pets", locale: "en" }), listParams), "[categories/POST] Category count read failed:", { listId: "L" }],
+    ["POST's insert", (c) => c.table === "insert_list_category", () => POST(req("POST", { name: "Pets", locale: "en" }), listParams), "[categories/POST] Category insert failed:", { listId: "L" }],
+    ["PATCH's read", (c) => c.op === "select", () => PATCH(req("PATCH", { name: "Animals", locale: "en" }), catParams), "[categories/PATCH] Category read failed:", ids],
+    ["PATCH's rename", (c) => c.op === "update", () => PATCH(req("PATCH", { name: "Animals", locale: "en" }), catParams), "[categories/PATCH] Category rename failed:", ids],
+    ["DELETE's item release", (c) => c.table === "items", () => DELETE(req("DELETE"), catParams), "[categories/DELETE] Item release failed:", ids],
+    ["DELETE's delete", (c) => c.op === "delete", () => DELETE(req("DELETE"), catParams), "[categories/DELETE] Category delete failed:", ids],
+    ["PUT's reorder", (c) => c.op === "rpc", () => PUT(req("PUT", { orderedIds: [B, A] }), listParams), "[categories/order/PUT] Category reorder failed:", { listId: "L" }],
+  ];
+
+  it.each(cases)("%s answers 500 and logs the error", async (_label, failing, call, line, ctx) => {
+    vi.mocked(console.error).mockClear();
+    use((c) => failing(c) ? { data: null, error: boom }
+      : c.table === "list_categories" && c.op === "select" ? { data: c.filters.includes("maybeSingle") ? stored : [], error: null }
+      : { data: null, error: null });
+    const res = await call();
+    expect(res.status).toBe(500);
+    expect(console.error).toHaveBeenCalledWith(line, ctx, boom);
+  });
+});
