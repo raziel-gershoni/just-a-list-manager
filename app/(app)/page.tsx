@@ -119,7 +119,14 @@ export default function HomePage() {
   // toast.
   const fetchLists = useCallback(async ({ silent = false } = {}) => {
     const jwt = jwtRef.current;
-    if (!jwt) return;
+    if (!jwt) {
+      // The session gave up signing in: leave the placeholders for the error screen, where
+      // the connection banner says why. A later token reruns this (isReady below).
+      console.warn("[Home] Load lists skipped, no session:", { view, silent });
+      if (!silent) setError(true);
+      setLoading(false);
+      return;
+    }
     const gen = ++fetchGenRef.current;
     const requestedView = view;
     try {
@@ -166,6 +173,7 @@ export default function HomePage() {
     }
   }, [jwtRef, router, view]);
 
+  // isReady turns true once the session settled, with or without a JWT.
   useEffect(() => {
     if (isReady) fetchLists();
   }, [isReady, fetchLists]);
@@ -467,29 +475,35 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="px-5 pt-3 space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-[72px] bg-tg-secondary-bg rounded-2xl skeleton-shimmer"
-          />
-        ))}
-      </div>
+      <>
+        <OfflineIndicator />
+        <div className="px-5 pt-3 space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-[72px] bg-tg-secondary-bg rounded-2xl skeleton-shimmer"
+            />
+          ))}
+        </div>
+      </>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
-        <button
-          onClick={() => fetchLists()}
-          className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium active:scale-[0.98]"
-        >
-          <RefreshCw className="w-4 h-4" />
-          {t('common.retry')}
-        </button>
-      </div>
+      <>
+        <OfflineIndicator />
+        <div className="flex flex-col items-center justify-center min-h-screen p-4">
+          <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
+          <button
+            onClick={() => fetchLists()}
+            className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium active:scale-[0.98]"
+          >
+            <RefreshCw className="w-4 h-4" />
+            {t('common.retry')}
+          </button>
+        </div>
+      </>
     );
   }
 

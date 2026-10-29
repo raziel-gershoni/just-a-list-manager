@@ -163,36 +163,44 @@ export default function ListPage() {
     };
   }, [flushQueue, resubscribe, refreshItems, onFlushNeededRef, onResubscribeNeededRef, onRefreshNeededRef]);
 
+  // isReady turns true once the session settled: with a JWT the list loads; without one
+  // (the sign-in gave up) fetchItems shows the error screen, and a later token reloads it.
   useEffect(() => {
     if (isReady) fetchItems();
   }, [isReady, fetchItems]);
 
   if (loading) {
     return (
-      <div className="px-5 pt-3 space-y-3">
-        <div className="h-14 bg-tg-secondary-bg rounded-2xl skeleton-shimmer" />
-        {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            className="h-14 bg-tg-secondary-bg rounded-2xl skeleton-shimmer"
-          />
-        ))}
-      </div>
+      <>
+        <OfflineIndicator />
+        <div className="px-5 pt-3 space-y-3">
+          <div className="h-14 bg-tg-secondary-bg rounded-2xl skeleton-shimmer" />
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="h-14 bg-tg-secondary-bg rounded-2xl skeleton-shimmer"
+            />
+          ))}
+        </div>
+      </>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
-        <button
-          onClick={fetchItems}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
-        >
-          <RefreshCw className="w-4 h-4" />
-          {t('common.retry')}
-        </button>
-      </div>
+      <>
+        <OfflineIndicator />
+        <div className="flex flex-col items-center justify-center min-h-screen p-4">
+          <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
+          <button
+            onClick={fetchItems}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
+          >
+            <RefreshCw className="w-4 h-4" />
+            {t('common.retry')}
+          </button>
+        </div>
+      </>
     );
   }
 

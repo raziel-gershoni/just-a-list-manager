@@ -57,6 +57,7 @@ vi.mock("@/components/OfflineIndicator", () => ({ default: () => null }));
 vi.mock("@/components/IconColorPicker", () => ({ default: () => null }));
 
 import HomePage from "@/app/(app)/page";
+import OfflineIndicator from "@/components/OfflineIndicator";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 // The page component itself: the provider lives in app/(app)/layout.tsx.
@@ -79,6 +80,13 @@ const text = (node: unknown): string =>
     : node && typeof node === "object" && "props" in node
       ? text((node as El).props.children)
       : typeof node === "string" ? node : "";
+
+// Whether the tree renders an element of this component.
+const has = (node: unknown, type: unknown): boolean =>
+  Array.isArray(node)
+    ? node.some((n) => has(n, type))
+    : !!node && typeof node === "object" && "props" in node &&
+      ((node as El).type === type || has((node as El).props.children, type));
 
 const reply = (status: number, body: unknown = { error: "Server error" }) => ({ ok: status < 400, status, json: async () => body });
 
@@ -124,5 +132,27 @@ describe("home fetchLists logs a refused load", () => {
     await second;
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith("[Home] Load lists failed:", { view: "active", silent: true, status: 502 });
+  });
+});
+
+describe("home without a session (H10)", () => {
+  afterEach(() => {
+    T.jwtRef.current = "jwt";
+  });
+
+  it("the placeholders show the connection banner", () => {
+    expect(has(render(), OfflineIndicator)).toBe(true);
+  });
+
+  it("without a JWT, leaves the placeholders for the error screen and its banner", async () => {
+    T.jwtRef.current = null;
+    const f = vi.fn();
+    vi.stubGlobal("fetch", f);
+    await fetchLists()();
+    const tree = render();
+    expect(f).not.toHaveBeenCalled();
+    expect(text(tree)).toContain("lists.loadError");
+    expect(has(tree, OfflineIndicator)).toBe(true);
+    expect(console.warn).toHaveBeenCalledWith("[Home] Load lists skipped, no session:", { view: "active", silent: false });
   });
 });

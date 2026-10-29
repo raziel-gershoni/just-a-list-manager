@@ -50,7 +50,14 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
 
   const fetchItems = useCallback(async () => {
     const jwt = jwtRef.current;
-    if (!jwt) return;
+    if (!jwt) {
+      // The session gave up signing in: leave the placeholders for the error screen, where
+      // the connection banner says why. A later token loads the list (the page reruns this).
+      console.warn("[List] Load skipped, no session:", { listId });
+      setError(true);
+      setLoading(false);
+      return;
+    }
     try {
       setError(false);
       // Fetch list info
