@@ -4,7 +4,7 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { findRecyclableItems, recycleItem } from "@/src/services/item-recycler";
 import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
-import { parseBody } from "@/src/lib/api-validation";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { pickRecyclable } from "@/src/utils/pick-recyclable";
 import { categorizeList } from "@/src/services/categorize-list";
@@ -95,11 +95,19 @@ export async function POST(
     );
   }
 
-  const body = await request.json();
+  const body = await readJsonBody(request, "items/POST");
+  // Both create paths read fields off the body before validating it, so anything that is not
+  // a JSON object (unparseable, a literal null, a number) is refused here instead of throwing
+  // a TypeError that the route would answer with an untagged 500.
+  if (typeof body !== "object" || body === null) {
+    console.warn("[items/POST] Request body is not a JSON object:", body === null ? "null" : typeof body);
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const fields = body as Record<string, unknown>;
   const supabase = createServerClient();
 
   // Idempotent single-item create (from mutation queue replay)
-  if (body.idempotencyKey && typeof body.text === "string") {
+  if (fields.idempotencyKey && typeof fields.text === "string") {
     const parsed = parseBody(createItemIdempotentSchema, body);
     if (!parsed.success) return parsed.response;
 
@@ -313,7 +321,7 @@ export async function PATCH(
     );
   }
 
-  const body = await request.json();
+  const body = await readJsonBody(request, "items/PATCH");
   const parsed = parseBody(updateItemSchema, body);
   if (!parsed.success) return parsed.response;
 

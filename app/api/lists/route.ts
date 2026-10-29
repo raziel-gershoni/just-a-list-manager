@@ -3,7 +3,7 @@ import { verifyUserAuth } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { createListSchema, updateListSchema } from "@/src/schemas/lists";
-import { parseBody } from "@/src/lib/api-validation";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { sortListsByUserOrder } from "@/src/utils/list-order";
 import { filterListsByView, type ListView } from "@/src/utils/list-archive";
 import { categorizeList } from "@/src/services/categorize-list";
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "lists-create");
   if (!auth.success) return auth.response;
 
-  const body = await request.json();
+  const body = await readJsonBody(request, "lists/POST");
   const parsed = parseBody(createListSchema, body);
   if (!parsed.success) return parsed.response;
 
@@ -188,7 +188,7 @@ export async function PATCH(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "lists-rename");
   if (!auth.success) return auth.response;
 
-  const body = await request.json();
+  const body = await readJsonBody(request, "lists/PATCH");
   const parsed = parseBody(updateListSchema, body);
   if (!parsed.success) return parsed.response;
 

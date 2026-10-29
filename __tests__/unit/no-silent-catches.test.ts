@@ -159,15 +159,19 @@ function findRawBodyParseLogs(file: string, src: string): { checked: string[]; r
           raw.push(at(node));
         }
       } else {
+        let guarded = false;
         for (let a: ts.Node = node; a.parent; a = a.parent) {
           if (ts.isFunctionLike(a)) break;
           if (ts.isTryStatement(a.parent) && a.parent.tryBlock === a && a.parent.catchClause) {
             const c = a.parent.catchClause;
             const decl = c.variableDeclaration;
             judge(node, c.block, decl && ts.isIdentifier(decl.name) ? decl.name.text : undefined);
+            guarded = true;
             break;
           }
         }
+        // An unguarded body parse throws on a bad body, which the route answers with an untagged 500.
+        if (!guarded) raw.push(at(node));
       }
     }
     ts.forEachChild(node, visit);
@@ -237,14 +241,14 @@ describe("the checker itself", () => {
   });
 });
 
-describe("a failed request.json() is logged without the body", () => {
+describe("every request.json() is guarded, and a failure is logged without the body", () => {
   it("every caught body-parse error logs describeBodyParseError(err), not the raw error", () => {
     const results = sourceFiles().map((f) => findRawBodyParseLogs(f, readFileSync(join(ROOT, f), "utf8")));
     expect(results.flatMap((r) => r.raw)).toEqual([]);
     const checked = results.flatMap((r) => r.checked).join("\n");
     expect(checked).toContain("app/api/auth/telegram-login/route.ts");
     expect(checked).toContain("app/api/webhook/route.ts");
-    expect(checked).toContain("app/api/lists/[id]/categories/route.ts");
+    expect(checked).toContain("src/lib/api-validation.ts");
   });
 
   it("the rule flags a raw error and accepts the wrapped one", () => {
@@ -252,6 +256,7 @@ describe("a failed request.json() is logged without the body", () => {
     expect(check('request.json().catch((err) => { console.warn("[X]", err); return null; })')).toHaveLength(1);
     expect(check('try { b = await request.json(); } catch (err) { console.warn("[X]", err); }')).toHaveLength(1);
     expect(check('request.json().catch(() => null)')).toHaveLength(1);
+    expect(check('const b = await request.json();')).toHaveLength(1);
     expect(check('req.json().catch((err) => { console.warn("[X]", err); return null; })')).toHaveLength(1);
     expect(check('request.json().catch((err) => { console.warn("[X]", describeBodyParseError(err)); return null; })')).toEqual([]);
     expect(check('try { b = await request.json(); } catch (err) { console.warn("[X]", describeBodyParseError(err)); }')).toEqual([]);

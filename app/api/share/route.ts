@@ -4,6 +4,8 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { serverEnv } from "@/src/lib/env";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { createInviteSchema } from "@/src/schemas/share";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "share-get");
@@ -57,12 +59,10 @@ export async function POST(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "share-create");
   if (!auth.success) return auth.response;
 
-  const body = await request.json();
-  const { listId, permission = "edit" } = body;
-
-  if (!listId) {
-    return NextResponse.json({ error: "Missing listId" }, { status: 400 });
-  }
+  const body = await readJsonBody(request, "share/POST");
+  const parsed = parseBody(createInviteSchema, body);
+  if (!parsed.success) return parsed.response;
+  const { listId, permission = "edit" } = parsed.data;
 
   // Only owner can generate invite links
   const perm = await verifyListPermission(auth.userId, listId, "edit");

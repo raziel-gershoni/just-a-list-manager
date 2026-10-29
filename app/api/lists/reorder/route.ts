@@ -3,14 +3,14 @@ import { verifyUserAuth } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { reorderListsSchema } from "@/src/schemas/lists";
-import { parseBody } from "@/src/lib/api-validation";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { buildListOrderRows } from "@/src/utils/list-order";
 
 export async function POST(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "lists-reorder");
   if (!auth.success) return auth.response;
 
-  const body = await request.json();
+  const body = await readJsonBody(request, "lists-reorder");
   const parsed = parseBody(reorderListsSchema, body);
   if (!parsed.success) return parsed.response;
 

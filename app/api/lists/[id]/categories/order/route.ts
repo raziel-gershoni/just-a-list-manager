@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
-import { describeBodyParseError, parseBody } from "@/src/lib/api-validation";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { categoryOrderSchema } from "@/src/schemas/categories";
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,10 +14,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "You don't have permission to edit this list" }, { status: 403 });
   }
 
-  const body = await request.json().catch((err) => {
-    console.warn("[categories/order/PUT] Could not parse request body:", describeBodyParseError(err));
-    return null;
-  });
+  const body = await readJsonBody(request, "categories/order/PUT");
   const parsed = parseBody(categoryOrderSchema, body);
   if (!parsed.success) return parsed.response;
   const { orderedIds } = parsed.data;

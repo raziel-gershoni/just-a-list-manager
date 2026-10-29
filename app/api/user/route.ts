@@ -5,7 +5,7 @@ import { createServerClient } from "@/src/lib/supabase";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { checkRateLimit, getRateLimitHeaders } from "@/src/lib/rate-limit";
 import { updateUserSchema } from "@/src/schemas/user";
-import { parseBody } from "@/src/lib/api-validation";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "user-get");
@@ -110,7 +110,7 @@ export async function PATCH(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "user-update");
   if (!auth.success) return auth.response;
 
-  const body = await request.json();
+  const body = await readJsonBody(request, "user/PATCH");
   const parsed = parseBody(updateUserSchema, body);
   if (!parsed.success) return parsed.response;
 

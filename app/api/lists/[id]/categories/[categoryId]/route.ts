@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
-import { describeBodyParseError, parseBody } from "@/src/lib/api-validation";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { categoryNameSchema } from "@/src/schemas/categories";
 import { categorizeList } from "@/src/services/categorize-list";
 import { categoryNames } from "@/src/services/category-names";
@@ -30,10 +30,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const authz = await authorize(request, listId, "categories-rename");
   if ("response" in authz) return authz.response;
 
-  const body = await request.json().catch((err) => {
-    console.warn("[categories/PATCH] Could not parse request body:", describeBodyParseError(err));
-    return null;
-  });
+  const body = await readJsonBody(request, "categories/PATCH");
   const parsed = parseBody(categoryNameSchema, body);
   if (!parsed.success) return parsed.response;
   const { name, locale } = parsed.data;

@@ -9,6 +9,14 @@ export function describeBodyParseError(err: unknown): string {
   return err instanceof Error ? err.name : typeof err;
 }
 
+/** Reads a JSON body. A body that is not JSON logs its error type (never the body) and returns null, which parseBody turns into a 400. */
+export async function readJsonBody(request: Request, tag: string): Promise<unknown> {
+  return request.json().catch((err) => {
+    console.warn(`[${tag}] Could not parse request body:`, describeBodyParseError(err));
+    return null;
+  });
+}
+
 export function parseBody<T>(schema: ZodSchema<T>, body: unknown):
   { success: true; data: T } | { success: false; response: NextResponse } {
   try {

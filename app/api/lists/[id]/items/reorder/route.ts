@@ -3,7 +3,7 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { reorderItemsSchema } from "@/src/schemas/items";
-import { parseBody } from "@/src/lib/api-validation";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 
 export async function POST(
   request: NextRequest,
@@ -21,7 +21,7 @@ export async function POST(
     );
   }
 
-  const body = await request.json();
+  const body = await readJsonBody(request, "items/reorder/POST");
   const parsed = parseBody(reorderItemsSchema, body);
   if (!parsed.success) return parsed.response;
 
