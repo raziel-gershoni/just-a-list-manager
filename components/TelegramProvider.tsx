@@ -18,10 +18,10 @@ import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
 import ruMessages from "@/messages/ru.json";
 
-import { useJWTRefresh } from "@/src/hooks/useJWTRefresh";
+import { useJWTRefresh, isInitDataFresh, readStoredToken, readTokenClaims } from "@/src/hooks/useJWTRefresh";
 import { useLocaleSync } from "@/src/hooks/useLocaleSync";
 import { useHomeScreen } from "@/src/hooks/useHomeScreen";
-import { useReconnectOrchestrator } from "@/src/hooks/useReconnectOrchestrator";
+import { useReconnectOrchestrator, MAX_RETRIES } from "@/src/hooks/useReconnectOrchestrator";
 
 // Re-export types for backward compatibility
 export type { ConnectionStatus } from "@/src/hooks/useReconnectOrchestrator";
@@ -58,9 +58,12 @@ interface TelegramContextType {
   setLanguage: (lang: SupportedLocale) => Promise<boolean>;
   supabaseClient: SupabaseClient | null;
   supabaseClientRef: React.RefObject<SupabaseClient | null>;
+  /** The session has settled: a JWT exists, or the sign-in gave up (refused, or out of retries). */
   isReady: boolean;
   connectionStatus: ConnectionStatus;
   reconnect: () => void;
+  /** An API call answered 401: reconnect with a token refresh, whatever the token's age. */
+  requestTokenRefresh: () => void;
   retryCount: number;
   homeScreenStatus: HomeScreenStatus;
   addToHomeScreen: () => void;
@@ -82,6 +85,7 @@ const TelegramContext = createContext<TelegramContextType>({
   isReady: false,
   connectionStatus: "connecting",
   reconnect: () => {},
+  requestTokenRefresh: () => {},
   retryCount: 0,
   homeScreenStatus: null,
   addToHomeScreen: () => {},
@@ -106,10 +110,16 @@ export default function TelegramProvider({
   const [initData, setInitData] = useState<string | null>(null);
   const [supabaseClient, setSupabaseClient] =
     useState<SupabaseClient | null>(null);
-  const [isReady, setIsReady] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
 
   const router = useRouter();
   const supabaseClientRef = useRef<SupabaseClient | null>(null);
+  // The token the realtime client was last given.
+  const realtimeTokenRef = useRef<string | null>(null);
+  // Set on unmount: an in-flight reconnect or a late heartbeat must not revive a client.
+  const unmountedRef = useRef(false);
+  // The user record is loaded once per session.
+  const userLoadedRef = useRef(false);
 
   // Callback refs for page registration
   const onFlushNeededRef = useRef<(() => Promise<void>) | null>(null);
@@ -120,7 +130,7 @@ export default function TelegramProvider({
   const isWebAppRef = useRef(false);
 
   // --- Extracted hooks ---
-  const { jwt, jwtRef, fetchToken, clearJwt } = useJWTRefresh();
+  const { jwt, jwtRef, fetchToken, setToken, clearJwt } = useJWTRefresh(isWebAppRef);
   const { locale, applyLocale, setLanguage } = useLocaleSync(jwtRef);
   const { homeScreenStatus, setHomeScreenStatus, addToHomeScreen } =
     useHomeScreen();
@@ -129,6 +139,7 @@ export default function TelegramProvider({
   const runReconnectRef_local = useRef<() => void>(() => {});
   const stableHeartbeatCallback = useCallback(
     (status: string) => {
+      if (unmountedRef.current) return;
       if (status === "timeout" || status === "disconnected") {
         runReconnectRef_local.current();
       }
@@ -136,14 +147,27 @@ export default function TelegramProvider({
     []
   );
 
-  const recreateSupabaseClient = useCallback(
+  // The realtime client follows the session: while its socket is up it is kept and given a
+  // new token; it is replaced only when the socket is down.
+  const syncRealtime = useCallback(
     (token: string) => {
-      const oldClient = supabaseClientRef.current;
-      if (oldClient) {
-        oldClient.realtime.disconnect();
-        removeAllChannelsLogged(oldClient);
+      if (unmountedRef.current) return;
+      const client = supabaseClientRef.current;
+      if (client?.realtime.isConnected()) {
+        if (realtimeTokenRef.current !== token) {
+          realtimeTokenRef.current = token;
+          client.realtime.setAuth(token).catch((err) => {
+            console.warn("[TelegramProvider] Realtime token update failed:", err);
+          });
+        }
+        return;
+      }
+      if (client) {
+        client.realtime.disconnect();
+        removeAllChannelsLogged(client);
       }
       const newClient = createBrowserClient(token, stableHeartbeatCallback);
+      realtimeTokenRef.current = token;
       supabaseClientRef.current = newClient;
       setSupabaseClient(newClient);
     },
@@ -155,12 +179,13 @@ export default function TelegramProvider({
     retryCount,
     reconnect,
     runReconnectRef,
-    setOrchestratorState,
+    startSession,
+    requestTokenRefresh,
   } = useReconnectOrchestrator({
     fetchToken,
     clearJwt,
     jwtRef,
-    recreateSupabaseClient,
+    syncRealtime,
     isWebAppRef,
     onFlushNeededRef,
     onResubscribeNeededRef,
@@ -191,68 +216,29 @@ export default function TelegramProvider({
         document.documentElement.classList.remove("dark");
       }
 
-      // Web app flow: check for stored JWT
-      const storedToken = localStorage.getItem("web_auth_token");
+      // Web app flow: the login stored a JWT
+      const storedToken = readStoredToken(true);
       if (!storedToken) {
         router.push("/login");
         return;
       }
 
-      // Try to refresh the stored JWT
-      jwtRef.current = storedToken;
+      setToken(storedToken);
+
+      // Apply locale from localStorage
+      try {
+        const cached = localStorage.getItem("app_locale");
+        if (cached && ["en", "he", "ru"].includes(cached)) {
+          applyLocale(cached as SupportedLocale);
+        }
+      } catch (err) {
+        console.warn("[TelegramProvider] Could not read cached locale from localStorage:", err);
+      }
+
+      // Checks the stored JWT with the server (only a refusal goes to /login)
       (async () => {
-        const token = await fetchToken(null); // Bearer refresh path
-        if (!token) {
-          // Stored token invalid/expired — redirect to login
-          localStorage.removeItem("web_auth_token");
-          jwtRef.current = null;
-          router.push("/login");
-          return;
-        }
-
-        // Persist refreshed token
-        localStorage.setItem("web_auth_token", token);
-        recreateSupabaseClient(token);
-
-        // Fetch user info via JWT (user was already upserted during login)
-        try {
-          const userRes = await fetch("/api/user", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (userRes.ok) {
-            const userData = await userRes.json();
-            if (userData?.id) setUserId(userData.id);
-            if (userData?.language) {
-              const serverLocale = resolveLocale(userData.language);
-              applyLocale(serverLocale);
-            }
-            if (userData?.first_name) {
-              setUser({
-                id: userData.telegram_id,
-                first_name: userData.first_name,
-                last_name: userData.last_name,
-                username: userData.username,
-              });
-            }
-          } else {
-            console.error("[TelegramProvider] Web user load failed:", { status: userRes.status });
-          }
-        } catch (e) {
-          console.error("[TelegramProvider] Web user registration error:", e);
-        }
-
-        // Apply locale from localStorage
-        try {
-          const cached = localStorage.getItem("app_locale");
-          if (cached && ["en", "he", "ru"].includes(cached)) {
-            applyLocale(cached as SupportedLocale);
-          }
-        } catch (err) {
-          console.warn("[TelegramProvider] Could not read cached locale from localStorage:", err);
-        }
-
-        setIsReady(true);
-        setOrchestratorState("idle");
+        await startSession();
+        setBootstrapped(true);
       })();
       return;
     }
@@ -310,38 +296,16 @@ export default function TelegramProvider({
       }
     }
 
-    // Fetch JWT and setup
-    (async () => {
-      const token = await fetchToken(rawInitData);
-      if (token) {
-        recreateSupabaseClient(token);
-      }
+    // A reload of this tab (Telegram "Reload page") finds its JWT in sessionStorage, if it
+    // belongs to the same Telegram user, and signs in with it instead of the launch initData.
+    const storedToken = readStoredToken(false);
+    if (storedToken && userData?.id && readTokenClaims(storedToken)?.telegram_user_id === userData.id) {
+      setToken(storedToken);
+    }
 
-      // Register user (uses initData for TelegramUser fields)
-      if (rawInitData) {
-        try {
-          const userRes = await fetch("/api/user", {
-            method: "POST",
-            headers: { "x-telegram-init-data": rawInitData },
-          });
-          if (userRes.ok) {
-            const userData2 = await userRes.json();
-            if (userData2?.id) setUserId(userData2.id);
-            // Server-stored language is authoritative
-            if (userData2?.language) {
-              const serverLocale = resolveLocale(userData2.language);
-              applyLocale(serverLocale);
-            }
-            // Language is user-controlled via the language sheet — never overwrite it from
-            // Telegram's language_code, since unsupported codes (e.g. "en-US") would be
-            // normalized to "en" by resolveLocale and clobber the user's explicit choice.
-          } else {
-            console.error("[TelegramProvider] User registration failed:", { status: userRes.status });
-          }
-        } catch (e) {
-          console.error("[TelegramProvider] User registration error:", e);
-        }
-      }
+    // Sign in, then setup
+    (async () => {
+      await startSession();
 
       // Handle deep link for invites
       const startParam = tg.initDataUnsafe?.start_param;
@@ -352,8 +316,7 @@ export default function TelegramProvider({
         }
       }
 
-      setIsReady(true);
-      setOrchestratorState("idle");
+      setBootstrapped(true);
 
       // Check home screen status (Telegram Bot API 8.0+)
       if (tg.checkHomeScreenStatus) {
@@ -378,6 +341,72 @@ export default function TelegramProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Settled once the bootstrap ran and a JWT exists or the sign-in gave up, so a screen
+  // waits through the retries and loads (or shows its error) when they end.
+  const isReady =
+    bootstrapped && (jwt !== null || connectionStatus === "auth_failed" || retryCount >= MAX_RETRIES);
+
+  // Who the user is, once per session and once a JWT exists. The Mini App registers with its
+  // initData while that is fresh (a new user gets their Telegram language); otherwise, and on
+  // the web, the JWT identifies the user.
+  const loadUser = useCallback(
+    async (token: string) => {
+      const register = !isWebAppRef.current && !!initData && isInitDataFresh(initData);
+      try {
+        const userRes = register
+          ? await fetch("/api/user", { method: "POST", headers: { "x-telegram-init-data": initData! } })
+          : await fetch("/api/user", { headers: { Authorization: `Bearer ${token}` } });
+        if (!userRes.ok) {
+          console.error(
+            register ? "[TelegramProvider] User registration failed:" : "[TelegramProvider] User load failed:",
+            { status: userRes.status }
+          );
+          return;
+        }
+        const userData = await userRes.json();
+        if (userData?.id) setUserId(userData.id);
+        // Server-stored language is authoritative. Language is user-controlled via the
+        // language sheet — never overwrite it from Telegram's language_code, since unsupported
+        // codes (e.g. "en-US") would be normalized to "en" by resolveLocale and clobber the
+        // user's explicit choice.
+        if (userData?.language) applyLocale(resolveLocale(userData.language));
+        // The Mini App has its user from initDataUnsafe; the web app only from this record.
+        if (isWebAppRef.current && userData?.first_name) {
+          setUser({
+            id: userData.telegram_id,
+            first_name: userData.first_name,
+            last_name: userData.last_name,
+            username: userData.username,
+          });
+        }
+      } catch (e) {
+        console.error("[TelegramProvider] User load error:", { register }, e);
+      }
+    },
+    [initData, applyLocale]
+  );
+
+  useEffect(() => {
+    if (!isReady || !jwt || userLoadedRef.current) return;
+    userLoadedRef.current = true;
+    void loadUser(jwt);
+  }, [isReady, jwt, loadUser]);
+
+  // Unmount (leaving the signed-in screens): close the socket, so its heartbeat can't
+  // reconnect a provider that is gone.
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      const client = supabaseClientRef.current;
+      supabaseClientRef.current = null;
+      if (client) {
+        client.realtime.disconnect();
+        removeAllChannelsLogged(client);
+      }
+    };
+  }, []);
+
   return (
     <TelegramContext.Provider
       value={{
@@ -393,6 +422,7 @@ export default function TelegramProvider({
         isReady,
         connectionStatus,
         reconnect,
+        requestTokenRefresh,
         retryCount,
         homeScreenStatus,
         addToHomeScreen,
