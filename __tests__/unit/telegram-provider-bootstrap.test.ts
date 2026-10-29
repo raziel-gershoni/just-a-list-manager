@@ -371,6 +371,50 @@ describe("a failed token refresh keeps the session (H1)", () => {
   });
 });
 
+describe("a reconnect asked for during a running one is not lost (R11)", () => {
+  // A list's channel the server closed asks for reconnect() while a reconnect is in its refresh
+  // step, past the rejoin: the channel it needs would never be started.
+  const startRefreshing = async () => {
+    miniApp();
+    tokenReplies = [200];
+    let ctx = await advance();
+    let finish!: () => void;
+    const refresh = vi.fn(() => new Promise<void>((r) => (finish = r)));
+    const resubscribe = vi.fn(async () => {});
+    ctx.onResubscribeNeededRef.current = resubscribe;
+    ctx.onRefreshNeededRef.current = refresh;
+    focus();
+    ctx = await advance();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    return { ctx, refresh, resubscribe, finish: () => finish() };
+  };
+
+  it("reconnect() while one is running runs exactly one more when it ends", async () => {
+    const { ctx, refresh, resubscribe, finish } = await startRefreshing();
+    ctx.reconnect();
+    ctx.reconnect();
+    await advance();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(logged()).toContain("Reconnect requested while one is running");
+
+    refresh.mockImplementation(async () => {});
+    finish();
+    await advance(6000);
+    expect(resubscribe).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("a focus during a running reconnect queues nothing", async () => {
+    const { refresh, finish } = await startRefreshing();
+    vi.setSystemTime(Date.now() + 6000);
+    focus();
+    refresh.mockImplementation(async () => {});
+    finish();
+    await advance(6000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("a reconnect does only what is needed (H1)", () => {
   it("a token younger than a day is not refreshed, and a live socket is kept", async () => {
     miniApp();

@@ -28,4 +28,12 @@ describe("category realtime wiring", () => {
     expect(at).toBeGreaterThan(-1);
     expect(page.slice(at, page.indexOf("})", at))).toContain("setCategories");
   });
+
+  // R11: without this, a channel the server closed is never replaced.
+  it("the page hands its reconnect to useListRealtime as onChannelClosed", () => {
+    const page = read("app/(app)/list/[id]/page.tsx");
+    const at = page.indexOf("useListRealtime({");
+    expect(at).toBeGreaterThan(-1);
+    expect(page.slice(at, page.indexOf("})", at))).toMatch(/onChannelClosed:\s*reconnect\b/);
+  });
 });

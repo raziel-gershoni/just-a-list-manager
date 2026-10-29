@@ -276,6 +276,17 @@ describe("useRealtimeList keeps one channel per list (H23)", () => {
     expect(requestReconnect).toHaveBeenCalledTimes(1);
   });
 
+  it("logs the server's close with the list id only", async () => {
+    vi.useFakeTimers();
+    const { channels, sb } = fakeClient(async () => "ok");
+    render(sb, vi.fn());
+    subscribeEffect().fn();
+    channels[0].cb!("SUBSCRIBED");
+    channels[0].cb!("CLOSED");
+    await settle();
+    expect(console.warn).toHaveBeenCalledWith("[RealtimeList] Channel closed by the server, reconnecting", "listId:", "L");
+  });
+
   it("closes in a burst ask for one reconnect", async () => {
     vi.useFakeTimers();
     const requestReconnect = vi.fn();

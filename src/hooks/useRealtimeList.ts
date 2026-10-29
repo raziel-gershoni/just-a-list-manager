@@ -152,6 +152,7 @@ export function useRealtimeList(
           // Not a close this hook asked for (those clear subRef first). Unless the provider
           // replaced the client, which closed its channels: then a rejoin is already coming.
           if (supabaseClientRef.current === client) {
+            console.warn("[RealtimeList] Channel closed by the server, reconnecting", "listId:", listId);
             removeChannelLogged(client, sub.channel, { listId, reason: "closed" });
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = setTimeout(() => {

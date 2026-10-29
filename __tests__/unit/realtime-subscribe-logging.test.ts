@@ -71,12 +71,22 @@ describe("realtime subscribe status callbacks log failures", () => {
     expect(console.warn).toHaveBeenCalledWith("[RealtimeList] Subscribe failed:", "CHANNEL_ERROR", "listId:", "L", err);
   });
 
-  it("a join and a normal close are not warned", () => {
+  it("a join and a close the hook asked for are not warned", () => {
+    const { callbacks, sb } = fakeClient();
+    render(sb);
+    const cleanup = runSubscribeEffect() as () => void;
+    callbacks[0]("SUBSCRIBED");
+    cleanup();
+    callbacks[0]("CLOSED");
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it("a close the server made is warned with the list id", () => {
     const { callbacks, sb } = fakeClient();
     render(sb);
     runSubscribeEffect();
     callbacks[0]("SUBSCRIBED");
     callbacks[0]("CLOSED");
-    expect(console.warn).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith("[RealtimeList] Channel closed by the server, reconnecting", "listId:", "L");
   });
 });

@@ -79,6 +79,9 @@ export function useReconnectOrchestrator(params: {
   // Set when an API call was refused while a reconnect or the launch sign-in was running: it
   // may have asked for its token before the refusal, so one more refresh runs when it ends.
   const pendingTokenRefreshRef = useRef(false);
+  // Set when reconnect() was asked for while a reconnect was running (a list channel the server
+  // closed, whose replacement must not be lost): one more reconnect runs when that one ends.
+  const pendingReconnectRef = useRef(false);
 
   const setOrchestratorState = useCallback(
     (state: OrchestratorState) => {
@@ -202,7 +205,15 @@ export function useReconnectOrchestrator(params: {
       scheduleRetry();
     } finally {
       reconnectLockRef.current = false;
+      const reconnectAgain = pendingReconnectRef.current;
+      pendingReconnectRef.current = false;
       runPendingTokenRefresh();
+      // A token refresh above may have started its own reconnect, which covers this request;
+      // a retry that is due, or an ended session, does too.
+      const state = orchestratorStateRef.current as OrchestratorState; // widened: the checks above narrow the ref to "idle"
+      if (reconnectAgain && !reconnectLockRef.current && state !== "needs_retry" && state !== "auth_failed") {
+        reconnectRef.current();
+      }
     }
   }, [ensureToken, endSession, syncRealtime, scheduleRetry, setOrchestratorState, runPendingTokenRefresh, onFlushNeededRef, onResubscribeNeededRef, onRefreshNeededRef]);
 
@@ -229,8 +240,13 @@ export function useReconnectOrchestrator(params: {
 
   // Manual reconnect (works even when retryCount >= MAX_RETRIES)
   const reconnect = useCallback(() => {
-    // If a reconnect is already in flight, don't interfere
-    if (reconnectLockRef.current) return;
+    // A reconnect is already in flight: it may have passed the step this request is about,
+    // so one more runs when it ends.
+    if (reconnectLockRef.current) {
+      pendingReconnectRef.current = true;
+      console.warn("[Orchestrator] Reconnect requested while one is running, it runs again when that one ends");
+      return;
+    }
     // The bootstrap is still signing in; it hands over to the retry itself.
     if (orchestratorStateRef.current === "initializing") return;
     // Clear any pending timers
@@ -259,6 +275,8 @@ export function useReconnectOrchestrator(params: {
     const now = Date.now();
     if (now - lastReconnectAttemptRef.current < RECONNECT_THROTTLE_MS) return;
     lastReconnectAttemptRef.current = now;
+    // Browser events don't queue a reconnect behind a running one; only reconnect() does.
+    if (reconnectLockRef.current) return;
     reconnectRef.current();
   }, []);
 
