@@ -4,6 +4,7 @@ import { verifyUserAuth } from "@/src/lib/api-auth";
 import { createServerClient } from "@/src/lib/supabase";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { checkRateLimit, getRateLimitHeaders } from "@/src/lib/rate-limit";
+import { dbError } from "@/src/lib/api-errors";
 
 export async function POST(
   request: NextRequest,
@@ -34,13 +35,14 @@ export async function POST(
 
   const supabase = createServerClient();
 
-  // Validate invite link
-  const { data: invite } = await supabase
+  // Validate invite link. The token is a credential: never put it in a log line.
+  const { data: invite, error: inviteError } = await supabase
     .from("invite_links")
     .select("id, list_id, permission, expires_at, revoked_at")
     .eq("token", token)
-    .single();
+    .maybeSingle();
 
+  if (inviteError) return dbError("Share", "Invite read", inviteError);
   if (!invite) {
     return NextResponse.json(
       { error: "Invite not found" },
@@ -56,13 +58,14 @@ export async function POST(
   }
 
   // Get the list
-  const { data: list } = await supabase
+  const { data: list, error: listError } = await supabase
     .from("lists")
     .select("id, name, owner_id")
     .eq("id", invite.list_id)
     .is("deleted_at", null)
-    .single();
+    .maybeSingle();
 
+  if (listError) return dbError("Share", "List read", listError, { listId: invite.list_id });
   if (!list) {
     return NextResponse.json(
       { error: "This list has been deleted." },
@@ -80,7 +83,7 @@ export async function POST(
     ? telegramUser.language_code
     : "en";
 
-  const { data: user } = await supabase
+  const { data: user, error: userError } = await supabase
     .from("users")
     .upsert(
       {
@@ -94,11 +97,8 @@ export async function POST(
     .select("id")
     .single();
 
-  if (!user) {
-    return NextResponse.json(
-      { error: "Failed to register user" },
-      { status: 500 }
-    );
+  if (userError || !user) {
+    return dbError("Share", "User upsert", userError, { telegramId: telegramUser.id });
   }
 
   // Check if user is the owner
@@ -110,13 +110,16 @@ export async function POST(
   }
 
   // Check existing collaborator status
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from("collaborators")
     .select("id, status")
     .eq("list_id", list.id)
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
+  if (existingError) {
+    return dbError("Share", "Collaborator read", existingError, { listId: list.id, userId: user.id });
+  }
   if (existing) {
     if (existing.status === "approved") {
       return NextResponse.json(
@@ -139,7 +142,7 @@ export async function POST(
       );
     }
     // Re-invite declined user
-    await supabase
+    const { error: reinviteError } = await supabase
       .from("collaborators")
       .update({
         status: "pending",
@@ -147,8 +150,13 @@ export async function POST(
       })
       .eq("id", existing.id);
 
-    // Send approval request to owner
-    await sendApprovalNotification(
+    if (reinviteError) {
+      return dbError("Share", "Re-invite update", reinviteError, { collaboratorId: existing.id });
+    }
+
+    // Send approval request to owner. The request is saved either way, so the
+    // invitee still sees "pending" and the owner finds it in the Share dialog.
+    const notified = await sendApprovalNotification(
       supabase,
       list.owner_id,
       user.id,
@@ -157,6 +165,9 @@ export async function POST(
       list.name,
       existing.id
     );
+    if (!notified) {
+      console.warn("[Share] Owner was not notified of the join request:", { listId: list.id, collaboratorId: existing.id });
+    }
 
     return NextResponse.json({
       listId: list.id,
@@ -167,11 +178,14 @@ export async function POST(
   }
 
   // Check max pending collaborators (10 per list)
-  const { count: pendingCount } = await supabase
+  const { count: pendingCount, error: countError } = await supabase
     .from("collaborators")
     .select("id", { count: "exact", head: true })
     .eq("list_id", list.id)
     .eq("status", "pending");
+
+  // Fail closed: the cap must not be bypassed because the count could not be read.
+  if (countError) return dbError("Share", "Pending count read", countError, { listId: list.id });
 
   if ((pendingCount || 0) >= 10) {
     return NextResponse.json(
@@ -192,29 +206,32 @@ export async function POST(
     .select("id")
     .single();
 
-  if (error) {
-    console.error("[Share] Accept invite error:", error);
+  if (error || !collab) {
+    console.error("[Share] Accept invite error:", { listId: list.id, userId: user.id }, error);
     return NextResponse.json(
       { error: "Failed to process invite" },
       { status: 500 }
     );
   }
 
-  // Send approval request to owner
-  await sendApprovalNotification(
+  // Send approval request to owner (see the re-invite branch above)
+  const notified = await sendApprovalNotification(
     supabase,
     list.owner_id,
     user.id,
     name,
     list.id,
     list.name,
-    collab!.id
+    collab.id
   );
+  if (!notified) {
+    console.warn("[Share] Owner was not notified of the join request:", { listId: list.id, collaboratorId: collab.id });
+  }
 
   return NextResponse.json({
     listId: list.id,
     listName: list.name,
-    collaboratorId: collab!.id,
+    collaboratorId: collab.id,
     status: "pending",
   });
 }
@@ -235,16 +252,22 @@ export async function DELETE(request: NextRequest) {
 
   const supabase = createServerClient();
 
-  await supabase
+  // Zero matched rows is still success: the request is already gone.
+  const { error } = await supabase
     .from("collaborators")
     .delete()
     .eq("id", collaboratorId)
     .eq("user_id", auth.userId)
     .eq("status", "pending");
 
+  if (error) {
+    return dbError("Share", "Join request cancel", error, { collaboratorId, userId: auth.userId });
+  }
+
   return NextResponse.json({ success: true });
 }
 
+/** Messages the list owner about a join request. True only when the owner was actually messaged. */
 async function sendApprovalNotification(
   supabase: ReturnType<typeof createServerClient>,
   ownerId: string,
@@ -253,28 +276,36 @@ async function sendApprovalNotification(
   listId: string,
   listName: string,
   collaboratorId: string
-) {
+): Promise<boolean> {
   try {
     // Get owner's telegram_id
-    const { data: owner } = await supabase
+    const { data: owner, error: ownerError } = await supabase
       .from("users")
       .select("telegram_id, language")
       .eq("id", ownerId)
-      .single();
+      .maybeSingle();
 
-    if (owner) {
-      const { sendApprovalRequest } = await import("@/src/services/bot");
-      await sendApprovalRequest(
-        owner.telegram_id,
-        requesterId,
-        requesterName,
-        listId,
-        listName,
-        collaboratorId,
-        owner.language
-      );
+    if (ownerError) {
+      console.error("[Share] Owner read failed:", { ownerId }, ownerError);
+      return false;
     }
+    if (!owner) {
+      console.warn("[Share] List owner row is missing:", { ownerId });
+      return false;
+    }
+
+    const { sendApprovalRequest } = await import("@/src/services/bot");
+    return await sendApprovalRequest(
+      owner.telegram_id,
+      requesterId,
+      requesterName,
+      listId,
+      listName,
+      collaboratorId,
+      owner.language
+    );
   } catch (e) {
     console.error("[Share] Failed to send approval notification:", e);
+    return false;
   }
 }

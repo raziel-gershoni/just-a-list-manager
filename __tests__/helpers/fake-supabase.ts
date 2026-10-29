@@ -2,12 +2,13 @@
 // recorded as one call; `resolve` decides what it returns when awaited.
 export type FakeCall = {
   table: string;
-  op: "select" | "insert" | "update" | "delete" | "rpc";
+  op: "select" | "insert" | "update" | "upsert" | "delete" | "rpc";
   values?: unknown;
   cols?: string;
   filters: string[];
 };
-export type FakeResult = { data: unknown; error: unknown };
+// `count` is what a `select(col, { count: "exact", head: true })` chain answers with.
+export type FakeResult = { data: unknown; error: unknown; count?: number | null };
 
 export function fakeSupabase(resolve: (call: FakeCall) => FakeResult) {
   const calls: FakeCall[] = [];
@@ -37,6 +38,7 @@ export function fakeSupabase(resolve: (call: FakeCall) => FakeResult) {
       select: (cols?: string) => chain({ table, op: "select", cols, filters: [] }),
       insert: (values: unknown) => chain({ table, op: "insert", values, filters: [] }),
       update: (values: unknown) => chain({ table, op: "update", values, filters: [] }),
+      upsert: (values: unknown) => chain({ table, op: "upsert", values, filters: [] }),
       delete: () => chain({ table, op: "delete", filters: [] }),
     }),
     rpc: (name: string, args: unknown) => chain({ table: name, op: "rpc", values: args, filters: [] }),

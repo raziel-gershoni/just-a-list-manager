@@ -98,7 +98,7 @@ function registerBotHandlers(botInstance: TelegramBot) {
       ? languageCode
       : "en";
 
-    await supabase.from("users").upsert(
+    const { error: upsertError } = await supabase.from("users").upsert(
       {
         telegram_id: telegramId,
         name,
@@ -107,6 +107,10 @@ function registerBotHandlers(botInstance: TelegramBot) {
       },
       { onConflict: "telegram_id" }
     );
+    // Still send the welcome: the Mini App creates the row on first open (POST /api/user).
+    if (upsertError) {
+      console.error("[Bot] /start user upsert failed, telegramId:", telegramId, upsertError);
+    }
 
     // Check for deep link start param (invite flow)
     const startParam = match?.[1]?.trim();
@@ -187,7 +191,7 @@ export async function sendApprovalRequest(
   listName: string,
   collaboratorId: string,
   ownerLanguage: string
-) {
+): Promise<boolean> {
   try {
     await bot.sendMessage(
       ownerTelegramId,
@@ -211,8 +215,10 @@ export async function sendApprovalRequest(
         },
       }
     );
+    return true;
   } catch (error) {
     console.error("[Bot] Failed to send approval request:", error);
+    return false;
   }
 }
 
@@ -292,12 +298,21 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
     const isApprove = action === "approve";
 
     // Get collaborator details with list owner info
-    const { data: collab } = await supabase
+    const { data: collab, error: readError } = await supabase
       .from("collaborators")
       .select("*, users!collaborators_user_id_fkey(telegram_id, name, language), lists!collaborators_list_id_fkey(name, owner_id, users!lists_owner_id_fkey(telegram_id, language))")
       .eq("id", collaboratorId)
-      .single();
+      .maybeSingle();
 
+    // The owner's row was not loaded, so answer in the tapper's Telegram language. The
+    // buttons stay on the message, so the owner can tap again.
+    if (readError) {
+      console.error("[Bot] Join request read failed, collaboratorId:", collaboratorId, readError);
+      await bot.answerCallbackQuery(query.id, {
+        text: getMsg(query.from.language_code, "errors.generic"),
+      });
+      return;
+    }
     if (!collab) {
       await bot.answerCallbackQuery(query.id, {
         text: "Request not found.",
@@ -320,18 +335,26 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
       return;
     }
 
-    // Update status
-    const newStatus = isApprove ? "approved" : "declined";
-    await supabase
-      .from("collaborators")
-      .update({ status: newStatus })
-      .eq("id", collaboratorId);
-
     const requesterTgId = collabData.users?.telegram_id;
     const requesterName = collabData.users?.name || "Someone";
     const listName = collabData.lists?.name || "a list";
     const requesterLang = collabData.users?.language || "en";
     const ownerLang = collabData.lists?.users?.language || "en";
+
+    // Update status
+    const newStatus = isApprove ? "approved" : "declined";
+    const { error: updateError } = await supabase
+      .from("collaborators")
+      .update({ status: newStatus })
+      .eq("id", collaboratorId);
+
+    // Stop before telling the requester anything or editing the owner's message,
+    // so the Approve / Decline buttons stay for another tap.
+    if (updateError) {
+      console.error("[Bot] Join request status update failed, collaboratorId:", collaboratorId, updateError);
+      await bot.answerCallbackQuery(query.id, { text: getMsg(ownerLang, "errors.generic") });
+      return;
+    }
 
     // Notify requester
     if (requesterTgId) {

@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   // While set, sendMessage waits for it: lets a test hold a handler mid-flight.
   sendGate: null as Promise<void> | null,
   sends: [] as { chatId: number; text: string }[],
+  upsertError: null as { message: string } | null,
 }));
 
 vi.mock("@/src/lib/env", () => ({
@@ -18,7 +19,7 @@ vi.mock("@/src/lib/env", () => ({
 
 vi.mock("@/src/lib/supabase", () => ({
   createServerClient: () => ({
-    from: () => ({ upsert: async () => ({ data: null, error: null }) }),
+    from: () => ({ upsert: async () => ({ data: null, error: h.upsertError }) }),
   }),
 }));
 
@@ -53,6 +54,7 @@ describe("bot command handlers log their own failures", () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     h.sendGate = null;
+    h.upsertError = null;
     h.sends = [];
     h.sendError = new Error("ETELEGRAM: 403 Forbidden: bot was blocked by the user");
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -78,11 +80,35 @@ describe("bot command handlers log their own failures", () => {
   });
 });
 
+describe("/start when the user row cannot be saved", () => {
+  beforeEach(() => {
+    h.sendGate = null;
+    h.sendError = null;
+    h.sends = [];
+    h.upsertError = { message: "connection terminated unexpectedly" };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("logs the failed upsert with the telegram id and still sends the welcome", async () => {
+    const handler = await commandHandler("/start");
+    const { waitForBotHandlers } = await import("@/src/services/bot");
+
+    handler(msg, ["/start", ""] as unknown as RegExpExecArray);
+    await waitForBotHandlers();
+
+    expect(console.error).toHaveBeenCalledWith("[Bot] /start user upsert failed, telegramId:", 7, h.upsertError);
+    expect(h.sends).toEqual([{ chatId: 42, text: en.bot.welcome }]);
+  });
+});
+
 // The webhook runs processUpdate inside after() and then awaits waitForBotHandlers(), so Vercel
 // keeps the function alive until /start and /help have finished their writes and sends.
 describe("waitForBotHandlers", () => {
   beforeEach(() => {
     h.sendGate = null;
+    h.upsertError = null;
     h.sendError = null;
     h.sends = [];
     vi.spyOn(console, "error").mockImplementation(() => {});
