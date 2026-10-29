@@ -542,6 +542,25 @@ describe("the provider cleans up its socket (H23)", () => {
     expect(tokenRequests).toHaveLength(1);
     expect(H.clients).toHaveLength(1);
   });
+
+  it("web: a token that arrives after logout unmounted the provider is not stored", async () => {
+    local.set("web_auth_token", jwtAt(LAUNCH - HOUR));
+    tokenReplies = ["hold"];
+    await advance();
+    expect(tokenRequests).toHaveLength(1);
+
+    // Logout removes the stored login, then /login unmounts the provider.
+    local.delete("web_auth_token");
+    unmount();
+    held!(200);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(issued).toHaveLength(1);
+    expect(local.has("web_auth_token")).toBe(false);
+    expect(logged()).toContain("Token arrived after sign-out, not stored");
+    expect(logged()).not.toContain(issued[0]);
+  });
 });
 
 describe("TelegramProvider logs a failed user load", () => {

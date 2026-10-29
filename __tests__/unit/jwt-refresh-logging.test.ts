@@ -16,6 +16,8 @@ vi.mock("react", () => ({
     return R.slots[i].value;
   },
   useCallback: (fn: unknown) => (R.i++, fn),
+  // Mount and unmount are not modelled here; telegram-provider-bootstrap.test.ts covers them.
+  useEffect: () => void R.i++,
 }));
 
 import { useJWTRefresh, isInitDataFresh, readStoredToken, tokenAgeMs } from "@/src/hooks/useJWTRefresh";

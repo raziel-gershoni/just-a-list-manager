@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 /** How a token request ended. Only "unauthorized" means the server refused the credential. */
 export type TokenResult = { kind: "ok"; token: string } | { kind: "unauthorized" } | { kind: "transient" };
@@ -53,6 +53,15 @@ export function readStoredToken(isWebApp: boolean): string | null {
 export function useJWTRefresh(isWebAppRef: React.RefObject<boolean>) {
   const [jwt, setJwt] = useState<string | null>(null);
   const jwtRef = useRef<string | null>(null);
+  // Set on unmount. A token request still in flight then (a reconnect, a pending refresh)
+  // must not write the token back: on the web, logout removes it and unmounts the provider.
+  const disposedRef = useRef(false);
+  useEffect(() => {
+    disposedRef.current = false; // a Strict Mode remount runs the cleanup first
+    return () => {
+      disposedRef.current = true;
+    };
+  }, []);
 
   // Adopts a token: in memory for requests, in state for screens that wait on it, and in
   // storage so the next load starts from it.
@@ -100,6 +109,10 @@ export function useJWTRefresh(isWebAppRef: React.RefObject<boolean>) {
       try {
         const { token } = await res.json();
         if (typeof token !== "string" || !token) throw new Error("No token in the answer");
+        if (disposedRef.current) {
+          console.warn("[TelegramProvider] Token arrived after sign-out, not stored:", { mode });
+          return { kind: "ok", token };
+        }
         setToken(token);
         return { kind: "ok", token };
       } catch (e) {
