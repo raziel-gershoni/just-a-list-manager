@@ -54,12 +54,18 @@ export function useJWTRefresh(isWebAppRef: React.RefObject<boolean>) {
   }, []);
 
   // Adopts a token: in memory for requests, in state for screens that wait on it, and in
-  // storage so the next load starts from it.
+  // storage so the next load starts from it. On the web a refresh (a token was already held)
+  // whose stored login is gone means another tab logged out: it must not be written back.
   const setToken = useCallback(
     (token: string) => {
+      const isRefresh = jwtRef.current !== null;
       jwtRef.current = token;
       setJwt(token);
       const isWebApp = isWebAppRef.current;
+      if (isWebApp && isRefresh && readStoredToken(true) === null) {
+        console.warn("[TelegramProvider] Login removed in another tab, token not stored:", { isWebApp });
+        return;
+      }
       try {
         tokenStorage(isWebApp).setItem(tokenKey(isWebApp), token);
       } catch (err) {

@@ -144,6 +144,28 @@ describe("useJWTRefresh stores the token where the next load finds it (H2)", () 
     expect(session.size).toBe(0);
   });
 
+  it("web: a refresh keeps the stored login up to date", async () => {
+    isWebAppRef.current = true;
+    stubToken({ ok: true, status: 200, token: "fresh.jwt" });
+    const hook = render();
+    hook.setToken(OLD_JWT);
+    await hook.fetchToken(null);
+    expect(local.get("web_auth_token")).toBe("fresh.jwt");
+  });
+
+  it("web: a refresh after another tab logged out does not store the token back", async () => {
+    isWebAppRef.current = true;
+    stubToken({ ok: true, status: 200, token: "fresh.jwt" });
+    const hook = render();
+    hook.setToken(OLD_JWT);
+    local.delete("web_auth_token"); // the logout in the other tab
+    await expect(hook.fetchToken(null)).resolves.toEqual({ kind: "ok", token: "fresh.jwt" });
+    expect(local.has("web_auth_token")).toBe(false);
+    expect(console.warn).toHaveBeenCalledWith("[TelegramProvider] Login removed in another tab, token not stored:", { isWebApp: true });
+    expect(logged()).not.toContain("fresh.jwt");
+    expect(logged()).not.toContain(OLD_JWT);
+  });
+
   it("clearJwt drops the refused token from memory and storage", () => {
     session.set("tg_auth_token", OLD_JWT);
     const hook = render();
