@@ -174,6 +174,28 @@ describe("Clear completed fails", () => {
     expect(w.errorToast()).toBe("items.syncError");
   });
 
+  it("an Undo tapped while the clear is in flight does not revert when the clear then fails and its restore fails too", async () => {
+    const w = world(listItems());
+    w.when("POST clear-completed", "hold");
+    w.when("PATCH b", "hold");
+    w.when("PATCH c", "hold");
+
+    const clearing = w.h().handleClearCompleted();
+    await settle();
+    w.undoAction()!.undo();
+    await settle();
+    w.release("POST clear-completed", 500);
+    await clearing;
+    w.release("PATCH b", 503);
+    w.release("PATCH c", 503);
+    await settle();
+
+    // The server never cleared anything, so the failed restores must not take the items off.
+    expect(w.ids()).toEqual(["a", "b", "c"]);
+    expect(w.item("b")).toMatchObject({ completed: true, completed_at: DONE_A, deleted_at: null });
+    expect(w.item("c")).toMatchObject({ completed: true, completed_at: DONE_B, deleted_at: null });
+  });
+
   it("a realtime INSERT for a cleared item that lands before the failure is merged back once", async () => {
     const w = world(listItems());
     w.when("POST clear-completed", "hold");
@@ -243,6 +265,28 @@ describe("Unmark all done fails", () => {
 
     expect(w.item("a")).toMatchObject({ completed: true, completed_at: DONE_A });
     expect(w.errorToast()).toBe("items.syncError");
+  });
+
+  it("an Undo tapped while the unmark is in flight does not revert when the unmark then fails and its restore fails too", async () => {
+    const w = world(listItems());
+    w.when("POST unmark-completed", "hold");
+    w.when("PATCH a", "hold");
+    w.when("PATCH b", "hold");
+
+    const unmarking = w.h().handleUnmarkAllDone();
+    await settle();
+    w.undoAction()!.undo();
+    await settle();
+    w.release("POST unmark-completed", 500);
+    await unmarking;
+    w.release("PATCH a", 503);
+    w.release("PATCH b", 503);
+    await settle();
+
+    // The server never unmarked anything, so the failed restores must not uncheck the items.
+    expect(w.item("a")).toMatchObject({ completed: true, completed_at: DONE_A });
+    expect(w.item("b")).toMatchObject({ completed: true, completed_at: DONE_B });
+    expect(w.item("c")).toMatchObject({ completed: false, completed_at: null });
   });
 
   it("an unmark the server accepted stays unmarked, with no error", async () => {
@@ -363,6 +407,20 @@ describe("the list page's error toast", () => {
 
     expect(toast).toBeDefined();
     expect(zOf(toast!.props.className)).toBeGreaterThan(50);
+  });
+
+  it("still shows while an Undo toast is showing, above it", () => {
+    const undoAction = { message: "items.clearedCount", undo: () => {}, timeout: 0 as unknown as NodeJS.Timeout };
+    const tree = ToastContainer({ reminderToast: null, duplicateWarning: null, errorToast: "errors.generic", undoAction });
+    const errorBox = find(tree, (el) => el.type === "div" && find(el.props.children, (c) => c.props.children === "errors.generic") !== undefined);
+    const undoBox = find(tree, (el) => el.type === "div" && find(el.props.children, (c) => c.props.children === "items.clearedCount") !== undefined);
+
+    expect(errorBox).toBeDefined();
+    expect(undoBox).toBeDefined();
+    expect(String(errorBox!.props.className)).toContain("bottom-24");
+    expect(String(undoBox!.props.className)).toContain("bottom-8");
+    expect(String(errorBox!.props.className)).toMatch(/\bpointer-events-none\b/);
+    expect(zOf(errorBox!.props.className)).toBeGreaterThan(50);
   });
 
   it("is message-only, so it never blocks the sheet buttons it draws over", () => {

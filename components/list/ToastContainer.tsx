@@ -26,9 +26,10 @@ export default function ToastContainer({
   return (
     <>
       {/* Error toast. Above the page's z-50 sheets (a failure can be raised from one), and
-          message-only, so it never blocks the sheet's buttons underneath. */}
-      {errorToast && !undoAction && (
-        <div className="pointer-events-none fixed bottom-8 start-5 end-5 bg-tg-destructive text-white rounded-2xl py-3.5 px-5 z-[60] shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          message-only, so it never blocks the sheet's buttons underneath. Shown even while an
+          Undo toast is up (a failed Undo restore), stacked above it. */}
+      {errorToast && (
+        <div className={`pointer-events-none fixed ${undoAction ? "bottom-24" : "bottom-8"} start-5 end-5 bg-tg-destructive text-white rounded-2xl py-3.5 px-5 z-[60] shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300`}>
           <span className="text-sm">{errorToast}</span>
         </div>
       )}

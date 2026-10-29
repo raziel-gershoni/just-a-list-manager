@@ -252,6 +252,9 @@ export async function POST(
   const results: Record<string, unknown>[] = [];
   let skipped = 0;
   let limitReached = false;
+  // Items that failed for a reason other than the item limit, and the last such error.
+  let failures = 0;
+  let lastError: unknown = null;
 
   for (const text of itemTexts) {
     if (limitReached) {
@@ -277,6 +280,8 @@ export async function POST(
       if (toRecycle) recycled = await recycleItem(toRecycle.id, auth.userId, listId);
     } catch (err) {
       console.error("[items/POST] Recycle check failed, skipping item (batch):", { listId }, err);
+      failures++;
+      lastError = err;
       continue;
     }
     if (recycled) {
@@ -300,6 +305,8 @@ export async function POST(
         continue;
       }
       // Other errors — skip this item but continue
+      failures++;
+      lastError = error;
       continue;
     }
 
@@ -307,6 +314,12 @@ export async function POST(
     if (item) {
       results.push({ ...item, recycled: false });
     }
+  }
+
+  // Nothing written and something failed (not just the item limit): a 500 the queue retries.
+  // Safe to retry, no item was created.
+  if (results.length === 0 && failures > 0) {
+    return dbError("items/POST", "Item create", lastError, { listId });
   }
 
   const response: { items: Record<string, unknown>[]; warning?: string } = { items: results };

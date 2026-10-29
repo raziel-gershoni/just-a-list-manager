@@ -404,6 +404,8 @@ describe("Home: error toasts never block the sheet buttons", () => {
     await boot();
     press(card("B"), "onDelete");
     expect(String(toastBox()!.props.className)).not.toContain("pointer-events-none");
+    // An Undo toast stays under the sheets (z-50), as before, so it never covers their buttons.
+    expect(zOf(toastBox()!.props.className)).toBe(30);
 
     replies.set("PATCH /api/lists", [500]);
     toast()!.undo!();
@@ -411,6 +413,8 @@ describe("Home: error toasts never block the sheet buttons", () => {
 
     expect(toast()?.undo).toBeUndefined();
     expect(String(toastBox()!.props.className)).toContain("pointer-events-none");
+    // A message-only toast draws above the sheets, since it ignores taps.
+    expect(zOf(toastBox()!.props.className)).toBe(60);
   });
 });
 

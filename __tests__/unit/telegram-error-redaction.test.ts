@@ -47,7 +47,8 @@ describe("Telegram API errors never print the bot token", () => {
   });
 
   it("covers the library's other error types too", async () => {
-    await import("@/src/services/bot");
+    const { default: bot } = await import("@/src/services/bot");
+    void bot.getMe; // reading any property creates the bot, which installs the redaction
     expect(format(new errors.ParseError("Error parsing response: <html>", response))).not.toContain("BOT_TOKEN_SECRET");
     expect(format(new errors.FatalError("Telegram Bot Token not provided!"))).toContain("EFATAL");
   });

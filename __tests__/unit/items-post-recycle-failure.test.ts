@@ -65,11 +65,47 @@ describe("POST items (batch): a failed recycle check skips the item and never in
     h.find.mockResolvedValue([completedMilk]);
     h.recycle.mockRejectedValue(boom);
     const res = await POST(req({ text: "milk", recycleId: OLD }), params);
-    expect(res.status).toBe(201);
+    // Nothing was written and the only item failed: a 500 the queue retries (safe, no duplicate).
+    expect(res.status).toBe(500);
     expect(h.recycle).toHaveBeenCalledWith(OLD, "u1", "L");
     expect(inserted()).toEqual([]);
-    expect((await res.json()).items).toEqual([]);
     expect(console.error).toHaveBeenCalledWith("[items/POST] Recycle check failed, skipping item (batch):", { listId: "L" }, boom);
+  });
+
+  it("answers 500 when the only item's insert fails with a non-limit error (nothing written, queue retries)", async () => {
+    h.fake = fakeSupabase((c: FakeCall): FakeResult => {
+      if (c.op === "rpc") return { data: null, error: { message: "connection reset" } };
+      return { data: [], error: null };
+    }) as typeof h.fake;
+    const res = await POST(req({ text: "milk" }), params);
+    expect(res.status).toBe(500);
+    expect(inserted()).toEqual(["milk"]);
+  });
+
+  it("answers 201 with the one item when a two-text batch has one failure and one success", async () => {
+    h.fake = fakeSupabase((c: FakeCall): FakeResult => {
+      if (c.op === "rpc") {
+        const v = c.values as { p_text: string; p_position: number };
+        if (v.p_text === "milk") return { data: null, error: { message: "connection reset" } };
+        return { data: [{ id: `new-${v.p_text}`, text: v.p_text, position: v.p_position }], error: null };
+      }
+      return { data: [], error: null };
+    }) as typeof h.fake;
+    const res = await POST(req({ text: "milk, eggs" }), params);
+    expect(res.status).toBe(201);
+    expect((await res.json()).items.map((i: { text: string }) => i.text)).toEqual(["eggs"]);
+  });
+
+  it("keeps 201 with the warning when every item was skipped only because of the item limit", async () => {
+    h.fake = fakeSupabase((c: FakeCall): FakeResult => {
+      if (c.op === "rpc") return { data: null, error: { message: "ITEM_LIMIT_REACHED" } };
+      return { data: [], error: null };
+    }) as typeof h.fake;
+    const res = await POST(req({ text: "milk, eggs" }), params);
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.items).toEqual([]);
+    expect(json.warning).toContain("500-item limit");
   });
 
   it("returns the recycled row when the recycle succeeds", async () => {

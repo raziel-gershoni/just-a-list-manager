@@ -581,6 +581,9 @@ export function useItemHandlers({
     // src/utils/clear-completed.ts)
     setItems((prev) => computeClearCompleted(prev).remaining);
 
+    // Set when the bulk POST itself failed: the server never cleared these items, so an
+    // Undo tapped while it was in flight must not take them off again if its restore fails.
+    let bulkFailed = false;
     const timeout = setTimeout(() => setUndoAction(null), 4000);
     setUndoAction({
       message: t('items.clearedCount', { count: completedItems.length }),
@@ -591,7 +594,10 @@ export function useItemHandlers({
         // Restore on server; items whose restore fails leave the screen again.
         restoreOrRevert(
           completedItems.map((item) => ({ itemId: item.id, deleted_at: null })),
-          removeAgain
+          (failed) => {
+            if (bulkFailed) return;
+            removeAgain(failed);
+          }
         );
       },
       timeout,
@@ -605,6 +611,7 @@ export function useItemHandlers({
       throwIfNotOk(res, "Clear completed");
     } catch (err) {
       // Not in the offline queue: put the items back so the screen matches the server.
+      bulkFailed = true;
       console.error("[List] Clear completed failed:", { listId }, err);
       clearTimeout(timeout);
       setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
@@ -635,6 +642,9 @@ export function useItemHandlers({
     setItems((prev) => computeUnmarkCompleted(prev).next);
 
     const idSet = new Set(affectedIds);
+    // Set when the bulk POST itself failed: the server never unmarked these items, so an
+    // Undo tapped while it was in flight must not uncheck them if its restore fails.
+    let bulkFailed = false;
     const timeout = setTimeout(() => setUndoAction(null), 4000);
     setUndoAction({
       message: t('items.unmarkedCount', { count: affectedIds.length }),
@@ -652,10 +662,12 @@ export function useItemHandlers({
         // Restore on server; items whose restore fails are unchecked again.
         restoreOrRevert(
           affectedIds.map((id) => ({ itemId: id, completed: true })),
-          (failed) =>
+          (failed) => {
+            if (bulkFailed) return;
             setItems((prev) =>
               prev.map((i) => (failed.has(i.id) ? { ...i, completed: false, completed_at: null } : i))
-            )
+            );
+          }
         );
       },
       timeout,
@@ -669,6 +681,7 @@ export function useItemHandlers({
       throwIfNotOk(res, "Unmark all");
     } catch (err) {
       // Not in the offline queue: re-check the items so the screen matches the server.
+      bulkFailed = true;
       console.error("[List] Unmark all failed:", { listId }, err);
       clearTimeout(timeout);
       setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));

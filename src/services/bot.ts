@@ -343,16 +343,25 @@ export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Pro
 
     // Update status
     const newStatus = isApprove ? "approved" : "declined";
-    const { error: updateError } = await supabase
+    const { data: updatedRow, error: updateError } = await supabase
       .from("collaborators")
       .update({ status: newStatus })
-      .eq("id", collaboratorId);
+      .eq("id", collaboratorId)
+      .select("id")
+      .maybeSingle();
 
     // Stop before telling the requester anything or editing the owner's message,
     // so the Approve / Decline buttons stay for another tap.
     if (updateError) {
       console.error("[Bot] Join request status update failed, collaboratorId:", collaboratorId, updateError);
       await bot.answerCallbackQuery(query.id, { text: getMsg(ownerLang, "errors.generic") });
+      return;
+    }
+    // The request was deleted after it was read (the requester left): nothing changed, so
+    // tell nobody and leave the owner's message alone.
+    if (!updatedRow) {
+      console.warn("[Bot] Join request was gone before the status update, collaboratorId:", collaboratorId);
+      await bot.answerCallbackQuery(query.id, { text: "Request not found." });
       return;
     }
 

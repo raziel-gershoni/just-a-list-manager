@@ -64,11 +64,11 @@ function row(c: FakeCall, data: unknown, error: unknown): FakeResult {
   return { data, error: null };
 }
 
-function use(opts: { collab?: unknown; readError?: unknown; updateError?: unknown } = {}) {
+function use(opts: { collab?: unknown; readError?: unknown; updateError?: unknown; updateRow?: unknown } = {}) {
   const collab = "collab" in opts ? opts.collab : COLLAB;
   h.fake = fakeSupabase((c) => {
     if (c.table === "collaborators" && c.op === "select") return row(c, collab, opts.readError ?? null);
-    if (c.table === "collaborators" && c.op === "update") return { data: null, error: opts.updateError ?? null };
+    if (c.table === "collaborators" && c.op === "update") return { data: "updateRow" in opts ? opts.updateRow : { id: "c1" }, error: opts.updateError ?? null };
     throw new Error(`unexpected ${c.op} on ${c.table}`);
   }) as typeof h.fake;
 }
@@ -120,6 +120,20 @@ describe("handleCallbackQuery: Approve / Decline a join request", () => {
     expect(console.error).not.toHaveBeenCalled();
     expect(updates()).toEqual([]);
   });
+
+  it.each(["approve", "decline"])(
+    "%s: a request deleted between the read and the status update tells nobody and edits nothing",
+    async (action) => {
+      use({ updateRow: null });
+
+      await handleCallbackQuery(tap(`${action}:c1`));
+
+      expect(console.warn).toHaveBeenCalledWith("[Bot] Join request was gone before the status update, collaboratorId:", "c1");
+      expect(h.answers).toEqual([{ id: "cb-1", options: { text: "Request not found." } }]);
+      expect(h.sends).toEqual([]);
+      expect(h.textEdits).toEqual([]);
+    }
+  );
 
   it.each(["approve", "decline"])(
     "%s: a failed read answers errors.generic in the tapper's Telegram language and changes nothing",

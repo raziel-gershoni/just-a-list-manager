@@ -697,7 +697,7 @@ function HomeContent() {
 
       {/* Bottom toast */}
       {toast && (
-        <div className={`fixed bottom-8 start-5 end-5 bg-foreground text-background rounded-2xl py-3.5 px-5 flex items-center justify-between z-[60] shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300${toast.undo ? "" : " pointer-events-none"}`}>
+        <div className={`fixed bottom-8 start-5 end-5 bg-foreground text-background rounded-2xl py-3.5 px-5 flex items-center justify-between ${toast.undo ? "z-30" : "z-[60] pointer-events-none"} shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300`}>
           <span className="text-sm">{toast.message}</span>
           {toast.undo && (
             <button
