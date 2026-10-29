@@ -100,7 +100,8 @@ vi.mock("@/components/list/ToastContainer", () => ({ default: () => null }));
 
 import ListPage from "@/app/(app)/list/[id]/page";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
-import { resetSyncEngines } from "@/src/sync/engine";
+import { flushAllQueues, resetSyncEngines } from "@/src/sync/engine";
+import { createExecutorFactory } from "@/src/utils/executor-factory";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 
@@ -130,7 +131,7 @@ function find(node: unknown, match: (el: El) => boolean): El | undefined {
 const ITEM = "00000000-0000-4000-8000-000000000001";
 const storage = new Map<string, string>();
 // The server's copy of the list's one item, and every request in the order it went out.
-let server: { completed: boolean };
+let server: { completed: boolean; text: string };
 let requests: string[];
 let releasePatch: (() => void) | null;
 
@@ -138,7 +139,7 @@ beforeEach(() => {
   resetSyncEngines();
   R.slots = [];
   storage.clear();
-  server = { completed: false };
+  server = { completed: false, text: "stamps" };
   requests = [];
   releasePatch = null;
   vi.stubGlobal("window", {});
@@ -147,6 +148,8 @@ beforeEach(() => {
     getItem: (k: string) => storage.get(k) ?? null,
     setItem: (k: string, v: string) => void storage.set(k, v),
     removeItem: (k: string) => void storage.delete(k),
+    key: (n: number) => [...storage.keys()][n] ?? null,
+    get length() { return storage.size; },
   });
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
     const method = init?.method ?? "GET";
@@ -155,14 +158,16 @@ beforeEach(() => {
     if (method === "PATCH" && url === "/api/lists/L/items") {
       // The replayed tick takes a while to land.
       await new Promise<void>((resolve) => (releasePatch = resolve));
-      server.completed = JSON.parse(init!.body!).completed;
+      const body = JSON.parse(init!.body!);
+      if ("completed" in body) server.completed = body.completed;
+      if ("text" in body) server.text = body.text;
       return json({});
     }
     if (url === "/api/lists") return json([{ id: "L", name: "Errands", type: "regular" }]);
     if (url.startsWith("/api/lists/L/items")) {
       return json({
         items: [{
-          id: ITEM, text: "stamps", completed: server.completed, completed_at: server.completed ? "2026-10-29T08:00:00.000Z" : null,
+          id: ITEM, text: server.text, completed: server.completed, completed_at: server.completed ? "2026-10-29T08:00:00.000Z" : null,
           deleted_at: null, skipped_at: null, ordered_at: null, recurring: false, position: 1,
         }],
       });
@@ -197,5 +202,37 @@ describe("reopening a list with a change saved from the last session (R3)", () =
     const completed = find(tree, (el) => el.type === CompletedItemsSection)?.props.completedItems as { id: string }[];
     expect(completed.map((i) => i.id)).toEqual([ITEM]);
     expect(storage.get("mutation_queue:L")).toBe("[]");
+  });
+
+  it("waits for a replay the provider started first, the change in flight and the one queued behind it", async () => {
+    storage.set(
+      "mutation_queue:L",
+      JSON.stringify([
+        { id: "m1", type: "toggle", payload: { listId: "L", itemId: ITEM, completed: true, at: "2026-10-29T08:00:00.000Z" }, timestamp: Date.now() },
+        { id: "m2", type: "edit", payload: { listId: "L", itemId: ITEM, text: "stamps x10" }, timestamp: Date.now() },
+      ])
+    );
+    // Web launch / Mini App reload: the stored token starts the provider's replay before the
+    // session is ready, so the tick is already in flight when the page's first load starts.
+    void flushAllQueues(() => "jwt", createExecutorFactory());
+    await flushPromises();
+    expect(requests).toEqual(["PATCH /api/lists/L/items"]);
+
+    render();
+    await flushPromises();
+    expect(requests).toEqual(["PATCH /api/lists/L/items"]);
+
+    releasePatch!();
+    await flushPromises();
+    // The edit went out behind the tick; the list is still not read.
+    expect(requests).toEqual(["PATCH /api/lists/L/items", "PATCH /api/lists/L/items"]);
+
+    releasePatch!();
+    await flushPromises();
+    const tree = render();
+
+    expect(requests.slice(2)).toEqual(["GET /api/lists", "GET /api/lists/L/items?limit=500"]);
+    const completed = find(tree, (el) => el.type === CompletedItemsSection)?.props.completedItems as { id: string; text: string }[];
+    expect(completed.map((i) => [i.id, i.text])).toEqual([[ITEM, "stamps x10"]]);
   });
 });

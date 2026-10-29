@@ -20,6 +20,9 @@
  * - flush() resolves once every change it could send when it started has settled once. A
  *   request already in flight then (perhaps hanging on a dead socket) doesn't hold it, nor
  *   do changes added while it runs, so a reconnect that awaits it always goes on.
+ *   flush({ includeInFlight: true }), for the list's first load only, also waits for the
+ *   changes already in flight and those queued behind them, until each has landed, been
+ *   dropped or been kept for a later flush.
  */
 import { MutationQueue, type QueuedMutation } from "@/src/utils/mutation-queue";
 
@@ -52,8 +55,13 @@ export interface SyncEngine {
   attach(handlers: EngineHandlers): () => void;
   /** Persists, then runs in its chain. */
   add(m: { id: string; type: string; payload: Record<string, unknown> }): void;
-  /** Runs every queued entry not in flight, in chain order; resolves once those have settled once. No-op while getJwt() is null. */
-  flush(): Promise<void>;
+  /**
+   * Runs every queued entry not in flight, in chain order; resolves once those have settled
+   * once. With includeInFlight it waits for every entry queued or in flight at its start,
+   * until each has landed, been dropped or can't run before the next flush (kept for a retry,
+   * held by a 401, or waiting behind one of those). No-op while getJwt() is null.
+   */
+  flush(opts?: { includeInFlight?: boolean }): Promise<void>;
   /** Fields touched by queued or in-flight entries for that item (after temp → real aliasing). */
   pendingFields(itemId: string): Set<string>;
   /** The real id for a resolved temp id, else the id itself. */
@@ -124,9 +132,9 @@ class ListSyncEngine implements SyncEngine {
   private authHold = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryAttempt = 0;
-  // Each running flush() and the entries queued and not in flight when it started; it
-  // resolves once none of them is in flight any more (sent and settled, or unable to run
-  // until the next flush).
+  // Each running flush() and the entries it waits for: those queued and not in flight when
+  // it started (with includeInFlight, those in flight too). It resolves once none of them is
+  // in flight any more (sent and settled, or unable to run until the next flush).
   private flushWaiters: { ids: Set<string>; resolve: () => void }[] = [];
   // Every queued and in-flight entry, in queue order: the source of what to send, so a
   // change the device couldn't save is still sent, and pendingFields never reads or parses
@@ -197,17 +205,19 @@ class ListSyncEngine implements SyncEngine {
     this.pump();
   }
 
-  async flush(): Promise<void> {
+  async flush(opts?: { includeInFlight?: boolean }): Promise<void> {
     const handlers = this.handlers;
     if (!handlers || !handlers.getJwt()) return;
     this.clearRetry();
     this.parked.clear();
     this.authHold = false;
     this.expire();
-    // Only what this flush can send: a request already in flight may hang (a dead socket,
-    // a suspended WebView) and changes added after this point don't extend it, so neither
-    // can hold a reconnect that awaits it.
-    const ids = new Set([...this.index.keys()].filter((id) => !this.inFlight.has(id)));
+    // By default only what this flush can send: a request already in flight may hang (a
+    // dead socket, a suspended WebView) and changes added after this point don't extend it,
+    // so neither can hold a reconnect that awaits it. The list's first load passes
+    // includeInFlight: it must not read the list before an earlier flush's replay landed.
+    const strict = !!opts?.includeInFlight;
+    const ids = new Set([...this.index.keys()].filter((id) => strict || !this.inFlight.has(id)));
     const done = new Promise<void>((resolve) => this.flushWaiters.push({ ids, resolve }));
     this.pump();
     this.settleFlushes();
@@ -387,7 +397,13 @@ class ListSyncEngine implements SyncEngine {
     this.retryTimer = null;
   }
 
-  /** Resolves each flush none of whose entries is still in flight (call after a pump). */
+  /**
+   * Resolves each flush none of whose entries is still in flight (call after a pump). For a
+   * strict flush that means each has landed, been dropped (a drop never leaves one in flight,
+   * so it needs no call of its own) or can't run before the next flush: an entry queued
+   * behind a request in flight waits behind one the flush also took, since chains and
+   * barriers run in queue order.
+   */
   private settleFlushes() {
     this.flushWaiters = this.flushWaiters.filter((w) => {
       for (const id of w.ids) if (this.inFlight.has(id)) return true;

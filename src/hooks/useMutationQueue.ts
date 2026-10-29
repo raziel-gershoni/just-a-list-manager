@@ -49,7 +49,11 @@ export function useMutationQueue(
     (mutation: { id: string; type: string; payload: Record<string, unknown> }) => getSyncEngine(listId).add(mutation),
     [listId]
   );
-  const flushQueue = useCallback(() => getSyncEngine(listId).flush(), [listId]);
+  // includeInFlight: the list's first load also waits for a replay already in flight.
+  const flushQueue = useCallback(
+    (opts?: { includeInFlight?: boolean }) => getSyncEngine(listId).flush(opts),
+    [listId]
+  );
   const pendingFields = useCallback((itemId: string) => getSyncEngine(listId).pendingFields(itemId), [listId]);
 
   return { addMutation, flushQueue, pendingFields };

@@ -203,8 +203,10 @@ export default function ListPage() {
   // (the sign-in gave up) fetchItems shows the error screen, and a later token reloads it.
   // With a JWT the load waits for this list's saved changes to replay, so it shows them and
   // not the state before them (a change still kept after that, e.g. offline, shows when it
-  // lands). A token that arrives or is renewed later only replays what is still saved; the
-  // provider also flushes every list after auth.
+  // lands). That includes a replay the provider's flush after auth already has in flight
+  // (a stored token starts it before the session is ready). A token that arrives or is
+  // renewed later only replays what is still saved; the provider also flushes every list
+  // after auth.
   const loadedRef = useRef<"none" | "without-token" | "with-token">("none");
   useEffect(() => {
     if (!isReady) {
@@ -217,7 +219,7 @@ export default function ListPage() {
     void (async () => {
       if (hasToken) {
         try {
-          await flushQueue();
+          await flushQueue(load ? { includeInFlight: true } : undefined);
         } catch (err) {
           console.error("[List] Replaying saved changes failed, loading anyway:", { listId }, err);
         }

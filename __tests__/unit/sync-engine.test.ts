@@ -425,6 +425,101 @@ describe("one item's changes land in the order they were made (H4)", () => {
   });
 });
 
+describe("the first load's strict flush waits for every saved change, in flight or not (R3)", () => {
+  // The provider's replay after auth starts first: the tick is in flight, the edit waits behind it.
+  const replayStarted = async (w: ReturnType<typeof world>) => {
+    w.seed("L", [entry("a", "toggle", { itemId: "i1", value: true }), entry("b", "edit", { itemId: "i1", value: "x" })]);
+    w.reload();
+    void flushAllQueues(() => "jwt", w.factory);
+    await settle();
+    expect(w.sent).toEqual(["toggle i1 true"]);
+  };
+
+  it("resolves only once the change in flight and the one queued behind it have both landed", async () => {
+    const w = world();
+    w.when("toggle i1 true", "hold");
+    w.when("edit i1 x", "hold");
+    await replayStarted(w);
+
+    let done = false;
+    void w.engine().flush({ includeInFlight: true }).then(() => (done = true));
+    await settle();
+    expect(done).toBe(false);
+
+    w.release("toggle i1 true");
+    await settle();
+    expect(w.sent).toEqual(["toggle i1 true", "edit i1 x"]);
+    expect(done).toBe(false);
+
+    w.release("edit i1 x");
+    await settle();
+    expect(done).toBe(true);
+    expect(w.stored()).toEqual([]);
+  });
+
+  it("the plain flush still resolves at once, so a hung request never holds a reconnect", async () => {
+    const w = world();
+    w.when("toggle i1 true", "hold");
+    await replayStarted(w);
+
+    let done = false;
+    void w.engine().flush().then(() => (done = true));
+    await settle();
+
+    expect(done).toBe(true);
+    expect(w.sent).toEqual(["toggle i1 true"]);
+    w.release("toggle i1 true");
+    await settle();
+  });
+
+  it("is not held by a change kept for a retry, nor by the change waiting behind it", async () => {
+    const w = world();
+    w.when("toggle i1 true", "hold");
+    await replayStarted(w);
+
+    let done = false;
+    void w.engine().flush({ includeInFlight: true }).then(() => (done = true));
+    await settle();
+    w.release("toggle i1 true", 500);
+    await settle();
+
+    expect(done).toBe(true);
+    expect(w.sent).toEqual(["toggle i1 true"]);
+    expect(w.stored().map((m) => m.id)).toEqual(["a", "b"]);
+  });
+
+  it("is not held after a 401, which holds everything until the next flush", async () => {
+    const w = world();
+    w.when("toggle i1 true", "hold");
+    await replayStarted(w);
+
+    let done = false;
+    void w.engine().flush({ includeInFlight: true }).then(() => (done = true));
+    await settle();
+    w.release("toggle i1 true", 401);
+    await settle();
+
+    expect(done).toBe(true);
+    expect(w.stored().map((m) => m.id)).toEqual(["a", "b"]);
+  });
+
+  it("a change it waits for that the server refuses does not hold it", async () => {
+    const w = world();
+    w.when("toggle i1 true", "hold");
+    await replayStarted(w);
+
+    let done = false;
+    void w.engine().flush({ includeInFlight: true }).then(() => (done = true));
+    await settle();
+    w.release("toggle i1 true", 404);
+    await settle();
+    expect(w.sent).toEqual(["toggle i1 true", "edit i1 x"]);
+
+    expect(done).toBe(true);
+    expect(w.stored()).toEqual([]);
+  });
+});
+
 describe("changes on a just-added item wait for its create (H5)", () => {
   it("a tick on a temp item is sent with the real id once the create returns", async () => {
     const w = world();
