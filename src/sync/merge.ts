@@ -82,8 +82,10 @@ export function applyCreateResult(
  * do. While the recycle was on its way its realtime echo was held back ("created" keeps the
  * whole on-screen row), so this is where the server row shows. A change made to the item
  * after the recycle and still on its way keeps its on-screen value.
- * An answer for another item (the server added the text as a new item) changes nothing
- * here: that item's realtime INSERT brings it.
+ * An answer for another item (the server added the text as a new item, the old row having
+ * been deleted or renamed meanwhile) changes nothing here: that item's realtime INSERT
+ * brings it, and the list page re-reads the list so the old row, shown active since the
+ * tap, shows the server's state.
  */
 export function applyRecycleResult(
   prev: ItemData[],

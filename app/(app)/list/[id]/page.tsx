@@ -117,11 +117,16 @@ export default function ListPage() {
   // A landed create swaps its temp row for the server's row, and a landed recycle shows the
   // server's row (back at the top), keeping the local value of every field a later change
   // (a tick, an edit, a drag) has not landed yet.
+  // A recycle the server answered with a new item (the old row was deleted or renamed
+  // meanwhile) left the old row shown active: re-read the list so it shows the server's state.
   const onMutationSuccess = useCallback((m: QueuedMutation, result: unknown) => {
     if (m.type !== "create" && m.type !== "recycle") return;
     const engine = getSyncEngine(listId);
     setItems((prev) => applyMutationResult(prev, m, result, (id) => engine.pendingFields(id)));
-  }, [listId, setItems]);
+    if (m.type === "recycle" && (result as { id?: unknown } | null)?.id !== m.payload.recycleId) {
+      refreshAfterDrop();
+    }
+  }, [listId, setItems, refreshAfterDrop]);
 
   const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError, onMutationSuccess, requestTokenRefresh);
 

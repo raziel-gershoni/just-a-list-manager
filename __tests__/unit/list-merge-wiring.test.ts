@@ -128,6 +128,33 @@ describe("the list page's create answer", () => {
   });
 });
 
+describe("the list page's recycle answer", () => {
+  const recycle = { id: "m1", type: "recycle", payload: { listId: "L", recycleId: "a", text: "milk" }, timestamp: 0 };
+
+  it("re-reads the list when the server added the text as a new item instead", async () => {
+    // The old row was shown back on the list; the server deleted or renamed it meanwhile.
+    S.items = [row({ id: "a", text: "milk" })];
+    S.onMutationSuccess!(recycle, row({ id: "new", text: "milk" }));
+    await settle();
+    expect(S.refreshCalls).toBe(1);
+  });
+
+  it("re-reads the list when the answer names no row", async () => {
+    S.items = [row({ id: "a", text: "milk" })];
+    S.onMutationSuccess!(recycle, null);
+    await settle();
+    expect(S.refreshCalls).toBe(1);
+  });
+
+  it("does not re-read the list when the server recycled the row", async () => {
+    S.items = [row({ id: "a", text: "milk" })];
+    S.onMutationSuccess!(recycle, row({ id: "a", text: "milk", position: 6 }));
+    await settle();
+    expect(S.refreshCalls).toBe(0);
+    expect(S.items[0].position).toBe(6);
+  });
+});
+
 describe("the list page after a realtime rejoin", () => {
   it("refreshes the list to catch up on what it missed", async () => {
     S.realtimeArgs!.onRejoined!();
