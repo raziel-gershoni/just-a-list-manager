@@ -23,6 +23,7 @@ vi.mock("react", () => ({
 
 import { removeChannelLogged, removeAllChannelsLogged } from "@/src/lib/realtime-cleanup";
 import { useRealtimeList } from "@/src/hooks/useRealtimeList";
+import { useListRealtime } from "@/src/hooks/useListRealtime";
 
 type Removal = "ok" | "timed out" | "error";
 type FakeChannel = { topic: string; on: () => FakeChannel; subscribe: (cb: (s: string, e?: Error) => void) => FakeChannel; cb?: (s: string, e?: Error) => void };
@@ -126,8 +127,8 @@ describe("useRealtimeList removes channels through the logged helper", () => {
     ref.current = client;
     return useRealtimeList(client, ref, "L", () => {});
   };
-  // The subscribe effect is the one that depends on the client.
-  const subscribeEffect = () => R.effects.find((e) => e.deps?.includes(ref))!;
+  // The subscribe effect is the one that depends on the list id.
+  const subscribeEffect = () => R.effects.find((e) => e.deps?.includes("L"))!;
 
   it("logs a failed removal when the list closes", async () => {
     const { client, channels, sb } = fakeClient(async () => "error");
@@ -140,7 +141,9 @@ describe("useRealtimeList removes channels through the logged helper", () => {
     expect(console.warn).toHaveBeenCalledWith("[Realtime] Remove channel failed:", { listId: "L", reason: "cleanup" }, "error");
   });
 
-  it("logs a failed removal of the channel it replaces", async () => {
+  // A second run of the effect on the same client used to replace the channel (reason
+  // "replaced"); it now keeps it, so there is no replacement left to log (H23).
+  it("a second run of the effect on the same client keeps its channel", async () => {
     const { client, channels, sb } = fakeClient(async () => "timed out");
     render(sb);
     subscribeEffect().fn();
@@ -148,8 +151,8 @@ describe("useRealtimeList removes channels through the logged helper", () => {
     render(sb);
     subscribeEffect().fn();
     await settle();
-    expect(client.removeChannel).toHaveBeenCalledWith(channels[0]);
-    expect(console.warn).toHaveBeenCalledWith("[Realtime] Remove channel failed:", { listId: "L", reason: "replaced" }, "timed out");
+    expect(channels).toHaveLength(1);
+    expect(client.removeChannel).not.toHaveBeenCalled();
   });
 
   it("logs a failed removal of a channel whose resubscribe errored", async () => {
@@ -176,6 +179,168 @@ describe("useRealtimeList removes channels through the logged helper", () => {
     await settled;
     expect(client.removeChannel).toHaveBeenCalledWith(channels[0]);
     expect(console.warn).toHaveBeenCalledWith("[Realtime] Remove channel failed:", { listId: "L", reason: "resubscribe timed out" }, boom);
+  });
+});
+
+// The effect and the orchestrator's rejoin used to each create a channel, and unmount removed
+// only one of them (H23).
+describe("useRealtimeList keeps one channel per list (H23)", () => {
+  const ref: { current: SupabaseClient | null } = { current: null };
+  const render = (client: SupabaseClient | null, requestReconnect?: () => void) => {
+    R.i = 0;
+    R.effects = [];
+    ref.current = client;
+    return useRealtimeList(client, ref, "L", () => {}, requestReconnect);
+  };
+  const subscribeEffect = () => R.effects.find((e) => e.deps?.includes("L"))!;
+
+  it("a rejoin that runs before the client effect shares its channel", async () => {
+    const { client, channels, sb } = fakeClient(async () => "ok");
+    const { resubscribe } = render(sb);
+    let joined = false;
+    const done = resubscribe().then(() => (joined = true));
+    subscribeEffect().fn();
+    expect(client.channel).toHaveBeenCalledTimes(1);
+    channels[0].cb!("SUBSCRIBED");
+    await done;
+    expect(joined).toBe(true);
+  });
+
+  it("a rejoin while the channel is joined creates nothing and resolves at once", async () => {
+    const { client, channels, sb } = fakeClient(async () => "ok");
+    const { resubscribe } = render(sb);
+    subscribeEffect().fn();
+    channels[0].cb!("SUBSCRIBED");
+    await resubscribe();
+    expect(client.channel).toHaveBeenCalledTimes(1);
+  });
+
+  it("a rejoin waits for supabase-js's own rejoin of a channel that errored", async () => {
+    const { client, channels, sb } = fakeClient(async () => "ok");
+    const { resubscribe } = render(sb);
+    subscribeEffect().fn();
+    channels[0].cb!("SUBSCRIBED");
+    channels[0].cb!("CHANNEL_ERROR", new Error("socket closed"));
+    const done = resubscribe();
+    channels[0].cb!("SUBSCRIBED");
+    await done;
+    expect(client.channel).toHaveBeenCalledTimes(1);
+    expect(client.removeChannel).not.toHaveBeenCalled();
+  });
+
+  it("after a new client, only its one channel is live, and unmount removes it", async () => {
+    const first = fakeClient(async () => "ok");
+    const second = fakeClient(async () => "ok");
+    render(first.sb);
+    const firstCleanup = subscribeEffect().fn() as () => void;
+    first.channels[0].cb!("SUBSCRIBED");
+
+    // The provider replaced the client: the rejoin runs before React re-renders the page.
+    const { resubscribe } = render(second.sb);
+    const done = resubscribe();
+    firstCleanup();
+    const secondCleanup = subscribeEffect().fn() as () => void;
+    expect(second.client.channel).toHaveBeenCalledTimes(1);
+    second.channels[0].cb!("SUBSCRIBED");
+    await done;
+
+    secondCleanup();
+    expect(second.client.removeChannel).toHaveBeenCalledWith(second.channels[0]);
+  });
+
+  it("a channel closed for good is replaced by the next rejoin", async () => {
+    const { client, channels, sb } = fakeClient(async () => "ok");
+    const { resubscribe } = render(sb);
+    subscribeEffect().fn();
+    channels[0].cb!("SUBSCRIBED");
+    channels[0].cb!("CLOSED");
+    const done = resubscribe();
+    expect(client.channel).toHaveBeenCalledTimes(2);
+    channels[1].cb!("SUBSCRIBED");
+    await done;
+  });
+
+  // Ruling R11: realtime-js removes a channel it closed, so nothing rejoins it. The hook
+  // forgets it and asks the provider to reconnect, which starts the list's next channel.
+  it("a close it did not cause removes the channel and asks for a reconnect", async () => {
+    vi.useFakeTimers();
+    const requestReconnect = vi.fn();
+    const { client, channels, sb } = fakeClient(async () => "ok");
+    render(sb, requestReconnect);
+    subscribeEffect().fn();
+    channels[0].cb!("SUBSCRIBED");
+    channels[0].cb!("CLOSED");
+    await settle();
+    expect(client.removeChannel).toHaveBeenCalledWith(channels[0]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(requestReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes in a burst ask for one reconnect", async () => {
+    vi.useFakeTimers();
+    const requestReconnect = vi.fn();
+    const { channels, sb } = fakeClient(async () => "ok");
+    const { resubscribe } = render(sb, requestReconnect);
+    subscribeEffect().fn();
+    channels[0].cb!("SUBSCRIBED");
+    channels[0].cb!("CLOSED");
+    const next = expect(resubscribe()).rejects.toThrow("Channel subscribe failed: CLOSED"); // closed again at once
+    channels[1].cb!("CLOSED");
+    await next;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(requestReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("the list page's hook hands the reconnect request down to the channel", async () => {
+    vi.useFakeTimers();
+    const onChannelClosed = vi.fn();
+    const { channels, sb } = fakeClient(async () => "ok");
+    R.i = 0;
+    R.effects = [];
+    ref.current = sb;
+    useListRealtime({
+      supabaseClient: sb,
+      supabaseClientRef: ref,
+      listId: "L",
+      setItems: () => {},
+      setListName: () => {},
+      setCategories: () => {},
+      isDraggingRef: { current: false },
+      onListDeleted: () => {},
+      onChannelClosed,
+    });
+    subscribeEffect().fn();
+    channels[0].cb!("SUBSCRIBED");
+    channels[0].cb!("CLOSED");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onChannelClosed).toHaveBeenCalledTimes(1);
+  });
+
+  it("a close it caused itself asks for nothing", async () => {
+    vi.useFakeTimers();
+    const requestReconnect = vi.fn();
+    const { channels, sb } = fakeClient(async () => "ok");
+    render(sb, requestReconnect);
+    const cleanup = subscribeEffect().fn() as () => void;
+    channels[0].cb!("SUBSCRIBED");
+    cleanup();
+    channels[0].cb!("CLOSED"); // the echo of our own removeChannel
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(requestReconnect).not.toHaveBeenCalled();
+  });
+
+  it("a close after the provider replaced the client asks for nothing", async () => {
+    vi.useFakeTimers();
+    const requestReconnect = vi.fn();
+    const first = fakeClient(async () => "ok");
+    const second = fakeClient(async () => "ok");
+    render(first.sb, requestReconnect);
+    subscribeEffect().fn();
+    first.channels[0].cb!("SUBSCRIBED");
+    ref.current = second.sb; // the provider closed the old client's channels
+    first.channels[0].cb!("CLOSED");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(requestReconnect).not.toHaveBeenCalled();
   });
 });
 

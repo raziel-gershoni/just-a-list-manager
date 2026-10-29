@@ -17,6 +17,8 @@ interface UseListRealtimeParams {
   setCategories: React.Dispatch<React.SetStateAction<ListCategory[]>>;
   isDraggingRef: React.RefObject<boolean>;
   onListDeleted: () => void;
+  /** The list's channel was closed for good: reconnect so a new one starts. */
+  onChannelClosed?: () => void;
 }
 
 export function useListRealtime({
@@ -28,6 +30,7 @@ export function useListRealtime({
   setCategories,
   isDraggingRef,
   onListDeleted,
+  onChannelClosed,
 }: UseListRealtimeParams) {
   const onChange = useCallback(
     (change: RealtimeChange) => {
@@ -96,5 +99,5 @@ export function useListRealtime({
     [setItems, setListName, setCategories, isDraggingRef, onListDeleted]
   );
 
-  return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange);
+  return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange, onChannelClosed);
 }

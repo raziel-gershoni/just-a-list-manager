@@ -41,6 +41,7 @@ export default function ListPage() {
     onFlushNeededRef,
     onResubscribeNeededRef,
     onRefreshNeededRef,
+    reconnect,
   } = useTelegram();
   const t = useTranslations();
   const locale = useLocale();
@@ -147,6 +148,7 @@ export default function ListPage() {
     setCategories,
     isDraggingRef,
     onListDeleted,
+    onChannelClosed: reconnect,
   });
 
   // Register orchestrator callbacks

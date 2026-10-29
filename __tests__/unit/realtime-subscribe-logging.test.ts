@@ -1,34 +1,82 @@
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
-import { resolve } from "path";
+/* eslint-disable react-hooks/rules-of-hooks -- react is stubbed below; the hook runs as a plain function */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-const src = readFileSync(resolve(process.cwd(), "src/hooks/useRealtimeList.ts"), "utf8");
+// The subscribe status callback is not a try/catch handler, so the no-silent-catches guard
+// cannot see it. This runs the real useRealtimeList (slot-based React stand-ins, effects run
+// by the test) and pins that a failed join is logged with its error.
+type Effect = { fn: () => void | (() => void); deps?: unknown[] };
+const R = vi.hoisted(() => ({ slots: [] as { current: unknown }[], effects: [] as Effect[], i: 0 }));
+vi.mock("react", () => ({
+  useRef: (init: unknown) => {
+    const i = R.i++;
+    if (!R.slots[i]) R.slots[i] = { current: init };
+    return R.slots[i];
+  },
+  useCallback: (fn: unknown) => (R.i++, fn),
+  useEffect: (fn: Effect["fn"], deps?: unknown[]) => {
+    R.effects.push({ fn, deps });
+    R.i++;
+  },
+}));
 
-// The subscribe status callbacks are not try/catch handlers, so the no-silent-catches
-// guard cannot see them. This pins that a failed subscription is logged with its error.
+import { useRealtimeList } from "@/src/hooks/useRealtimeList";
+
+type Cb = (status: string, err?: Error) => void;
+
+function fakeClient() {
+  const callbacks: Cb[] = [];
+  const client = {
+    channel: vi.fn(() => {
+      const ch = { on: () => ch, subscribe: (cb: Cb) => (callbacks.push(cb), ch) };
+      return ch;
+    }),
+    removeChannel: vi.fn(async () => "ok"),
+  };
+  return { callbacks, sb: client as unknown as SupabaseClient };
+}
+
+const ref: { current: SupabaseClient | null } = { current: null };
+const render = (client: SupabaseClient) => {
+  R.i = 0;
+  R.effects = [];
+  ref.current = client;
+  return useRealtimeList(client, ref, "L", () => {});
+};
+const runSubscribeEffect = () => R.effects.find((e) => e.deps?.includes("L"))!.fn();
+
+beforeEach(() => {
+  R.slots = [];
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+afterEach(() => vi.restoreAllMocks());
+
 describe("realtime subscribe status callbacks log failures", () => {
-  it("resubscribe callback takes (status, err) and warns before the settled early-return", () => {
-    const at = src.indexOf("channel.subscribe((status");
-    expect(at).toBeGreaterThan(-1);
-    const body = src.slice(at, at + 900);
-    expect(body).toMatch(/^channel\.subscribe\(\(status, err\) => \{/);
-    const warnAt = body.indexOf("console.warn(");
-    const settledAt = body.indexOf("if (settled) return;");
-    expect(warnAt).toBeGreaterThan(-1);
-    expect(settledAt).toBeGreaterThan(-1);
-    expect(warnAt).toBeLessThan(settledAt);
-    const before = body.slice(0, settledAt);
-    expect(before).toMatch(/status === "CHANNEL_ERROR" \|\| status === "TIMED_OUT"/);
-    expect(before).toMatch(/console\.warn\([^;]*\berr\b\)/);
+  it.each(["CHANNEL_ERROR", "TIMED_OUT"])("a %s on the first join is warned with its error", (status) => {
+    const { callbacks, sb } = fakeClient();
+    render(sb);
+    runSubscribeEffect();
+    const err = new Error("denied");
+    callbacks[0](status, err);
+    expect(console.warn).toHaveBeenCalledWith("[RealtimeList] Subscribe failed:", status, "listId:", "L", err);
   });
 
-  it("initial subscribe callback takes (status, err) and warns on CHANNEL_ERROR/TIMED_OUT", () => {
-    const first = src.indexOf("channel.subscribe((status");
-    const at = src.indexOf("channel.subscribe((status", first + 1);
-    expect(at).toBeGreaterThan(-1);
-    const body = src.slice(at, at + 600);
-    expect(body).toMatch(/^channel\.subscribe\(\(status, err\) => \{/);
-    expect(body).toMatch(/status === "CHANNEL_ERROR" \|\| status === "TIMED_OUT"/);
-    expect(body).toMatch(/console\.warn\([^;]*\berr\b\)/);
+  it("a failed join a rejoin waited on is warned with its error", async () => {
+    const { callbacks, sb } = fakeClient();
+    const { resubscribe } = render(sb);
+    const done = resubscribe();
+    const err = new Error("denied");
+    callbacks[0]("CHANNEL_ERROR", err);
+    await expect(done).rejects.toThrow("Channel subscribe failed: CHANNEL_ERROR");
+    expect(console.warn).toHaveBeenCalledWith("[RealtimeList] Subscribe failed:", "CHANNEL_ERROR", "listId:", "L", err);
+  });
+
+  it("a join and a normal close are not warned", () => {
+    const { callbacks, sb } = fakeClient();
+    render(sb);
+    runSubscribeEffect();
+    callbacks[0]("SUBSCRIBED");
+    callbacks[0]("CLOSED");
+    expect(console.warn).not.toHaveBeenCalled();
   });
 });
