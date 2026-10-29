@@ -55,14 +55,14 @@ vi.mock("@/src/sync/engine", () => ({ flushAllQueues: (...args: unknown[]) => H.
 
 import TelegramProvider from "@/components/TelegramProvider";
 
-// Renders once with this token and runs the effects that depend on the token's ref.
+// Renders once with this token and runs the effect that replays after auth (deps: token, flushAll).
 function renderWith(jwt: string | null) {
   H.jwt = jwt;
   H.jwtRef.current = jwt;
   R.i = 0;
   R.effects = [];
   TelegramProvider({ children: null });
-  for (const e of R.effects) if (e.deps?.includes(H.jwtRef)) e.fn();
+  for (const e of R.effects) if (e.deps?.length === 2 && typeof e.deps[1] === "function") e.fn();
 }
 
 beforeEach(() => {
@@ -94,5 +94,17 @@ describe("TelegramProvider replays every list's saved changes after auth (H15)",
     const onAuthNeeded = H.flushAllQueues.mock.calls[0][2] as () => void;
     onAuthNeeded();
     expect(H.requestTokenRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("logs a replay that throws instead of leaving an unhandled rejection", async () => {
+    const err = new Error("storage broke");
+    H.flushAllQueues = vi.fn(async () => {
+      throw err;
+    });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderWith("tok-1");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(spy).toHaveBeenCalledWith("[Sync] Replaying saved changes after auth failed:", err);
   });
 });

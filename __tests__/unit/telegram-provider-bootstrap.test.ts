@@ -84,6 +84,7 @@ vi.mock("@/src/hooks/useHomeScreen", () => ({
 }));
 
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
+import { resetSyncEngines } from "@/src/sync/engine";
 
 type Ctx = ReturnType<typeof useTelegram>;
 type El = ReactElement<{ value: Ctx }>;
@@ -106,6 +107,7 @@ let tokenReplies: Reply[];
 let held: ((status: number) => void) | null;
 let issued: string[];
 let tokenRequests: Record<string, string>[];
+let listRequests: string[];
 let userRequests: { method: string; headers: Record<string, string> }[];
 let userReply: { status: number; body: unknown };
 let push: ReturnType<typeof vi.fn>;
@@ -117,6 +119,10 @@ const storage = (m: Map<string, string>) => ({
   getItem: (k: string) => m.get(k) ?? null,
   setItem: (k: string, v: string) => void m.set(k, v),
   removeItem: (k: string) => void m.delete(k),
+  get length() {
+    return m.size;
+  },
+  key: (i: number) => [...m.keys()][i] ?? null,
 });
 
 function stubNetwork() {
@@ -134,6 +140,10 @@ function stubNetwork() {
     if (url === "/api/user") {
       userRequests.push({ method: init.method ?? "GET", headers: init.headers });
       return { ok: userReply.status === 200, status: userReply.status, json: async () => userReply.body };
+    }
+    if (url.startsWith("/api/lists/")) {
+      listRequests.push(`${init.method ?? "GET"} ${url}`);
+      return { ok: true, status: 200, json: async () => ({}) };
     }
     throw new Error(`unexpected ${url}`);
   }));
@@ -197,6 +207,7 @@ beforeEach(() => {
   issued = [];
   tokenRequests = [];
   userRequests = [];
+  listRequests = [];
   userReply = { status: 200, body: { id: "user-1", language: "en", telegram_id: 7, first_name: "A" } };
   push = vi.fn();
   H.router.push = push as unknown as (path: string) => void;
@@ -412,6 +423,30 @@ describe("a reconnect asked for during a running one is not lost (R11)", () => {
     finish();
     await advance(6000);
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a reconnect replays every list, open or not (H15)", () => {
+  it("sends a list's saved change after a reconnect when no page is open", async () => {
+    miniApp();
+    tokenReplies = [200];
+    await advance();
+    expect(listRequests).toEqual([]);
+
+    // Left parked while offline: this list has no page, and no retry timer is set.
+    local.set(
+      "mutation_queue:L1",
+      JSON.stringify([
+        { id: "m1", type: "toggle", payload: { listId: "L1", itemId: "i1", completed: true }, timestamp: Date.now() },
+      ])
+    );
+    vi.setSystemTime(Date.now() + 6000);
+    focus();
+    await advance(1000);
+
+    expect(listRequests).toEqual(["PATCH /api/lists/L1/items"]);
+    expect(JSON.parse(local.get("mutation_queue:L1") ?? "[]")).toEqual([]);
+    resetSyncEngines();
   });
 });
 

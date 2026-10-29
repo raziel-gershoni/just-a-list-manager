@@ -46,6 +46,8 @@ export function useReconnectOrchestrator(params: {
   onFlushNeededRef: React.MutableRefObject<(() => Promise<void>) | null>;
   onResubscribeNeededRef: React.MutableRefObject<(() => Promise<void>) | null>;
   onRefreshNeededRef: React.MutableRefObject<(() => Promise<void>) | null>;
+  /** Replays every list's saved changes, open or not (the page's own flush covers the open list). */
+  flushAll?: () => Promise<void>;
   router: ReturnType<typeof import("next/navigation").useRouter>;
 }) {
   const {
@@ -57,6 +59,7 @@ export function useReconnectOrchestrator(params: {
     onFlushNeededRef,
     onResubscribeNeededRef,
     onRefreshNeededRef,
+    flushAll,
     router,
   } = params;
 
@@ -176,10 +179,9 @@ export function useReconnectOrchestrator(params: {
       // The realtime client: kept while its socket is up, replaced only when it is down
       syncRealtime(token.token);
 
-      // Step 2: Flush mutations (no-op if no list page mounted)
-      if (onFlushNeededRef.current) {
-        await onFlushNeededRef.current();
-      }
+      // Step 2: Flush mutations: the open page's list, and every other list with saved
+      // changes (a list the user left while offline has no page to flush it).
+      await Promise.all([onFlushNeededRef.current?.(), flushAll?.()]);
 
       // Step 3: Rejoin realtime if the channel is not joined (no-op if no list page mounted)
       if (onResubscribeNeededRef.current) {
@@ -215,7 +217,7 @@ export function useReconnectOrchestrator(params: {
         reconnectRef.current();
       }
     }
-  }, [ensureToken, endSession, syncRealtime, scheduleRetry, setOrchestratorState, runPendingTokenRefresh, onFlushNeededRef, onResubscribeNeededRef, onRefreshNeededRef]);
+  }, [ensureToken, endSession, syncRealtime, scheduleRetry, setOrchestratorState, runPendingTokenRefresh, onFlushNeededRef, onResubscribeNeededRef, onRefreshNeededRef, flushAll]);
 
   // Keep refs in sync for stable callbacks
   runReconnectRef.current = runReconnect;

@@ -178,6 +178,14 @@ export default function TelegramProvider({
     [stableHeartbeatCallback]
   );
 
+  // Replays every list's saved changes, so a list the user does not reopen still syncs. A 401
+  // there asks for a fresh token. The ref keeps the callback stable across renders.
+  const requestTokenRefreshRef = useRef<() => void>(() => {});
+  const flushAll = useCallback(
+    () => flushAllQueues(() => jwtRef.current, executorFactory, () => requestTokenRefreshRef.current()),
+    [jwtRef]
+  );
+
   const {
     connectionStatus,
     retryCount,
@@ -194,19 +202,18 @@ export default function TelegramProvider({
     onFlushNeededRef,
     onResubscribeNeededRef,
     onRefreshNeededRef,
+    flushAll,
     router,
   });
 
-  // Once there is a token, replay every list's saved changes, so a list the user does not
-  // reopen still syncs. A 401 there asks for a fresh token.
-  const tokenRefreshForSyncRef = useRef(requestTokenRefresh);
   useEffect(() => {
-    tokenRefreshForSyncRef.current = requestTokenRefresh;
+    requestTokenRefreshRef.current = requestTokenRefresh;
   }, [requestTokenRefresh]);
+  // Once there is a token, and again on every reconnect (the orchestrator's flush step).
   useEffect(() => {
     if (!jwt) return;
-    void flushAllQueues(() => jwtRef.current, executorFactory, () => tokenRefreshForSyncRef.current());
-  }, [jwt, jwtRef]);
+    flushAll().catch((err) => console.error("[Sync] Replaying saved changes after auth failed:", err));
+  }, [jwt, flushAll]);
 
   // Keep heartbeat ref in sync with orchestrator's runReconnectRef
   runReconnectRef_local.current = runReconnectRef.current;
