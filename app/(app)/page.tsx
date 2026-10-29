@@ -117,7 +117,10 @@ export default function HomePage() {
   // full-page load-error state. Used after a failed reorder, where the lists
   // on screen are already correct (rolled back) and the user just needs the
   // toast.
-  const fetchLists = useCallback(async ({ silent = false } = {}) => {
+  // Resolves true when the load worked or a newer load took over, false when it failed
+  // (the orchestrator's refresh turns that into a rejection; fire-and-forget callers
+  // ignore it).
+  const fetchLists = useCallback(async ({ silent = false } = {}): Promise<boolean> => {
     const jwt = jwtRef.current;
     if (!jwt) {
       // The session gave up signing in: leave the placeholders for the error screen, where
@@ -125,7 +128,7 @@ export default function HomePage() {
       console.warn("[Home] Load lists skipped, no session:", { view, silent });
       if (!silent) setError(true);
       setLoading(false);
-      return;
+      return false;
     }
     const gen = ++fetchGenRef.current;
     const requestedView = view;
@@ -136,38 +139,36 @@ export default function HomePage() {
         { headers: { Authorization: `Bearer ${jwt}` } }
       );
       // A newer fetch started while this one was in flight — drop this result.
-      if (gen !== fetchGenRef.current) return;
+      if (gen !== fetchGenRef.current) return true;
       if (res.ok) {
         const data = await res.json();
-        if (gen !== fetchGenRef.current) return;
+        if (gen !== fetchGenRef.current) return true;
         setLists(data);
         setLoadedView(requestedView);
+        // Any load that worked replaces an error screen, a silent one included.
+        setError(false);
 
-        // Auto-open single list — only on first visit to avoid back-navigation
-        // loop, and only in the active view. The archived view must not touch
-        // the flag either: clearing it there re-arms the redirect, so merely
-        // visiting Archived would bounce the user out of Active afterwards.
+        // Auto-open a single list at launch only: the first active-view load of the
+        // session decides, and every later one (a refetch, Back from a list, deleting
+        // down to one list) leaves the user on Home. The archived view never touches
+        // the flag, so visiting Archived first doesn't use up the launch.
         if (requestedView === "active") {
-          if (data.length === 1) {
-            const autoOpened = sessionStorage.getItem("autoOpenedSingleList");
-            if (!autoOpened) {
-              sessionStorage.setItem("autoOpenedSingleList", "true");
-              router.push(`/list/${data[0].id}`);
-              return;
-            }
-          } else {
-            // Clear flag when list count changes so auto-open works again
-            sessionStorage.removeItem("autoOpenedSingleList");
+          const autoOpened = sessionStorage.getItem("autoOpenedSingleList");
+          sessionStorage.setItem("autoOpenedSingleList", "true");
+          if (data.length === 1 && !autoOpened) {
+            router.push(`/list/${data[0].id}`);
           }
         }
-      } else {
-        console.warn("[Home] Load lists failed:", { view: requestedView, silent, status: res.status });
-        if (!silent) setError(true);
+        return true;
       }
+      console.warn("[Home] Load lists failed:", { view: requestedView, silent, status: res.status });
+      if (!silent) setError(true);
+      return false;
     } catch (e) {
       console.error("[Home] Fetch lists error:", e);
-      if (gen !== fetchGenRef.current) return;
+      if (gen !== fetchGenRef.current) return true;
       if (!silent) setError(true);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -232,6 +233,34 @@ export default function HomePage() {
       // handleDeleteList already avoids.
       const timeout = setTimeout(() => setToast(null), 4000);
 
+      // Settles true once the server archived it, false when that failed (the card is
+      // then already put back). The Undo waits for it, so the server never sees the undo
+      // before the archive.
+      const archiveLanded = post(archived, jwt)
+        .then((res) => {
+          if (!res.ok) throw new Error(`Archive failed: ${res.status}`);
+        })
+        .then(
+          () => true,
+          (e) => {
+            console.error("[Home] Archive error:", e);
+            clearTimeout(timeout);
+            setToast((prev) => {
+              if (prev) clearTimeout(prev.timeout);
+              return {
+                message: t("lists.archiveFailed"),
+                timeout: setTimeout(() => setToast(null), 4000),
+              };
+            });
+            if (stillSameView()) {
+              setLists(snapshot);
+              // silent: a failure must never swap in the full-page error view
+              fetchLists({ silent: true });
+            }
+            return false;
+          }
+        );
+
       setToast((prev) => {
         if (prev) clearTimeout(prev.timeout);
         return {
@@ -246,38 +275,22 @@ export default function HomePage() {
                 return next;
               });
             }
-            post(!archived, jwtRef.current)
-              .then((res) => throwIfNotOk(res, "Undo archive"))
-              .catch((e) => {
-                console.error("[Home] Undo archive failed:", { listId: list.id }, e);
-                showToast("errors.generic");
-                // silent: show the server's state without the full-page error view
-                if (stillSameView()) fetchLists({ silent: true });
-              });
+            void archiveLanded.then((landed) => {
+              // The archive itself failed, so the server never archived it: nothing to undo.
+              if (!landed) return;
+              return post(!archived, jwtRef.current)
+                .then((res) => throwIfNotOk(res, "Undo archive"))
+                .catch((e) => {
+                  console.error("[Home] Undo archive failed:", { listId: list.id }, e);
+                  showToast("errors.generic");
+                  // silent: show the server's state without the full-page error view
+                  if (stillSameView()) fetchLists({ silent: true });
+                });
+            });
           },
           timeout,
         };
       });
-
-      post(archived, jwt)
-        .then((res) => {
-          if (!res.ok) throw new Error(`Archive failed: ${res.status}`);
-        })
-        .catch((e) => {
-          console.error("[Home] Archive error:", e);
-          clearTimeout(timeout);
-          setToast((prev) => {
-            if (prev) clearTimeout(prev.timeout);
-            return {
-              message: t("lists.archiveFailed"),
-              timeout: setTimeout(() => setToast(null), 4000),
-            };
-          });
-          if (!stillSameView()) return;
-          setLists(snapshot);
-          // silent: a failure must never swap in the full-page error view
-          fetchLists({ silent: true });
-        });
     },
     [lists, view, jwtRef, t, fetchLists, showToast]
   );
@@ -291,7 +304,12 @@ export default function HomePage() {
 
   // Register with orchestrator for reconnect refresh
   useEffect(() => {
-    onRefreshNeededRef.current = fetchLists;
+    // Silent: a failed background refresh keeps the lists on screen instead of the
+    // full-page error view. It still rejects, so the orchestrator doesn't report a
+    // reconnect that left the lists stale as a success.
+    onRefreshNeededRef.current = async () => {
+      if (!(await fetchLists({ silent: true }))) throw new Error("Lists refresh failed");
+    };
     return () => {
       onRefreshNeededRef.current = null;
     };
@@ -416,6 +434,29 @@ export default function HomePage() {
 
       const timeout = setTimeout(() => setToast(null), 4000);
 
+      // Server delete. Settles true once the server deleted it, false when that failed
+      // (the card is then already back). The Undo waits for it: a restore that arrives
+      // first finds nothing to restore, and the delete then lands.
+      const deleteLanded = fetch(`/api/lists?id=${listToDelete.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${jwt}` },
+      })
+        .then((res) => throwIfNotOk(res, "Delete"))
+        .then(
+          () => true,
+          (e) => {
+            console.error("[Home] Delete list failed:", { listId: listToDelete.id }, e);
+            clearTimeout(timeout);
+            showToast("lists.deleteFailed");
+            if (stillSameView()) {
+              putBack();
+              // silent: show the server's state without the full-page error view
+              fetchLists({ silent: true });
+            }
+            return false;
+          }
+        );
+
       setToast({
         message: t('lists.deleted'),
         undo: () => {
@@ -423,42 +464,29 @@ export default function HomePage() {
           setToast(null);
           // Restore optimistically, back at the position it was removed from
           putBack();
-          // Restore on server
-          const currentJwt = jwtRef.current;
-          fetch("/api/lists", {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${currentJwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ id: listToDelete.id, restore: true }),
-          })
-            .then((res) => throwIfNotOk(res, "Restore"))
-            .catch((e) => {
-              console.error("[Home] Undo delete failed:", { listId: listToDelete.id }, e);
-              showToast("errors.generic");
-              // silent: show the server's state without the full-page error view
-              if (stillSameView()) fetchLists({ silent: true });
-            });
+          void deleteLanded.then((landed) => {
+            // The delete itself failed and the card is already back: nothing to restore.
+            if (!landed) return;
+            // Restore on server
+            return fetch("/api/lists", {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${jwtRef.current}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ id: listToDelete.id, restore: true }),
+            })
+              .then((res) => throwIfNotOk(res, "Restore"))
+              .catch((e) => {
+                console.error("[Home] Undo delete failed:", { listId: listToDelete.id }, e);
+                showToast("errors.generic");
+                // silent: show the server's state without the full-page error view
+                if (stillSameView()) fetchLists({ silent: true });
+              });
+          });
         },
         timeout,
       });
-
-      // Server delete
-      fetch(`/api/lists?id=${listToDelete.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${jwt}` },
-      })
-        .then((res) => throwIfNotOk(res, "Delete"))
-        .catch((e) => {
-          console.error("[Home] Delete list failed:", { listId: listToDelete.id }, e);
-          clearTimeout(timeout);
-          showToast("lists.deleteFailed");
-          if (!stillSameView()) return;
-          putBack();
-          // silent: show the server's state without the full-page error view
-          fetchLists({ silent: true });
-        });
     };
 
     // Use Telegram native confirm if available, fallback to window.confirm

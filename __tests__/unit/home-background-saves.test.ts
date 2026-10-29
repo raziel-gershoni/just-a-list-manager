@@ -49,7 +49,7 @@ vi.mock("react", async (importOriginal) => {
 // Stable across renders, like the real hooks' return values.
 const H = vi.hoisted(() => ({
   t: (key: string) => key,
-  router: { push: () => {} },
+  router: { push: (() => {}) as (url: string) => void },
   jwtRef: { current: "jwt" as string | null },
   onRefreshNeededRef: { current: null as unknown },
   setLanguage: (async () => true) as (lang: string) => Promise<boolean>,
@@ -156,6 +156,7 @@ let replies: Map<string, Reply[]>;
 let held: Map<string, (status: number) => void>;
 let bodies: Map<string, unknown>; // a reply body that replaces the default for one request
 let calls: string[];
+let sentBodies: { key: string; body: unknown }[];
 let alertMock: ReturnType<typeof vi.fn>;
 let errorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -168,6 +169,8 @@ beforeEach(() => {
   held = new Map();
   bodies = new Map();
   calls = [];
+  sentBodies = [];
+  H.router.push = () => {};
   const storage = () => {
     const m = new Map<string, string>();
     return {
@@ -181,9 +184,10 @@ beforeEach(() => {
   alertMock = vi.fn();
   // No Telegram WebApp: the delete confirm falls back to window.confirm, answered yes.
   vi.stubGlobal("window", { confirm: () => true, alert: alertMock });
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string }) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
     const key = `${init?.method ?? "GET"} ${url}`;
     calls.push(key);
+    if (init?.body) sentBodies.push({ key, body: JSON.parse(init.body) });
     const reply = replies.get(key)?.shift() ?? 200;
     if (reply === "neterr") throw new TypeError("Failed to fetch");
     const status = reply === "hold" ? await new Promise<number>((resolve) => held.set(key, resolve)) : reply;
@@ -241,7 +245,7 @@ describe("Home: delete a list", () => {
     expect(errorSpy).toHaveBeenCalledWith("[Home] Delete list failed:", { listId: "B" }, expect.any(TypeError));
   });
 
-  it("a delete that fails after Undo was tapped shows the card once", async () => {
+  it("a delete that fails after Undo was tapped shows the card once and sends no restore", async () => {
     await boot();
     replies.set("DELETE /api/lists?id=B", ["hold"]);
     replies.set("GET /api/lists", ["hold"]);
@@ -255,6 +259,25 @@ describe("Home: delete a list", () => {
 
     expect(listIds()).toEqual(["A", "B", "C"]);
     expect(toast()?.message).toBe("lists.deleteFailed");
+    expect(calls).not.toContain("PATCH /api/lists");
+  });
+
+  it("an Undo tapped while the delete is in flight restores only after the delete landed", async () => {
+    await boot();
+    replies.set("DELETE /api/lists?id=B", ["hold"]);
+
+    press(card("B"), "onDelete");
+    toast()!.undo!();
+    await settle();
+    expect(calls).not.toContain("PATCH /api/lists");
+
+    held.get("DELETE /api/lists?id=B")!(200);
+    await settle();
+
+    expect(calls.slice(-2)).toEqual(["DELETE /api/lists?id=B", "PATCH /api/lists"]);
+    expect(sentBodies).toContainEqual({ key: "PATCH /api/lists", body: { id: "B", restore: true } });
+    expect(listIds()).toEqual(["A", "B", "C"]);
+    expect(toast()).toBeNull();
   });
 
   it("a failed Undo says so and shows what the server has", async () => {
@@ -279,6 +302,42 @@ describe("Home: delete a list", () => {
 });
 
 describe("Home: Undo of an archive", () => {
+  it("an Undo tapped while the archive is in flight unarchives only after the archive landed", async () => {
+    await boot();
+    replies.set("POST /api/lists/archive", ["hold", 200]);
+
+    press(card("B"), "onArchive");
+    toast()!.undo!();
+    await settle();
+    expect(calls.filter((c) => c === "POST /api/lists/archive")).toHaveLength(1);
+
+    held.get("POST /api/lists/archive")!(200);
+    await settle();
+
+    expect(sentBodies.filter((s) => s.key === "POST /api/lists/archive").map((s) => s.body)).toEqual([
+      { listId: "B", archived: true },
+      { listId: "B", archived: false },
+    ]);
+    expect(listIds()).toEqual(["A", "B", "C"]);
+    expect(toast()).toBeNull();
+  });
+
+  it("an archive that fails after Undo was tapped shows the card once and sends no undo", async () => {
+    await boot();
+    replies.set("POST /api/lists/archive", ["hold"]);
+    replies.set("GET /api/lists", ["hold"]);
+
+    press(card("B"), "onArchive");
+    toast()!.undo!();
+    await settle();
+    held.get("POST /api/lists/archive")!(500);
+    await settle();
+
+    expect(calls.filter((c) => c === "POST /api/lists/archive")).toHaveLength(1);
+    expect(listIds()).toEqual(["A", "B", "C"]);
+    expect(toast()?.message).toBe("lists.archiveFailed");
+  });
+
   it("a failed Undo says so and shows what the server has", async () => {
     await boot();
     press(card("B"), "onArchive");
@@ -297,6 +356,79 @@ describe("Home: Undo of an archive", () => {
       { listId: "B" },
       expect.objectContaining({ message: "Undo archive failed: 500" })
     );
+  });
+});
+
+describe("Home: single-list auto-open happens at launch only", () => {
+  it("a launch with one list opens it, once", async () => {
+    const push = vi.fn();
+    H.router.push = push;
+    server.lists = ["A"].map(LIST);
+
+    render();
+    await settle();
+    await (H.onRefreshNeededRef.current as () => Promise<void>)();
+
+    expect(push.mock.calls).toEqual([["/list/A"]]);
+  });
+
+  it("deleting down to one list, then a reconnect refresh, stays on Home", async () => {
+    const push = vi.fn();
+    H.router.push = push;
+    server.lists = ["A", "B"].map(LIST);
+    render();
+    await settle();
+
+    server.lists = ["A"].map(LIST);
+    await (H.onRefreshNeededRef.current as () => Promise<void>)();
+
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("coming back to Home with one list left stays on Home", async () => {
+    const push = vi.fn();
+    H.router.push = push;
+    server.lists = ["A", "B"].map(LIST);
+    render();
+    await settle();
+
+    // Back from a list: a fresh Home page in the same session, now with one list.
+    R.slots = [];
+    server.lists = ["A"].map(LIST);
+    render();
+    await settle();
+
+    expect(push).not.toHaveBeenCalled();
+    expect(listIds()).toEqual(["A"]);
+  });
+});
+
+describe("Home: a reconnect refresh never shows the full-page error", () => {
+  const loadError = () =>
+    find(render(), (el) => el.type === "p" && el.props.children === "lists.loadError") !== undefined;
+
+  it("a refresh that fails keeps the lists on screen", async () => {
+    await boot();
+    replies.set("GET /api/lists", ["neterr"]);
+
+    // Whether a failed refresh also rejects (so the orchestrator retries) is T4's contract;
+    // this test is about the screen.
+    await (H.onRefreshNeededRef.current as () => Promise<void>)().catch(() => {});
+
+    expect(loadError()).toBe(false);
+    expect(listIds()).toEqual(["A", "B", "C"]);
+  });
+
+  it("the first load that fails shows the Retry screen, and a refresh that works then clears it", async () => {
+    replies.set("GET /api/lists", [500]);
+    render();
+    await settle();
+    expect(loadError()).toBe(true);
+
+    await (H.onRefreshNeededRef.current as () => Promise<void>)();
+
+    expect(loadError()).toBe(false);
+    expect(listIds()).toEqual(["A", "B", "C"]);
   });
 });
 

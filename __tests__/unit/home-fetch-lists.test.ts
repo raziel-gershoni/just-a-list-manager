@@ -103,18 +103,26 @@ afterEach(() => {
 });
 
 describe("home fetchLists logs a refused load", () => {
-  it("logs the status and shows the Retry screen", async () => {
+  // The orchestrator's refresh is silent: the Retry screen is for the first load (and the
+  // Retry button), which home-background-saves.test.ts runs with its effects.
+  it("a reconnect refresh logs the status as silent and does not show the Retry screen", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => reply(500)));
-    await fetchLists()();
-    expect(console.warn).toHaveBeenCalledWith("[Home] Load lists failed:", { view: "active", silent: false, status: 500 });
-    expect(text(render())).toContain("lists.loadError");
+    // It rejects, so the orchestrator doesn't report stale lists as a successful reconnect.
+    await expect(fetchLists()()).rejects.toThrow("Lists refresh failed");
+    expect(console.warn).toHaveBeenCalledWith("[Home] Load lists failed:", { view: "active", silent: true, status: 500 });
+    expect(text(render())).not.toContain("lists.loadError");
+  });
+
+  it("a reconnect refresh that works resolves", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => reply(200, [{ id: "a", name: "A" }, { id: "b", name: "B" }])));
+    await expect(fetchLists()()).resolves.toBeUndefined();
   });
 
   it("a silent resync logs the status and keeps the lists on screen", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => reply(200, [{ id: "a", name: "A" }, { id: "b", name: "B" }])));
     await fetchLists()();
     vi.stubGlobal("fetch", vi.fn(async () => reply(503)));
-    await fetchLists()({ silent: true });
+    await expect(fetchLists()({ silent: true })).rejects.toThrow("Lists refresh failed");
     expect(console.warn).toHaveBeenCalledWith("[Home] Load lists failed:", { view: "active", silent: true, status: 503 });
     expect(text(render())).not.toContain("lists.loadError");
   });
@@ -126,10 +134,10 @@ describe("home fetchLists logs a refused load", () => {
     const first = load({ silent: true });
     const second = load({ silent: true });
     pending[0](reply(500));
-    await first;
+    await expect(first).resolves.toBeUndefined(); // overtaken: the newer load reports
     expect(console.warn).not.toHaveBeenCalled();
     pending[1](reply(502));
-    await second;
+    await expect(second).rejects.toThrow("Lists refresh failed");
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith("[Home] Load lists failed:", { view: "active", silent: true, status: 502 });
   });
@@ -148,7 +156,10 @@ describe("home without a session (H10)", () => {
     T.jwtRef.current = null;
     const f = vi.fn();
     vi.stubGlobal("fetch", f);
-    await fetchLists()();
+    // The launch load (the page's isReady effect, not the silent reconnect refresh) is
+    // the one that puts up the error screen.
+    render();
+    R.effects.find((e) => e.deps?.[0] === true)!.fn();
     const tree = render();
     expect(f).not.toHaveBeenCalled();
     expect(text(tree)).toContain("lists.loadError");
