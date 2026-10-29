@@ -74,6 +74,8 @@ export interface SyncEngine {
   pendingSnapshot(): QueuedMutation[];
   /** Fields those entries touch for that item, matched by real id at the time of the call. */
   pendingFieldsOf(entries: QueuedMutation[], itemId: string): Set<string>;
+  /** The tempId of the oldest create of exactly this text still queued or in flight, if any. */
+  pendingCreateFor(text: string): string | undefined;
   /** The real id for a resolved temp id, else the id itself. */
   resolveId(id: string): string;
 }
@@ -279,6 +281,14 @@ class ListSyncEngine implements SyncEngine {
 
   resolveId(id: string): string {
     return this.tempIds.get(id)?.id ?? id;
+  }
+
+  pendingCreateFor(text: string): string | undefined {
+    for (const m of this.mine()) {
+      const tempId = str(m.payload.tempId);
+      if (m.type === "create" && tempId && m.payload.text === text && !this.tempIds.has(tempId)) return tempId;
+    }
+    return undefined;
   }
 
   dispose() {

@@ -705,6 +705,24 @@ describe("pendingFields", () => {
     expect(w.engine().pendingFieldsOf(snapshot, "r-temp-1")).toEqual(new Set(["created", "completed", "completed_at"]));
   });
 
+  it("pendingCreateFor names the oldest create of that text still on its way, in flight or kept for a retry", async () => {
+    const w = world();
+    w.when("create temp-1", "hold");
+    w.when("create temp-2", 500); // kept for a retry: queued, not in flight
+    w.add("create", { tempId: "temp-1", text: "milk" });
+    w.add("create", { tempId: "temp-2", text: "milk" });
+    w.add("create", { tempId: "temp-3", text: "eggs" });
+    await settle();
+
+    expect(w.engine().pendingCreateFor("milk")).toBe("temp-1");
+    expect(w.engine().pendingCreateFor("eggs")).toBeUndefined(); // already saved
+    expect(w.engine().pendingCreateFor("bread")).toBeUndefined();
+
+    w.release("create temp-1");
+    await settle();
+    expect(w.engine().pendingCreateFor("milk")).toBe("temp-2");
+  });
+
   it("no longer lists a change by the time its page hears it landed", async () => {
     const w = world();
     const seen: Set<string>[] = [];
