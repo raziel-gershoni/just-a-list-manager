@@ -26,6 +26,7 @@ import { useSortingRetry } from "@/src/hooks/useSortingRetry";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { SORTING_GROUP, countByCategory } from "@/src/utils/list-helpers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
+import { throwIfNotOk } from "@/src/utils/http";
 import { DragDropProvider } from "@dnd-kit/react";
 
 const executorFactory = createExecutorFactory();
@@ -365,6 +366,7 @@ function ListContent() {
                 <button
                   key={tp}
                   onClick={() => {
+                    const previousType = listType;
                     setListType(tp);
                     const jwt = jwtRef.current;
                     if (jwt) {
@@ -373,10 +375,16 @@ function ListContent() {
                         headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
                         body: JSON.stringify({ id: listId, type: tp }),
                       })
-                        // Nothing loaded categories while the list was another type.
-                        .then(() => (tp === "grocery" ? loadCategories() : undefined))
+                        .then((res) => {
+                          throwIfNotOk(res, "Type change");
+                          // Nothing loaded categories while the list was another type.
+                          return tp === "grocery" ? loadCategories() : undefined;
+                        })
                         .catch((err) => {
                           console.error("[List] Failed to update list type, listId:", listId, "type:", tp, err);
+                          setListType(previousType);
+                          setErrorToast(t('errors.generic'));
+                          setTimeout(() => setErrorToast(null), 3000);
                         });
                     }
                   }}

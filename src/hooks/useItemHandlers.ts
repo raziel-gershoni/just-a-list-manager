@@ -8,6 +8,8 @@ import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { computeUnmarkCompleted } from "@/src/utils/unmark-completed";
 import { computeClearCompleted } from "@/src/utils/clear-completed";
 import { computeUnskipAll } from "@/src/utils/unskip-all";
+import { throwIfNotOk } from "@/src/utils/http";
+import { restoreItemsOnServer, type RestoreBody } from "@/src/utils/item-restore";
 
 interface UseItemHandlersParams {
   listId: string;
@@ -40,6 +42,31 @@ export function useItemHandlers({
   setErrorToast,
   t,
 }: UseItemHandlersParams) {
+  // One toast for a background save that failed and was put back on screen.
+  const showSyncError = useCallback(() => {
+    setErrorToast(t("items.syncError"));
+    setTimeout(() => setErrorToast(null), 3000);
+  }, [setErrorToast, t]);
+
+  // Sends an Undo's item PATCHes. `revert` puts the items whose restore failed back to
+  // how they were before the Undo, so the screen matches the server.
+  const restoreOrRevert = useCallback(
+    (bodies: RestoreBody[], revert: (failed: Set<string>) => void) => {
+      void restoreItemsOnServer(listId, jwtRef.current, bodies).then((failed) => {
+        if (failed.length === 0) return;
+        revert(new Set(failed));
+        showSyncError();
+      });
+    },
+    [listId, jwtRef, showSyncError]
+  );
+
+  // Revert for a restore of deleted items: they leave the screen again.
+  const removeAgain = useCallback(
+    (failed: Set<string>) => setItems((prev) => prev.filter((i) => !failed.has(i.id))),
+    [setItems]
+  );
+
   const addSingleItem = useCallback(
     (text: string) => {
       const tempId = `temp-${Date.now()}-${Math.random()}`;
@@ -229,19 +256,8 @@ export function useItemHandlers({
           setUndoAction(null);
           if (deletedItem) {
             setItems((prev) => [...prev, deletedItem]);
-            // Restore on server
-            const jwt = jwtRef.current;
-            fetch(`/api/lists/${listId}/items`, {
-              method: "PATCH",
-              headers: {
-                Authorization: `Bearer ${jwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                itemId,
-                deleted_at: null,
-              }),
-            });
+            // Restore on server; if that fails, the item leaves the screen again.
+            restoreOrRevert([{ itemId, deleted_at: null }], removeAgain);
           }
         },
         timeout,
@@ -266,7 +282,7 @@ export function useItemHandlers({
         },
       });
     },
-    [jwtRef, listId, items, addMutation, t, setItems, setUndoAction]
+    [jwtRef, listId, items, addMutation, t, setItems, setUndoAction, restoreOrRevert, removeAgain]
   );
 
   const handleEditItem = useCallback(
@@ -520,18 +536,11 @@ export function useItemHandlers({
           clearTimeout(timeout);
           setUndoAction(null);
           setItems((prev) => [...prev, ...duplicatesToRemove]);
-          // Restore on server
-          const currentJwt = jwtRef.current;
-          for (const item of duplicatesToRemove) {
-            fetch(`/api/lists/${listId}/items`, {
-              method: "PATCH",
-              headers: {
-                Authorization: `Bearer ${currentJwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ itemId: item.id, deleted_at: null }),
-            });
-          }
+          // Restore on server; duplicates whose restore fails leave the screen again.
+          restoreOrRevert(
+            duplicatesToRemove.map((item) => ({ itemId: item.id, deleted_at: null })),
+            removeAgain
+          );
         },
         timeout,
       });
@@ -558,7 +567,7 @@ export function useItemHandlers({
         });
       }
     },
-    [jwtRef, listId, items, addMutation, t, setItems, setUndoAction]
+    [jwtRef, listId, items, addMutation, t, setItems, setUndoAction, restoreOrRevert, removeAgain]
   );
 
   const handleClearCompleted = useCallback(async () => {
@@ -579,27 +588,34 @@ export function useItemHandlers({
         clearTimeout(timeout);
         setUndoAction(null);
         setItems((prev) => [...prev, ...completedItems]);
-        // Restore on server
-        const currentJwt = jwtRef.current;
-        for (const item of completedItems) {
-          fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${currentJwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId: item.id, deleted_at: null }),
-          });
-        }
+        // Restore on server; items whose restore fails leave the screen again.
+        restoreOrRevert(
+          completedItems.map((item) => ({ itemId: item.id, deleted_at: null })),
+          removeAgain
+        );
       },
       timeout,
     });
 
-    await fetch(`/api/lists/${listId}/items/clear-completed`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-  }, [jwtRef, listId, items, t, setItems, setUndoAction]);
+    try {
+      const res = await fetch(`/api/lists/${listId}/items/clear-completed`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      throwIfNotOk(res, "Clear completed");
+    } catch (err) {
+      // Not in the offline queue: put the items back so the screen matches the server.
+      console.error("[List] Clear completed failed:", { listId }, err);
+      clearTimeout(timeout);
+      setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
+      // Skip items already back on screen (an Undo tapped before this failed).
+      setItems((prev) => {
+        const present = new Set(prev.map((i) => i.id));
+        return [...prev, ...completedItems.filter((i) => !present.has(i.id))];
+      });
+      showSyncError();
+    }
+  }, [jwtRef, listId, items, t, setItems, setUndoAction, restoreOrRevert, removeAgain, showSyncError]);
 
   const handleUnmarkAllDone = useCallback(async () => {
     const jwt = jwtRef.current;
@@ -607,6 +623,10 @@ export function useItemHandlers({
 
     const { affectedIds } = computeUnmarkCompleted(items);
     if (affectedIds.length === 0) return;
+    // Completion times before the flip, put back if the server refuses it.
+    const completedAtById = new Map(
+      items.filter((i) => affectedIds.includes(i.id)).map((i) => [i.id, i.completed_at] as const)
+    );
 
     const tg = getTelegramWebApp();
     tg?.HapticFeedback?.impactOccurred("light");
@@ -629,27 +649,39 @@ export function useItemHandlers({
               : i
           )
         );
-        // Restore on server
-        const currentJwt = jwtRef.current;
-        for (const id of affectedIds) {
-          fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${currentJwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId: id, completed: true }),
-          });
-        }
+        // Restore on server; items whose restore fails are unchecked again.
+        restoreOrRevert(
+          affectedIds.map((id) => ({ itemId: id, completed: true })),
+          (failed) =>
+            setItems((prev) =>
+              prev.map((i) => (failed.has(i.id) ? { ...i, completed: false, completed_at: null } : i))
+            )
+        );
       },
       timeout,
     });
 
-    await fetch(`/api/lists/${listId}/items/unmark-completed`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-  }, [jwtRef, listId, items, t, setItems, setUndoAction]);
+    try {
+      const res = await fetch(`/api/lists/${listId}/items/unmark-completed`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      throwIfNotOk(res, "Unmark all");
+    } catch (err) {
+      // Not in the offline queue: re-check the items so the screen matches the server.
+      console.error("[List] Unmark all failed:", { listId }, err);
+      clearTimeout(timeout);
+      setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
+      setItems((prev) =>
+        prev.map((i) =>
+          completedAtById.has(i.id)
+            ? { ...i, completed: true, completed_at: completedAtById.get(i.id) ?? null }
+            : i
+        )
+      );
+      showSyncError();
+    }
+  }, [jwtRef, listId, items, t, setItems, setUndoAction, restoreOrRevert, showSyncError]);
 
   const sendSignal = useCallback(
     async (endpoint: "remind" | "ready", successKey: string) => {

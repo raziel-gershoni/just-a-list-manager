@@ -29,7 +29,7 @@ describe("categories sheet wiring", () => {
   });
 
   it("the sheet shows its own error, because it covers the page's toasts", () => {
-    // ToastContainer draws at z-30, under the sheet's z-50 overlay, so a toast would go unseen.
+    // ToastContainer's undo and info toasts draw at z-30, under the sheet's z-50 overlay, so they would go unseen.
     expect(sheet).toMatch(/runCategoryAction\(jwtRef\.current, action, \(\) => \{\s*undo\?\.\(\);\s*setError\(t\("categories\.error"\)\);\s*\}\)/);
     expect(sheet).toMatch(/\{error && \(\s*<p ref=\{errorRef\} role="alert"[^>]*>\{error\}<\/p>\s*\)\}/);
   });

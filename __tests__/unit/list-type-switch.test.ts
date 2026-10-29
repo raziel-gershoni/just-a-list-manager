@@ -72,6 +72,7 @@ vi.mock("@/components/list/ToastContainer", () => ({ default: () => null }));
 import ListPage from "@/app/list/[id]/page";
 import ListHeader from "@/components/list/ListHeader";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
+import ToastContainer from "@/components/list/ToastContainer";
 import { DragDropProvider } from "@dnd-kit/react";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
@@ -117,6 +118,9 @@ function chooseType(type: string) {
   (button!.props.onClick as () => void)();
 }
 
+// What the page's error toast says right now.
+const errorToast = () => find(render(), (el) => el.type === ToastContainer)!.props.errorToast;
+
 const settle = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
@@ -143,6 +147,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("switching a list's type in settings", () => {
@@ -169,7 +174,23 @@ describe("switching a list's type in settings", () => {
     expect(loadCategories).not.toHaveBeenCalled();
   });
 
-  it("a switch that could not be sent loads nothing and fails quietly", async () => {
+  it("a switch the server refused puts the old type back, loads nothing, and says so", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    chooseType("grocery");
+    patch.resolve({ ok: false, status: 500 });
+    await settle();
+
+    expect(setListType.mock.calls).toEqual([["grocery"], ["regular"]]);
+    expect(loadCategories).not.toHaveBeenCalled();
+    expect(errorToast()).toBe("errors.generic");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[List] Failed to update list type, listId:", "L", "type:", "grocery",
+      expect.objectContaining({ message: "Type change failed: 500" })
+    );
+  });
+
+  it("a switch that could not be sent puts the old type back and says so, with no unhandled rejection", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => void unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
@@ -182,8 +203,19 @@ describe("switching a list's type in settings", () => {
     } finally {
       process.off("unhandledRejection", onUnhandled);
     }
+    expect(setListType.mock.calls).toEqual([["grocery"], ["regular"]]);
     expect(loadCategories).not.toHaveBeenCalled();
+    expect(errorToast()).toBe("errors.generic");
     expect(unhandled).toEqual([]);
+  });
+
+  it("a switch the server accepted keeps the new type and shows no error", async () => {
+    chooseType("grocery");
+    patch.resolve({ ok: true, status: 200 });
+    await settle();
+
+    expect(setListType.mock.calls).toEqual([["grocery"]]);
+    expect(errorToast()).toBeNull();
   });
 });
 
