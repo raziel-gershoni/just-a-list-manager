@@ -123,6 +123,8 @@ const runEffects = () => {
 const settle = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
+type OnError = (info: { mutationId: string; type: string; httpStatus: number | null; message: string; dropped: boolean; payload: Record<string, unknown> }) => void;
+const onError = () => S.queueArgs[3] as OnError;
 const onSuccess = () => S.queueArgs[4] as (m: unknown, result: unknown) => void;
 
 const item = (over: Partial<ItemData> & { id: string }): ItemData => ({
@@ -188,6 +190,28 @@ describe("the list page and its sync engine", () => {
     expect(S.fetchItems).toHaveBeenCalledOnce();
   });
 
+  it("re-reads the list after a dropped change, one refresh at a time (H17)", async () => {
+    let finish: () => void = () => {};
+    S.refreshItems = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    render();
+    const drop = { mutationId: "m1", type: "toggle", httpStatus: 400, message: "Toggle failed: 400", dropped: true, payload: { itemId: "i1" } };
+
+    onError()(drop);
+    onError()({ ...drop, mutationId: "m2" });
+    onError()({ ...drop, mutationId: "m3" });
+    expect(S.refreshItems).toHaveBeenCalledOnce();
+
+    finish();
+    await settle();
+    expect(S.refreshItems).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not refresh for a change kept for retry", () => {
+    render();
+    onError()({ mutationId: "m1", type: "toggle", httpStatus: 503, message: "Toggle failed: 503", dropped: false, payload: {} });
+    expect(S.refreshItems).not.toHaveBeenCalled();
+  });
+
   it("a landed create keeps the tick made on the item before its create answered (H5)", () => {
     S.items = [item({ id: "temp-1", text: "milk", completed: true, completed_at: "2026-10-29T08:00:00.000Z", position: 99, _pending: true })];
     ENGINE.pending = new Set(["completed", "completed_at"]);
@@ -204,5 +228,11 @@ describe("the list page and its sync engine", () => {
         completed: true, completed_at: "2026-10-29T08:00:00.000Z", _pending: false,
       }),
     ]);
+  });
+
+  it("asks for a fresh token when the engine reports a 401", () => {
+    S.requestTokenRefresh = vi.fn();
+    render();
+    expect(S.queueArgs[5]).toBe(S.requestTokenRefresh);
   });
 });

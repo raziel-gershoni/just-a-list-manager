@@ -22,6 +22,10 @@ import { useJWTRefresh, isInitDataFresh, readStoredToken, readTokenClaims } from
 import { useLocaleSync } from "@/src/hooks/useLocaleSync";
 import { useHomeScreen } from "@/src/hooks/useHomeScreen";
 import { useReconnectOrchestrator, MAX_RETRIES } from "@/src/hooks/useReconnectOrchestrator";
+import { flushAllQueues } from "@/src/sync/engine";
+import { createExecutorFactory } from "@/src/utils/executor-factory";
+
+const executorFactory = createExecutorFactory();
 
 // Re-export types for backward compatibility
 export type { ConnectionStatus } from "@/src/hooks/useReconnectOrchestrator";
@@ -192,6 +196,17 @@ export default function TelegramProvider({
     onRefreshNeededRef,
     router,
   });
+
+  // Once there is a token, replay every list's saved changes, so a list the user does not
+  // reopen still syncs. A 401 there asks for a fresh token.
+  const tokenRefreshForSyncRef = useRef(requestTokenRefresh);
+  useEffect(() => {
+    tokenRefreshForSyncRef.current = requestTokenRefresh;
+  }, [requestTokenRefresh]);
+  useEffect(() => {
+    if (!jwt) return;
+    void flushAllQueues(() => jwtRef.current, executorFactory, () => tokenRefreshForSyncRef.current());
+  }, [jwt, jwtRef]);
 
   // Keep heartbeat ref in sync with orchestrator's runReconnectRef
   runReconnectRef_local.current = runReconnectRef.current;

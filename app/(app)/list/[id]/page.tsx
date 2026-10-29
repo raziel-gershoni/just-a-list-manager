@@ -19,6 +19,7 @@ import ToastContainer from "@/components/list/ToastContainer";
 import { useMutationQueue, type MutationErrorInfo, type QueuedMutation } from "@/src/hooks/useMutationQueue";
 import { getSyncEngine } from "@/src/sync/engine";
 import { overlayPending } from "@/src/sync/overlay";
+import { coalesce } from "@/src/utils/coalesce";
 import { useListData } from "@/src/hooks/useListData";
 import { useItemHandlers } from "@/src/hooks/useItemHandlers";
 import { useListDragDrop } from "@/src/hooks/useListDragDrop";
@@ -42,6 +43,7 @@ export default function ListPage() {
     userId,
     jwt,
     jwtRef,
+    requestTokenRefresh,
     onFlushNeededRef,
     onResubscribeNeededRef,
     onRefreshNeededRef,
@@ -87,6 +89,13 @@ export default function ListPage() {
   // JWT getter for mutation queue (reads latest from ref)
   const getJwt = useCallback(() => jwtRef.current, [jwtRef]);
 
+  // A dropped change may still show on screen: re-read the list. Drops that come in while a
+  // refresh runs share one more refresh after it.
+  const refreshAfterDrop = useMemo(
+    () => coalesce(refreshItems, "[List] Refresh after a dropped change failed"),
+    [refreshItems]
+  );
+
   const onMutationError = useCallback((info: MutationErrorInfo) => {
     if (info.dropped) {
       setErrorToast(t('items.syncError'));
@@ -95,8 +104,9 @@ export default function ListPage() {
       if (info.type === "create" && typeof info.payload?.tempId === "string") {
         setItems((prev) => prev.filter((i) => i.id !== info.payload.tempId));
       }
+      refreshAfterDrop();
     }
-  }, [t, setItems]);
+  }, [t, setItems, refreshAfterDrop]);
 
   // A landed create swaps its temp row for the server's row, keeping the local value of
   // every field a later change (a tick, an edit, a drag) has not landed yet.
@@ -114,7 +124,7 @@ export default function ListPage() {
     );
   }, [listId, setItems]);
 
-  const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError, onMutationSuccess);
+  const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError, onMutationSuccess, requestTokenRefresh);
 
   const { activeItems, skippedItems, recurringItems, completedItems, completedGroups, categoryGroups, duplicateTexts } =
     useListDerivedData(items, t as (key: string) => string, { categories, locale, grouped: listType === "grocery" });
