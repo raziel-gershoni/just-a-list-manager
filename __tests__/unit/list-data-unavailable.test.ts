@@ -89,4 +89,18 @@ describe("a list this user can no longer open", () => {
     await render().fetchItems();
     expect(render()).toMatchObject({ error: false, notFound: false });
   });
+
+  it("a load skipped for lack of a session does not keep the not-found view", async () => {
+    const status = 403;
+    stubFetch(() => status);
+    await render().fetchItems();
+    expect(render()).toMatchObject({ notFound: true });
+    jwtRef.current = null;
+    try {
+      await render().fetchItems();
+      expect(render()).toMatchObject({ error: true, notFound: false, loading: false });
+    } finally {
+      jwtRef.current = "jwt";
+    }
+  });
 });
