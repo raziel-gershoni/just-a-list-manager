@@ -78,6 +78,10 @@ vi.mock("@/components/list/ToastContainer", () => ({ default: () => null }));
 
 import ListPage from "@/app/(app)/list/[id]/page";
 
+const settle = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+};
+
 function row(over: Partial<ItemData> & { id: string }): ItemData {
   return {
     text: over.id, completed: false, completed_at: null, deleted_at: null, skipped_at: null,
@@ -121,5 +125,21 @@ describe("the list page's create answer", () => {
       row({ id: "r1", text: "milk" })
     );
     expect(S.items.map((i) => [i.id, i._pending])).toEqual([["r1", false]]);
+  });
+});
+
+describe("the list page after a realtime rejoin", () => {
+  it("refreshes the list to catch up on what it missed", async () => {
+    S.realtimeArgs!.onRejoined!();
+    await settle();
+    expect(S.refreshCalls).toBe(1);
+  });
+
+  it("logs a catch-up refresh that fails", async () => {
+    const refused = new Error("Background refresh failed: 503");
+    S.refreshFails = refused;
+    S.realtimeArgs!.onRejoined!();
+    await settle();
+    expect(console.error).toHaveBeenCalledWith("[List] Catch-up refresh after a realtime rejoin failed:", refused);
   });
 });

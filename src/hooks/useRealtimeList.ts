@@ -16,6 +16,11 @@ type Subscription = {
   client: SupabaseClient;
   channel: RealtimeChannel;
   joined: boolean;
+  // supabase-js rejoins a channel by itself after an error or timeout and reports SUBSCRIBED
+  // again, but the changes sent while it was away are never replayed.
+  errored: boolean;
+  // This channel took the place of one that failed or was closed (see lostRef).
+  replacesLost: boolean;
   // Rejoins waiting for the join to end
   waiters: { resolve: () => void; reject: (err: Error) => void }[];
 };
@@ -28,7 +33,10 @@ export function useRealtimeList(
   // Called when the channel was closed for good by something other than this hook
   // (realtime-js removes a closed channel and never rejoins it): the provider reconnects,
   // and the rejoin step starts the list's next channel.
-  requestReconnect?: () => void
+  requestReconnect?: () => void,
+  // Called when the list's channel is back after a drop (supabase-js rejoined it, or a new
+  // channel replaced a failed or closed one): what changed meanwhile never arrived.
+  onRejoined?: () => void
 ) {
   const subRef = useRef<Subscription | null>(null);
   const onChangeRef = useRef(onChange);
@@ -39,6 +47,12 @@ export function useRealtimeList(
   useEffect(() => {
     requestReconnectRef.current = requestReconnect;
   }, [requestReconnect]);
+  const onRejoinedRef = useRef(onRejoined);
+  useEffect(() => {
+    onRejoinedRef.current = onRejoined;
+  }, [onRejoined]);
+  // A channel failed or was closed and its replacement has not joined yet: that join catches up.
+  const lostRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -134,7 +148,15 @@ export function useRealtimeList(
 
       subscribeCountRef.current++;
       const channelName = `list:${listId}:${subscribeCountRef.current}`;
-      const sub: Subscription = { client, channel: createChannel(client, channelName), joined: false, waiters: [] };
+      const sub: Subscription = {
+        client,
+        channel: createChannel(client, channelName),
+        joined: false,
+        errored: false,
+        replacesLost: lostRef.current,
+        waiters: [],
+      };
+      lostRef.current = false;
       subRef.current = sub;
 
       sub.channel.subscribe((status, err) => {
@@ -143,11 +165,16 @@ export function useRealtimeList(
         }
         if (subRef.current !== sub) return; // removed or forgotten
         if (status === "SUBSCRIBED") {
+          const catchUp = sub.errored || sub.replacesLost;
+          sub.errored = false;
+          sub.replacesLost = false;
           sub.joined = true;
           for (const w of sub.waiters.splice(0)) w.resolve();
+          if (catchUp) onRejoinedRef.current?.();
         } else if (status === "CLOSED") {
-          // Closed for good: the next rejoin starts a new channel.
+          // Closed for good: the next rejoin starts a new channel, whose join catches up.
           subRef.current = null;
+          lostRef.current = true;
           for (const w of sub.waiters.splice(0)) w.reject(new Error(`Channel subscribe failed: ${status}`));
           // Not a close this hook asked for (those clear subRef first). Unless the provider
           // replaced the client, which closed its channels: then a rejoin is already coming.
@@ -162,10 +189,12 @@ export function useRealtimeList(
           }
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           sub.joined = false;
+          sub.errored = true;
           // supabase-js rejoins by itself. A reconnect waiting on the join removes the channel
-          // instead, so its retry starts a new one.
+          // instead, so its retry starts a new one, whose join catches up.
           if (sub.waiters.length > 0) {
             subRef.current = null;
+            lostRef.current = true;
             removeChannelLogged(client, sub.channel, { listId, reason: `resubscribe ${status}` });
             for (const w of sub.waiters.splice(0)) w.reject(new Error(`Channel subscribe failed: ${status}`));
           }
@@ -187,6 +216,7 @@ export function useRealtimeList(
       const timeout = setTimeout(() => {
         if (subRef.current === sub && !sub.joined) {
           subRef.current = null;
+          lostRef.current = true;
           removeChannelLogged(client, sub.channel, { listId, reason: "resubscribe timed out" });
         }
         for (const w of sub.waiters.splice(0)) w.reject(new Error("Resubscribe timed out"));

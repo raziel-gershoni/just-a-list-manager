@@ -175,10 +175,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      if (!res.ok) {
-        console.warn("[List] Background refresh failed:", { listId, status: res.status });
-        return;
-      }
+      // A failed refresh throws, so the reconnect orchestrator retries instead of reporting a
+      // stale screen as connected.
+      throwIfNotOk(res, "Background refresh");
       const { items: fetchedItems } = await res.json();
 
       const mapped: ItemData[] = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string }) => {
@@ -197,6 +196,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       if (listType === "grocery") await loadCategories();
     } catch (e) {
       console.error("[List] Background refresh error:", { listId }, e);
+      throw e;
     }
   }, [jwtRef, listId, listType, loadCategories]);
 

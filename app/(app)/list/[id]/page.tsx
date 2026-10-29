@@ -95,6 +95,13 @@ export default function ListPage() {
     [refreshItems]
   );
 
+  // supabase-js rejoined the list's channel after a drop: what changed meanwhile never
+  // arrived, so re-read the list. Rejoins during a refresh share one more refresh after it.
+  const refreshAfterRejoin = useMemo(
+    () => coalesce(refreshItems, "[List] Catch-up refresh after a realtime rejoin failed"),
+    [refreshItems]
+  );
+
   const onMutationError = useCallback((info: MutationErrorInfo) => {
     if (info.dropped) {
       setErrorToast(t('items.syncError'));
@@ -170,6 +177,7 @@ export default function ListPage() {
     isDraggingRef,
     onListDeleted,
     onChannelClosed: reconnect,
+    onRejoined: refreshAfterRejoin,
   });
 
   // Register orchestrator callbacks

@@ -337,13 +337,27 @@ describe("useListData failed reads", () => {
     expect(console.warn).toHaveBeenCalledWith("[List] Categories load failed:", { listId: "L", status: 500 });
   });
 
-  it("a failed background refresh is logged with its status and keeps the items", async () => {
+  it("a failed background refresh is logged with its status, keeps the items and throws so the reconnect retries", async () => {
     stubRoutes({});
     await render().fetchItems();
     stubRoutes({ items: 502 });
-    await expect(render().refreshItems()).resolves.toBeUndefined();
+    await expect(render().refreshItems()).rejects.toThrow("Background refresh failed: 502");
     expect(render().items.map((i) => i.id)).toEqual(["a"]);
-    expect(console.warn).toHaveBeenCalledWith("[List] Background refresh failed:", { listId: "L", status: 502 });
+    expect(console.error).toHaveBeenCalledWith(
+      "[List] Background refresh error:",
+      { listId: "L" },
+      expect.objectContaining({ message: "Background refresh failed: 502" })
+    );
+  });
+
+  it("a background refresh that never reaches the server is logged, keeps the items and throws", async () => {
+    stubRoutes({});
+    await render().fetchItems();
+    const offline = new TypeError("Failed to fetch");
+    vi.stubGlobal("fetch", vi.fn(async () => { throw offline; }));
+    await expect(render().refreshItems()).rejects.toBe(offline);
+    expect(render().items.map((i) => i.id)).toEqual(["a"]);
+    expect(console.error).toHaveBeenCalledWith("[List] Background refresh error:", { listId: "L" }, offline);
   });
 
   it("a failed Sorting retry is logged with its status and asks for nothing else", async () => {

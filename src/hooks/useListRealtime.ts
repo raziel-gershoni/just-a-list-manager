@@ -21,6 +21,8 @@ interface UseListRealtimeParams {
   onListDeleted: () => void;
   /** The list's channel was closed for good: reconnect so a new one starts. */
   onChannelClosed?: () => void;
+  /** The channel came back after a drop: events sent meanwhile are lost, so the page catches up. */
+  onRejoined?: () => void;
 }
 
 export function useListRealtime({
@@ -33,6 +35,7 @@ export function useListRealtime({
   isDraggingRef,
   onListDeleted,
   onChannelClosed,
+  onRejoined,
 }: UseListRealtimeParams) {
   const onChange = useCallback(
     (change: RealtimeChange) => {
@@ -108,5 +111,5 @@ export function useListRealtime({
     [setItems, setListName, setCategories, isDraggingRef, onListDeleted, listId]
   );
 
-  return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange, onChannelClosed);
+  return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange, onChannelClosed, onRejoined);
 }

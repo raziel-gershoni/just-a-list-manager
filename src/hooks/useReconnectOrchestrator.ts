@@ -23,6 +23,30 @@ const PROACTIVE_REFRESH_MS = 45 * 60 * 1000; // 45 minutes
 // JWTs live 7 days (src/lib/jwt.ts), so a reconnect refreshes only a token older than a day.
 const TOKEN_REFRESH_AGE_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Reconnect steps "rejoin" and "refresh". The refresh runs even when the rejoin failed, so the
+ * screen catches up over HTTP while realtime is down. The rejoin's error is thrown afterwards,
+ * so the orchestrator still counts the attempt and retries. A failed refresh throws too.
+ */
+export async function rejoinThenRefresh(
+  rejoin: (() => Promise<void>) | null,
+  refresh: (() => Promise<void>) | null
+): Promise<void> {
+  let rejoinFailed = false;
+  let rejoinError: unknown;
+  if (rejoin) {
+    try {
+      await rejoin();
+    } catch (err) {
+      console.warn("[Orchestrator] Rejoin failed, refreshing over HTTP anyway:", err);
+      rejoinFailed = true;
+      rejoinError = err;
+    }
+  }
+  if (refresh) await refresh();
+  if (rejoinFailed) throw rejoinError;
+}
+
 function mapToConnectionStatus(state: OrchestratorState): ConnectionStatus {
   switch (state) {
     case "initializing":
@@ -183,15 +207,9 @@ export function useReconnectOrchestrator(params: {
       // changes (a list the user left while offline has no page to flush it).
       await Promise.all([onFlushNeededRef.current?.(), flushAll?.()]);
 
-      // Step 3: Rejoin realtime if the channel is not joined (no-op if no list page mounted)
-      if (onResubscribeNeededRef.current) {
-        await onResubscribeNeededRef.current();
-      }
-
-      // Step 4: Refresh server state (home page or list page)
-      if (onRefreshNeededRef.current) {
-        await onRefreshNeededRef.current();
-      }
+      // Steps 3 and 4: rejoin realtime if the channel is not joined (no-op if no list page
+      // mounted), then refresh server state (home page or list page), even when the rejoin failed.
+      await rejoinThenRefresh(onResubscribeNeededRef.current, onRefreshNeededRef.current);
 
       // Success — enter cooldown
       retryCountRef.current = 0;
