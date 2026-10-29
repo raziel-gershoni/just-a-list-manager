@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useTelegram } from "@/components/TelegramProvider";
-import { requestToJoin, cancelJoinRequest } from "@/src/utils/invite-requests";
+import { requestToJoin, cancelJoinRequest, inviteAuthHeaders } from "@/src/utils/invite-requests";
 
 export default function InvitePage() {
-  const { initData, isReady, jwtRef } = useTelegram();
+  const { initData, isReady, jwt, jwtRef } = useTelegram();
   const t = useTranslations();
   const params = useParams();
   const router = useRouter();
@@ -24,8 +24,19 @@ export default function InvitePage() {
   const [collaboratorId, setCollaboratorId] = useState("");
   const [cancelFailed, setCancelFailed] = useState(false);
 
+  // Set once the join was sent, so a later token refresh does not send it again.
+  const askedRef = useRef(false);
+
   const acceptInvite = useCallback(async () => {
-    const outcome = await requestToJoin(token, initData!);
+    const headers = inviteAuthHeaders(initData, jwtRef.current);
+    if (!headers) {
+      // The sign-in gave up: Retry, or a JWT that arrives later, asks again.
+      console.warn("[Invite] No credentials to ask to join yet");
+      setStatus("retry");
+      return;
+    }
+    askedRef.current = true;
+    const outcome = await requestToJoin(token, headers);
     switch (outcome.kind) {
       case "member":
         setListId(outcome.listId);
@@ -46,18 +57,20 @@ export default function InvitePage() {
         setStatus("retry");
         return;
     }
-  }, [token, initData, router]);
+  }, [token, initData, jwtRef, router]);
 
   const retryInvite = () => {
     setStatus("loading");
     void acceptInvite();
   };
 
+  // Once the session settled: with fresh initData, else the JWT (on the web, and after a
+  // Telegram "Reload page" more than 5 minutes in).
   useEffect(() => {
-    if (!isReady || !initData) return;
+    if (!isReady || askedRef.current) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async invite flow sets state after await
     void acceptInvite();
-  }, [isReady, initData, acceptInvite]);
+  }, [isReady, jwt, acceptInvite]);
 
   const cancelRequest = async () => {
     if (!collaboratorId) return;

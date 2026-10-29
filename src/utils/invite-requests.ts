@@ -1,3 +1,5 @@
+import { isInitDataFresh } from "@/src/hooks/useJWTRefresh";
+
 /** What the invite page shows after asking to join a list. */
 export type JoinOutcome =
   | { kind: "pending"; listId: string; listName: string; collaboratorId: string }
@@ -6,17 +8,28 @@ export type JoinOutcome =
   | { kind: "retry" };
 
 /**
- * Asks to join the list behind an invite link. A server failure (5xx), a rate limit (429) or a
- * dropped connection is "retry": the link may be fine. Only the route's own refusals (404, 410,
- * 400) are "invalid". The token is in the URL, so it is never logged.
+ * The credential for asking to join: the launch initData while the server still accepts it
+ * (a Telegram "Reload page" reuses it long after), else the session JWT. Null with neither.
  */
-export async function requestToJoin(token: string, initData: string): Promise<JoinOutcome> {
+export function inviteAuthHeaders(initData: string | null, jwt: string | null): Record<string, string> | null {
+  if (initData && isInitDataFresh(initData)) return { "x-telegram-init-data": initData };
+  if (jwt) return { Authorization: `Bearer ${jwt}` };
+  return null;
+}
+
+/**
+ * Asks to join the list behind an invite link. A server failure (5xx), a rate limit (429), a
+ * refused sign-in (401) or a dropped connection is "retry": the link may be fine. Only the
+ * route's own refusals (404, 410, 400) are "invalid". The token is in the URL, so it is never
+ * logged.
+ */
+export async function requestToJoin(token: string, authHeaders: Record<string, string>): Promise<JoinOutcome> {
   let res: Response;
   try {
     res = await fetch(`/api/share/${token}`, {
       method: "POST",
       headers: {
-        "x-telegram-init-data": initData,
+        ...authHeaders,
         "Content-Type": "application/json",
       },
     });
@@ -27,6 +40,10 @@ export async function requestToJoin(token: string, initData: string): Promise<Jo
 
   if (res.status >= 500 || res.status === 429) {
     console.error("[Invite] Join request failed, status:", res.status);
+    return { kind: "retry" };
+  }
+  if (res.status === 401) {
+    console.warn("[Invite] Join request was refused sign-in, status:", res.status);
     return { kind: "retry" };
   }
 

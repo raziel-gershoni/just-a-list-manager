@@ -17,6 +17,7 @@ type World = {
   pendingCount: number | null; countError: unknown;
   inserted: Row; insertError: unknown;
   owner: Row; ownerError: unknown;
+  requester: Row; requesterError: unknown;
   deleteError: unknown;
 };
 
@@ -25,17 +26,26 @@ const h = vi.hoisted(() => ({
   sendApprovalRequest: null as unknown as ReturnType<typeof vi.fn>,
 }));
 
+// Only "init-data" is valid; any other value stands for initData the server refuses (too old).
 vi.mock("@/src/lib/telegram-auth", () => ({
-  validateInitData: () => ({ id: 7, first_name: "Dana", language_code: "he" }),
+  validateInitData: (initData: string) =>
+    initData === "init-data" ? { id: 7, first_name: "Dana", language_code: "he" } : null,
 }));
 vi.mock("@/src/lib/rate-limit", () => ({
   apiRateLimiter: {},
   checkRateLimit: async () => ({ success: true }),
   getRateLimitHeaders: () => ({}),
 }));
-vi.mock("@/src/lib/api-auth", () => ({
-  verifyUserAuth: async () => ({ success: true, userId: "u2" }),
-}));
+// Only the Bearer "good.jwt" signs in, as user u2; anything else is the real 401.
+vi.mock("@/src/lib/api-auth", async () => {
+  const { NextResponse } = await import("next/server");
+  return {
+    verifyUserAuth: async (req: Request) =>
+      req.headers.get("Authorization") === "Bearer good.jwt"
+        ? { success: true, userId: "u2", telegramUserId: 7 }
+        : { success: false, response: NextResponse.json({ error: "Missing authentication" }, { status: 401 }) },
+  };
+});
 vi.mock("@/src/lib/supabase", () => ({ createServerClient: () => h.fake.client }));
 vi.mock("@/src/services/bot", () => ({
   sendApprovalRequest: (...args: unknown[]) => h.sendApprovalRequest(...args),
@@ -72,6 +82,8 @@ function use(overrides: Partial<World> = {}) {
     insertError: null,
     owner: { telegram_id: 777, language: "he" },
     ownerError: null,
+    requester: { name: "Dana Levi" },
+    requesterError: null,
     deleteError: null,
     ...overrides,
   };
@@ -79,6 +91,7 @@ function use(overrides: Partial<World> = {}) {
     if (c.table === "invite_links") return row(c, w.invite, w.inviteError);
     if (c.table === "lists") return row(c, w.list, w.listError);
     if (c.table === "users" && c.op === "upsert") return row(c, w.user, w.userError);
+    if (c.table === "users" && c.op === "select" && c.cols === "name") return row(c, w.requester, w.requesterError);
     if (c.table === "users" && c.op === "select") return row(c, w.owner, w.ownerError);
     if (c.table === "collaborators" && c.op === "select" && c.cols === "id, status") return row(c, w.existing, w.existingError);
     if (c.table === "collaborators" && c.op === "select") {
@@ -92,17 +105,17 @@ function use(overrides: Partial<World> = {}) {
   }) as typeof h.fake;
 }
 
-const post = () =>
+const post = (headers: Record<string, string> = { "x-telegram-init-data": "init-data" }) =>
   POST(
-    new NextRequest(`https://app.test/api/share/${TOKEN}`, {
-      method: "POST",
-      headers: { "x-telegram-init-data": "init-data" },
-    }),
+    new NextRequest(`https://app.test/api/share/${TOKEN}`, { method: "POST", headers }),
     { params: Promise.resolve({ token: TOKEN }) }
   );
 const del = () =>
   DELETE(
-    new NextRequest(`https://app.test/api/share/${TOKEN}?collaboratorId=c1`, { method: "DELETE" })
+    new NextRequest(`https://app.test/api/share/${TOKEN}?collaboratorId=c1`, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer good.jwt" },
+    })
   );
 
 const ops = () => h.fake.calls.map((c) => `${c.table}:${c.op}`);
@@ -123,6 +136,78 @@ beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => vi.restoreAllMocks());
+
+// A Telegram "Reload page" reuses the launch initData, which the server refuses after 5
+// minutes; the session JWT must still let the invitee ask to join (or see their request).
+describe("POST /api/share/[token]: who is asking", () => {
+  it("signs in with the Bearer JWT when there is no initData, without writing the user row", async () => {
+    use();
+
+    const res = await post({ Authorization: "Bearer good.jwt" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ listId: "L1", listName: "Groceries", collaboratorId: "c-new", status: "pending" });
+    expect(ops()).not.toContain("users:upsert");
+    const nameRead = h.fake.calls.find((c) => c.table === "users" && c.cols === "name");
+    expect(nameRead?.filters).toContain("eq:id=u2");
+    const insert = h.fake.calls.find((c) => c.table === "collaborators" && c.op === "insert");
+    expect(insert?.values).toMatchObject({ list_id: "L1", user_id: "u2", status: "pending" });
+    expect(h.sendApprovalRequest).toHaveBeenCalledWith(777, "u2", "Dana Levi", "L1", "Groceries", "c-new", "he");
+  });
+
+  it("falls back to the Bearer JWT when the initData is too old", async () => {
+    use({ existing: { id: "c-old", status: "pending" } });
+
+    const res = await post({ "x-telegram-init-data": "stale-init-data", Authorization: "Bearer good.jwt" });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ status: "already_pending", listId: "L1", listName: "Groceries", collaboratorId: "c-old" });
+    expect(ops()).not.toContain("users:upsert");
+  });
+
+  it("a JWT for the list's owner is still told they own it", async () => {
+    use({ list: { id: "L1", name: "Groceries", owner_id: "u2" } });
+
+    const res = await post({ Authorization: "Bearer good.jwt" });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).status).toBe("already_approved");
+    expect(ops()).not.toContain("collaborators:insert");
+  });
+
+  it("answers a failed name read on the JWT path with a logged 500 before any write", async () => {
+    use({ requester: null, requesterError: DB_DOWN });
+
+    const res = await post({ Authorization: "Bearer good.jwt" });
+
+    expect(res.status).toBe(500);
+    expect(console.error).toHaveBeenCalledWith("[Share] User read failed:", { userId: "u2" }, DB_DOWN);
+    expect(ops()).not.toContain("collaborators:insert");
+  });
+
+  it("a JWT whose user row is gone is 401, logged, and writes nothing", async () => {
+    use({ requester: null });
+
+    const res = await post({ Authorization: "Bearer good.jwt" });
+
+    expect(res.status).toBe(401);
+    expect(console.warn).toHaveBeenCalledWith("[Share] The signed-in user has no row:", { userId: "u2" });
+    expect(ops()).not.toContain("collaborators:insert");
+  });
+
+  it.each([
+    ["no credential", {}],
+    ["initData that is too old", { "x-telegram-init-data": "stale-init-data" }],
+    ["a refused JWT", { Authorization: "Bearer bad.jwt" }],
+  ])("%s is 401 before any read", async (_label, headers) => {
+    use();
+
+    const res = await post(headers as Record<string, string>);
+
+    expect(res.status).toBe(401);
+    expect(h.fake.calls).toEqual([]);
+  });
+});
 
 describe("POST /api/share/[token]: reads", () => {
   it("answers a failed invite read with a logged 500, without the token in any log", async () => {

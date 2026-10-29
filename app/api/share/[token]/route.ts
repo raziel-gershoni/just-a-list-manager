@@ -12,25 +12,29 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  // Auth check (header only — avoids credential leakage via logs/referrers)
+  // Auth check (header only — avoids credential leakage via logs/referrers). Fresh initData
+  // also refreshes the user row below. Otherwise the session JWT: a Telegram "Reload page"
+  // reuses the launch initData, which is refused after 5 minutes.
   const initData = request.headers.get("x-telegram-init-data");
+  const telegramUser = initData ? validateInitData(initData) : null;
+  let jwtUserId: string | null = null;
 
-  if (!initData) {
+  if (telegramUser) {
+    // Rate limit: 5 req/min per user
+    const rateLimitResult = await checkRateLimit(apiRateLimiter, telegramUser.id);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: getRateLimitHeaders(rateLimitResult) }
+      );
+    }
+  } else if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+    // Verifies the JWT and rate limits by its Telegram user.
+    const auth = await verifyUserAuth(request, apiRateLimiter, "share-join");
+    if (!auth.success) return auth.response;
+    jwtUserId = auth.userId;
+  } else {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const telegramUser = validateInitData(initData);
-  if (!telegramUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // Rate limit: 5 req/min per user
-  const rateLimitResult = await checkRateLimit(apiRateLimiter, telegramUser.id);
-  if (!rateLimitResult.success) {
-    return NextResponse.json(
-      { error: "Too many requests" },
-      { status: 429, headers: getRateLimitHeaders(rateLimitResult) }
-    );
   }
 
   const supabase = createServerClient();
@@ -73,32 +77,52 @@ export async function POST(
     );
   }
 
-  // Look up or create user
-  const name = [telegramUser.first_name, telegramUser.last_name]
-    .filter(Boolean)
-    .join(" ");
-  const language = ["en", "he", "ru"].includes(
-    telegramUser.language_code || ""
-  )
-    ? telegramUser.language_code
-    : "en";
-
-  const { data: user, error: userError } = await supabase
-    .from("users")
-    .upsert(
-      {
-        telegram_id: telegramUser.id,
-        name,
-        username: telegramUser.username || null,
-        language,
-      },
-      { onConflict: "telegram_id" }
+  // Look up or create user (initData), or read the JWT's user for the owner's message
+  let user: { id: string };
+  let name: string;
+  if (telegramUser) {
+    name = [telegramUser.first_name, telegramUser.last_name]
+      .filter(Boolean)
+      .join(" ");
+    const language = ["en", "he", "ru"].includes(
+      telegramUser.language_code || ""
     )
-    .select("id")
-    .single();
+      ? telegramUser.language_code
+      : "en";
 
-  if (userError || !user) {
-    return dbError("Share", "User upsert", userError, { telegramId: telegramUser.id });
+    const { data: upserted, error: userError } = await supabase
+      .from("users")
+      .upsert(
+        {
+          telegram_id: telegramUser.id,
+          name,
+          username: telegramUser.username || null,
+          language,
+        },
+        { onConflict: "telegram_id" }
+      )
+      .select("id")
+      .single();
+
+    if (userError || !upserted) {
+      return dbError("Share", "User upsert", userError, { telegramId: telegramUser.id });
+    }
+    user = upserted;
+  } else {
+    const userId = jwtUserId!;
+    const { data: found, error: userError } = await supabase
+      .from("users")
+      .select("name")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (userError) return dbError("Share", "User read", userError, { userId });
+    if (!found) {
+      console.warn("[Share] The signed-in user has no row:", { userId });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    user = { id: userId };
+    name = found.name;
   }
 
   // Check if user is the owner
