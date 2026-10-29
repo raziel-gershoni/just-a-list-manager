@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { RefreshCw } from "lucide-react";
@@ -16,7 +16,9 @@ import SkippedItemsSection from "@/components/list/SkippedItemsSection";
 import RecurringItemsSection from "@/components/list/RecurringItemsSection";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
 import ToastContainer from "@/components/list/ToastContainer";
-import { useMutationQueue, type MutationErrorInfo } from "@/src/hooks/useMutationQueue";
+import { useMutationQueue, type MutationErrorInfo, type QueuedMutation } from "@/src/hooks/useMutationQueue";
+import { getSyncEngine } from "@/src/sync/engine";
+import { overlayPending } from "@/src/sync/overlay";
 import { useListData } from "@/src/hooks/useListData";
 import { useItemHandlers } from "@/src/hooks/useItemHandlers";
 import { useListDragDrop } from "@/src/hooks/useListDragDrop";
@@ -27,6 +29,7 @@ import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { SORTING_GROUP, countByCategory } from "@/src/utils/list-helpers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
 import { throwIfNotOk } from "@/src/utils/http";
+import type { ItemData } from "@/src/types";
 import { DragDropProvider } from "@dnd-kit/react";
 
 const executorFactory = createExecutorFactory();
@@ -37,6 +40,7 @@ export default function ListPage() {
     supabaseClient,
     supabaseClientRef,
     userId,
+    jwt,
     jwtRef,
     onFlushNeededRef,
     onResubscribeNeededRef,
@@ -94,7 +98,23 @@ export default function ListPage() {
     }
   }, [t, setItems]);
 
-  const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError);
+  // A landed create swaps its temp row for the server's row, keeping the local value of
+  // every field a later change (a tick, an edit, a drag) has not landed yet.
+  const onMutationSuccess = useCallback((m: QueuedMutation, result: unknown) => {
+    if (m.type !== "create" || typeof m.payload.tempId !== "string") return;
+    const tempId = m.payload.tempId;
+    const row = result as ItemData;
+    const pending = getSyncEngine(listId).pendingFields(row.id);
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === tempId
+          ? { ...overlayPending(row, i, pending), creator_name: null, editor_name: null, _pending: false }
+          : i
+      )
+    );
+  }, [listId, setItems]);
+
+  const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError, onMutationSuccess);
 
   const { activeItems, skippedItems, recurringItems, completedItems, completedGroups, categoryGroups, duplicateTexts } =
     useListDerivedData(items, t as (key: string) => string, { categories, locale, grouped: listType === "grocery" });
@@ -106,7 +126,6 @@ export default function ListPage() {
     setItems,
     addMutation,
     listId,
-    jwtRef,
     groups: categoryGroups,
   });
 
@@ -165,9 +184,30 @@ export default function ListPage() {
 
   // isReady turns true once the session settled: with a JWT the list loads; without one
   // (the sign-in gave up) fetchItems shows the error screen, and a later token reloads it.
+  // With a JWT the load waits for this list's saved changes to replay, so it shows them and
+  // not the state before them (a change still kept after that, e.g. offline, shows when it
+  // lands). A token that arrives or is renewed later only replays what is still saved; the
+  // provider also flushes every list after auth.
+  const loadedRef = useRef<"none" | "without-token" | "with-token">("none");
   useEffect(() => {
-    if (isReady) fetchItems();
-  }, [isReady, fetchItems]);
+    if (!isReady) {
+      loadedRef.current = "none";
+      return;
+    }
+    const hasToken = !!jwt;
+    const load = loadedRef.current === "none" || (hasToken && loadedRef.current === "without-token");
+    if (load) loadedRef.current = hasToken ? "with-token" : "without-token";
+    void (async () => {
+      if (hasToken) {
+        try {
+          await flushQueue();
+        } catch (err) {
+          console.error("[List] Replaying saved changes failed, loading anyway:", { listId }, err);
+        }
+      }
+      if (load) await fetchItems();
+    })();
+  }, [isReady, jwt, listId, flushQueue, fetchItems]);
 
   if (loading) {
     return (

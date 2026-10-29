@@ -27,11 +27,6 @@ function isQueuedMutation(v: unknown): v is QueuedMutation {
 
 export class MutationQueue {
   private storageKey: string;
-  // Ephemeral, per-session, never persisted: which queued mutations have a request
-  // in flight right now. A queued mutation is only removed on success, so without
-  // this a flush triggered mid-request (focus / visibilitychange / the 45-minute
-  // timer) re-runs the same executor and the request lands twice.
-  private inFlight = new Set<string>();
 
   constructor(listId: string) {
     this.storageKey = `mutation_queue:${listId}`;
@@ -133,17 +128,5 @@ export class MutationQueue {
     } catch (err) {
       console.warn(`[MutationQueue] Could not clear the offline queue (${this.storageKey}):`, err);
     }
-  }
-
-  markInFlight(id: string) {
-    this.inFlight.add(id);
-  }
-
-  clearInFlight(id: string) {
-    this.inFlight.delete(id);
-  }
-
-  isInFlight(id: string): boolean {
-    return this.inFlight.has(id);
   }
 }

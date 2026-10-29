@@ -10,9 +10,8 @@ import { computeGroupedDrop } from "@/src/utils/grouped-drop";
 interface UseListDragDropParams {
   items: ItemData[];
   setItems: React.Dispatch<React.SetStateAction<ItemData[]>>;
-  addMutation: (mutation: { id: string; type: string; payload: Record<string, unknown>; execute: () => Promise<string | void> }) => void;
+  addMutation: (mutation: { id: string; type: string; payload: Record<string, unknown> }) => void;
   listId: string;
-  jwtRef: React.RefObject<string | null>;
   groups: CategoryGroup[] | null;
 }
 
@@ -21,7 +20,6 @@ export function useListDragDrop({
   setItems,
   addMutation,
   listId,
-  jwtRef,
   groups,
 }: UseListDragDropParams) {
   const isDraggingRef = useRef(false);
@@ -98,52 +96,23 @@ export function useListDragDrop({
       );
 
       if (moveTo) {
-        const categoryId = moveTo;
         addMutation({
           id: genMutId(),
           type: "set-category",
-          payload: { listId, itemId: sourceId, categoryId },
-          execute: async () => {
-            const jwt = jwtRef.current;
-            const res = await fetch(`/api/lists/${listId}/items`, {
-              method: "PATCH",
-              headers: {
-                Authorization: `Bearer ${jwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ itemId: sourceId, categoryId }),
-              keepalive: true,
-            });
-            if (!res.ok) throw new Error(`Set category failed: ${res.status}`);
-          },
+          payload: { listId, itemId: sourceId, categoryId: moveTo },
         });
       }
 
-      const mutId = genMutId();
       addMutation({
-        id: mutId,
+        id: genMutId(),
         type: "reorder",
         payload: { listId, orderedIds: updatedIds },
-        execute: async () => {
-          try {
-            const jwt = jwtRef.current;
-            const res = await fetch(`/api/lists/${listId}/items/reorder`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${jwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ orderedIds: updatedIds }),
-              keepalive: true,
-            });
-            if (!res.ok) throw new Error(`Reorder failed: ${res.status}`);
-          } finally {
-            isDraggingRef.current = false;
-          }
-        },
       });
+      // The drag is over. Until the queued reorder lands, the positions on screen are
+      // pending fields of the sync engine, which refresh and realtime keep.
+      isDraggingRef.current = false;
     },
-    [items, groups, jwtRef, listId, addMutation, setItems]
+    [items, groups, listId, addMutation, setItems]
   );
 
   return { handleDragStart, handleDragEnd, isDraggingRef };

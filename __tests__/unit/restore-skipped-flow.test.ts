@@ -44,6 +44,7 @@ vi.mock("react", () => {
 import { useMutationQueue } from "@/src/hooks/useMutationQueue";
 import { useItemHandlers } from "@/src/hooks/useItemHandlers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
+import { resetSyncEngines } from "@/src/sync/engine";
 import type { ItemData } from "@/src/types";
 
 const SKIPPED_AT = "2026-10-08T08:00:00.000Z";
@@ -64,14 +65,16 @@ const settle = async () => {
   for (let i = 0; i < 10; i++) await vi.advanceTimersByTimeAsync(0);
 };
 
-// A grocery list with milk and eggs under Not available and bread active.
-function world(opts: { extraItems?: ItemData[] } = {}) {
+// A grocery list with milk and eggs under Not available and bread active. `saved` is the
+// list's offline queue as a previous session left it.
+function world(opts: { extraItems?: ItemData[]; saved?: unknown[] } = {}) {
   const server = new Map<string, Row>([
     ["milk", { id: "milk", skipped_at: SKIPPED_AT }],
     ["eggs", { id: "eggs", skipped_at: SKIPPED_AT }],
     ["bread", { id: "bread", skipped_at: null }],
   ]);
   const storage = new Map<string, string>();
+  if (opts.saved) storage.set("mutation_queue:L", JSON.stringify(opts.saved));
   vi.stubGlobal("localStorage", {
     getItem: (k: string) => storage.get(k) ?? null,
     setItem: (k: string, v: string) => void storage.set(k, v),
@@ -85,7 +88,7 @@ function world(opts: { extraItems?: ItemData[] } = {}) {
   vi.stubGlobal("document", doc);
   vi.stubGlobal("window", { addEventListener: on, removeEventListener: off });
 
-  // Per-request behaviors, consumed in order; default "ok". Keys: "unskip-all" or "PATCH <id>".
+  // Per-request behaviors, consumed in order; default "ok". Keys: "unskip-all", "PATCH <id>" or "POST create".
   const behaviors = new Map<string, Behavior[]>();
   const held = new Map<string, () => void>();
   const log: string[] = [];
@@ -110,11 +113,21 @@ function world(opts: { extraItems?: ItemData[] } = {}) {
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: { method: string; body?: string }) => {
     const body = JSON.parse(init.body ?? "{}");
-    const key = url.endsWith("/items/unskip-all") ? "unskip-all" : `${init.method} ${body.itemId}`;
+    const key = url.endsWith("/items/unskip-all")
+      ? "unskip-all"
+      : init.method === "POST"
+        ? "POST create"
+        : `${init.method} ${body.itemId}`;
     const behavior = behaviors.get(key)?.shift() ?? "ok";
     if (behavior === "neterr") { log.push(`${key} neterr`); throw new TypeError("Failed to fetch"); }
     if (behavior === 500) { log.push(`${key} 500`); return { ok: false, status: 500, json: async () => ({}) }; }
     if (behavior === "hold") await new Promise<void>((resolve) => held.set(key, resolve));
+    if (key === "POST create") {
+      // The server names the new row after its text.
+      server.set(body.text, { id: body.text, skipped_at: null });
+      log.push(`create ${body.text}`);
+      return { ok: true, status: 201, json: async () => ({ items: [{ ...toItem(server.get(body.text)!), text: body.text }] }) };
+    }
     return apply(key, body);
   }));
 
@@ -146,8 +159,9 @@ function world(opts: { extraItems?: ItemData[] } = {}) {
     return { q, h };
   };
   const { q, h } = render();
-  // Reopening the app: a fresh mount over the same storage.
+  // Reopening the app: a fresh mount over the same storage, with no engine in memory.
   const makeQueue = () => {
+    resetSyncEngines();
     R.slots = [];
     return render().q;
   };
@@ -175,6 +189,7 @@ function world(opts: { extraItems?: ItemData[] } = {}) {
 }
 
 beforeEach(() => {
+  resetSyncEngines();
   R.slots = [];
   R.i = 0;
   vi.useFakeTimers();
@@ -183,6 +198,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetSyncEngines();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -244,16 +260,30 @@ describe("Restore all on Not available", () => {
     expect(w.queued()).toEqual([]);
   });
 
-  it("an item still waiting for its offline create is restored through its own skip mutation, queued at tap time", async () => {
-    const pending = { ...toItem({ id: "temp-1-0.5", skipped_at: SKIPPED_AT }), _pending: true };
-    const w = world({ extraItems: [pending] });
-    w.when("PATCH temp-1-0.5", "neterr");
+  it("an item still waiting for its offline create is restored through its own skip, sent with the real id after the create", async () => {
+    const pending = { ...toItem({ id: "temp-1-0.5", skipped_at: SKIPPED_AT }), text: "rice", _pending: true };
+    const create = {
+      id: "c1",
+      type: "create",
+      payload: { listId: "L", text: "rice", position: 1, idempotencyKey: "c1", tempId: "temp-1-0.5" },
+      timestamp: Date.now(),
+    };
+    const w = world({ extraItems: [pending], saved: [create] });
+    w.when("POST create", "neterr");
     w.h.handleRestoreSkipped();
     expect(w.clientState("temp-1-0.5")).toEqual({ "temp-1-0.5": "active" });
     await settle();
 
-    expect(w.log).toContain("unskip-all milk,eggs");
-    // Queued behind its create, so the queue can swap in the real id before sending.
-    expect(w.queued()).toEqual(["skip"]);
+    // Nothing goes out with the temp id: the skip waits behind its create, and Restore all
+    // (a list-wide change) waits behind both.
+    expect(w.log).toEqual(["POST create neterr"]);
+    expect(w.queued()).toEqual(["create", "skip", "unskip-all"]);
+
+    await w.q.flushQueue();
+    await settle();
+
+    expect(w.log).toEqual(["POST create neterr", "create rice", "PATCH rice skipped=false", "unskip-all milk,eggs"]);
+    expect(w.serverState("milk", "eggs", "rice")).toEqual({ milk: "active", eggs: "active", rice: "active" });
+    expect(w.queued()).toEqual([]);
   });
 });

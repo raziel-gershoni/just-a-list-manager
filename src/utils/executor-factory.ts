@@ -1,5 +1,10 @@
-import type { ExecutorFactory } from "@/src/hooks/useMutationQueue";
-import type { QueuedMutation } from "@/src/utils/mutation-queue";
+import type { ExecutorFactory, QueuedMutation } from "@/src/sync/engine";
+
+// The one request builder per change type: the sync engine runs every change through it,
+// online and on replay. Tap time for toggle / skip / order: the payload's `at`, or the
+// queue time for an entry saved before `at` existed.
+const tapTime = (mutation: QueuedMutation): string =>
+  typeof mutation.payload.at === "string" ? mutation.payload.at : new Date(mutation.timestamp).toISOString();
 
 export const createExecutorFactory = (): ExecutorFactory => {
   return (mutation: QueuedMutation, getJwt: () => string) => {
@@ -23,7 +28,7 @@ export const createExecutorFactory = (): ExecutorFactory => {
           });
           if (!res.ok) throw new Error(`Create failed: ${res.status}`);
           const { items: created } = await res.json();
-          return created?.[0]?.id as string | undefined;
+          return created?.[0] ?? null;
         };
       case "toggle":
         return async () => {
@@ -34,7 +39,7 @@ export const createExecutorFactory = (): ExecutorFactory => {
               Authorization: `Bearer ${jwt}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ itemId: payload.itemId, completed: payload.completed }),
+            body: JSON.stringify({ itemId: payload.itemId, completed: payload.completed, at: tapTime(mutation) }),
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
@@ -89,7 +94,7 @@ export const createExecutorFactory = (): ExecutorFactory => {
               Authorization: `Bearer ${jwt}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ itemId: payload.itemId, skipped: payload.skipped }),
+            body: JSON.stringify({ itemId: payload.itemId, skipped: payload.skipped, at: tapTime(mutation) }),
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Skip failed: ${res.status}`);
@@ -103,7 +108,7 @@ export const createExecutorFactory = (): ExecutorFactory => {
               Authorization: `Bearer ${jwt}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ itemId: payload.itemId, ordered: payload.ordered }),
+            body: JSON.stringify({ itemId: payload.itemId, ordered: payload.ordered, at: tapTime(mutation) }),
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Order failed: ${res.status}`);
@@ -149,6 +154,8 @@ export const createExecutorFactory = (): ExecutorFactory => {
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Recycle failed: ${res.status}`);
+          const { items: recycled } = await res.json();
+          return recycled?.[0] ?? null;
         };
       case "unskip-all":
         return async () => {
@@ -177,6 +184,21 @@ export const createExecutorFactory = (): ExecutorFactory => {
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Set category failed: ${res.status}`);
+        };
+      case "restore":
+        // Undo of an item delete: queued behind the delete, so it always lands after it.
+        return async () => {
+          const jwt = getJwt();
+          const res = await fetch(`/api/lists/${payload.listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId: payload.itemId, deleted_at: null }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Restore failed: ${res.status}`);
         };
       default:
         return null;

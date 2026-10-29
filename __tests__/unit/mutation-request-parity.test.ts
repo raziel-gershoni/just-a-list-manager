@@ -1,238 +1,104 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
+import { getSyncEngine, resetSyncEngines, type QueuedMutation } from "@/src/sync/engine";
+import { createExecutorFactory } from "@/src/utils/executor-factory";
 
-// Every queued mutation is implemented TWICE: an inline `execute` closure in
-// addMutation({...}) (src/hooks/useItemHandlers.ts, src/hooks/useListDragDrop.ts)
-// that runs while online, and a `case` in src/utils/executor-factory.ts that
-// rebuilds the executor on replay after a page reload (pendingExecutors in
-// useMutationQueue.ts is an in-memory ref and does not survive one). If the two
-// disagree about the request to send, the app behaves differently online vs.
-// after a reload -- silently.
-//
-// This already happened in production (fixed in 5f3dd51): one mutation type
-// sent one request online and a different one on replay, so a tap made offline
-// did something else once the app was reopened, and the queue still reported
-// success. The feature involved is gone; the class of bug is not.
-//
-// __tests__/unit/executor-factory.test.ts already asserts every mutation type
-// HAS a factory case -- it catches a missing case, not a divergent one, which
-// is what actually bit. This test closes that gap by extracting the set of
-// (method, url) pairs each side can send, per type, and asserting the two
-// sets match exactly.
-//
-// The two implementations are deliberately asymmetric (optimistic setItems +
-// React-scope reads on the inline side; no optimistic insert + a Realtime-only
-// successor on the factory side; a drag-lock `finally` in useListDragDrop.ts
-// the factory structurally can't reproduce) -- unifying them was considered
-// and rejected. Only the request shape needs to agree, so this is a
-// source-inspection test (pattern: recycle-scoping.test.ts,
-// no-deleted-item-leak.test.ts, restore-skipped-wiring.test.ts) rather than a
-// behavioral one: vitest runs in node here, with no jsdom, so the inline
-// closures (which live inside React hooks) cannot actually be invoked.
+// A change made online and the same change replayed after a reload must send the same
+// request. This already broke in production (5f3dd51) when each change type had two request
+// builders, an inline one for online and executor-factory for replay. Now the sync engine
+// sends every change through executor-factory; this runs each type both ways through the
+// real engine and factory and compares what reaches fetch.
 
-type Pair = { method: string; url: string };
+const A = "00000000-0000-4000-8000-00000000000a";
+const B = "00000000-0000-4000-8000-00000000000b";
+const AT = "2026-10-29T08:00:00.000Z";
 
-function pairKey(p: Pair): string {
-  return `${p.method} ${p.url}`;
+// One representative payload per executor-factory case.
+const SAMPLES: Record<string, Record<string, unknown>> = {
+  create: { text: "milk", position: 5, idempotencyKey: "k1", tempId: "temp-1" },
+  toggle: { itemId: A, completed: true, at: AT },
+  delete: { itemId: A },
+  edit: { itemId: A, text: "oat milk" },
+  reorder: { orderedIds: [A, B] },
+  skip: { itemId: A, skipped: true, at: AT },
+  order: { itemId: A, ordered: true, at: AT },
+  "set-recurring": { itemId: A, recurring: true },
+  "restore-recurring": { itemId: A },
+  recycle: { text: "milk", recycleId: A },
+  "unskip-all": { itemIds: [A, B] },
+  "set-category": { itemId: A, categoryId: B },
+  restore: { itemId: A },
+};
+
+type Sent = { url: string; method: string; auth: string; body: unknown };
+
+const storage = new Map<string, string>();
+let sent: Sent[] = [];
+
+beforeEach(() => {
+  resetSyncEngines();
+  storage.clear();
+  sent = [];
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => storage.get(k) ?? null,
+    setItem: (k: string, v: string) => void storage.set(k, v),
+    removeItem: (k: string) => void storage.delete(k),
+  });
+  vi.stubGlobal("navigator", { onLine: true });
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => {
+    sent.push({ url, method: init.method, auth: init.headers.Authorization, body: init.body ? JSON.parse(init.body) : null });
+    return { ok: true, status: 200, json: async () => ({ items: [{ id: B }] }) };
+  }));
+});
+
+afterEach(() => {
+  resetSyncEngines();
+  vi.unstubAllGlobals();
+});
+
+const settle = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+};
+
+function attach() {
+  const engine = getSyncEngine("L");
+  engine.attach({ getJwt: () => "jwt", executorFactory: createExecutorFactory() });
+  return engine;
 }
 
-// Template interpolations differ cosmetically between the two sides (e.g.
-// `${payload.listId}` on the factory side vs. `${listId}` on the inline side)
-// but must refer to the same value. Collapse every `${...}` to a placeholder
-// so the two normalize to the same string.
-function normalizeUrl(url: string): string {
-  return url.replace(/\$\{[^}]*\}/g, "{}");
+async function online(type: string): Promise<Sent[]> {
+  sent = [];
+  attach().add({ id: "m1", type, payload: { listId: "L", ...SAMPLES[type] } });
+  await settle();
+  return sent;
 }
 
-// Returns the index of the close bracket matching the open bracket at
-// `openIndex` (which must point AT the open character). Backtick template
-// literals and quoted strings are treated as opaque spans -- so a `${...}`
-// interpolation's braces inside a template literal never perturb the depth
-// count -- which is what makes this safe to use on a URL template literal
-// passed as a fetch() argument.
-function findMatchingClose(
-  source: string,
-  openIndex: number,
-  openChar: string,
-  closeChar: string
-): number {
-  let depth = 0;
-  let i = openIndex;
-  while (i < source.length) {
-    const c = source[i];
-    if (c === "`" || c === '"' || c === "'") {
-      const quote = c;
-      i++;
-      while (i < source.length && source[i] !== quote) {
-        i += source[i] === "\\" ? 2 : 1;
-      }
-      i++;
-      continue;
-    }
-    if (c === openChar) {
-      depth++;
-    } else if (c === closeChar) {
-      depth--;
-      if (depth === 0) return i;
-    }
-    i++;
-  }
-  throw new Error(`no matching "${closeChar}" found for "${openChar}" at index ${openIndex}`);
+async function afterReload(type: string): Promise<Sent[]> {
+  resetSyncEngines();
+  sent = [];
+  const saved: QueuedMutation = { id: "m1", type, payload: { listId: "L", ...SAMPLES[type] }, timestamp: Date.now() };
+  storage.set("mutation_queue:L", JSON.stringify([saved]));
+  await attach().flush();
+  return sent;
 }
 
-// Extracts every `fetch(\`URL\`, { method: "METHOD", ... })` call inside
-// `slice`, as normalized (method, url) pairs. Requires `method` to be the
-// request-init object's first key -- true of every fetch() call in both
-// source files this test reads (verified by hand while writing this test);
-// the "at least one pair per case" sanity test below would fail loudly if a
-// future call site broke that assumption instead of this silently matching
-// zero pairs.
-function extractFetchPairs(slice: string): Pair[] {
-  const re = /fetch\(\s*`([^`]*)`\s*,\s*\{\s*method:\s*"([A-Z]+)"/g;
-  const pairs: Pair[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(slice)) !== null) {
-    pairs.push({ method: m[2], url: normalizeUrl(m[1]) });
-  }
-  return pairs;
-}
-
-function pairSetToString(pairs: Pair[]): string {
-  return [...new Set(pairs.map(pairKey))].sort().join(", ") || "(none)";
-}
-
-// executor-factory.ts is one flat `switch (type)` with no nesting between
-// cases, so slicing each `case "<type>":` up to the next `case "` (or the
-// trailing `default:`) is safe -- there is no code between two case labels
-// that belongs to neither.
-function extractFactoryCases(source: string): Map<string, Pair[]> {
-  const result = new Map<string, Pair[]>();
-  const caseRe = /case\s*"([a-zA-Z-]+)":/g;
-  const starts: { type: string; index: number }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = caseRe.exec(source)) !== null) {
-    starts.push({ type: m[1], index: m.index });
-  }
-  if (starts.length === 0) {
-    throw new Error('no `case "...":` labels found in executor-factory.ts -- extraction regex is stale');
-  }
-
-  const defaultIdx = source.indexOf("default:");
-  if (defaultIdx <= 0) {
-    throw new Error("no `default:` label found in executor-factory.ts -- expected end-of-switch anchor");
-  }
-
-  for (let i = 0; i < starts.length; i++) {
-    const start = starts[i].index;
-    const end = i + 1 < starts.length ? starts[i + 1].index : defaultIdx;
-    const slice = source.slice(start, end);
-    const existing = result.get(starts[i].type) ?? [];
-    result.set(starts[i].type, [...existing, ...extractFetchPairs(slice)]);
-  }
-  return result;
-}
-
-// useItemHandlers.ts / useListDragDrop.ts call `addMutation({ id, type,
-// payload, execute })` at the top level of a handler -- calls are never
-// nested inside one another. Rather than slicing from one `type: "..."` to
-// the next (which would run past the current call's `execute` closure and
-// into unrelated code whenever the NEXT addMutation call is far away, or
-// there is no next one -- e.g. "restore-recurring" is the last addMutation
-// call in useItemHandlers.ts, so a naive slice-to-next-type would run to EOF
-// and vacuum up unrelated fetch() calls from handleClearCompleted,
-// sendSignal, etc.), this finds each literal `addMutation({` call site and
-// brace-matches its object-literal argument precisely, so the slice is
-// exactly that one call's `{ id, type, payload, execute }` -- nothing more,
-// nothing less.
-function extractAddMutationCases(source: string): Map<string, Pair[]> {
-  const result = new Map<string, Pair[]>();
-  const anchor = "addMutation({";
-  let searchFrom = 0;
-  let callCount = 0;
-  while (true) {
-    const idx = source.indexOf(anchor, searchFrom);
-    if (idx === -1) break;
-    callCount++;
-    const openBrace = idx + "addMutation(".length; // index of the "{"
-    const closeBrace = findMatchingClose(source, openBrace, "{", "}");
-    const slice = source.slice(openBrace, closeBrace + 1);
-
-    const typeMatch = slice.match(/type:\s*"([a-zA-Z-]+)"/);
-    if (!typeMatch) {
-      throw new Error(`addMutation({ call at source index ${idx} has no type: "..." field`);
-    }
-    const type = typeMatch[1];
-
-    const existing = result.get(type) ?? [];
-    result.set(type, [...existing, ...extractFetchPairs(slice)]);
-    searchFrom = closeBrace + 1;
-  }
-  if (callCount === 0) {
-    throw new Error("no addMutation({ call sites found -- extraction anchor is stale");
-  }
-  return result;
-}
-
-describe("mutation request parity: online (inline) vs. replay (factory)", () => {
-  const factorySource = readFileSync(
-    resolve(process.cwd(), "src/utils/executor-factory.ts"),
-    "utf8"
-  );
-  const handlersSource = readFileSync(
-    resolve(process.cwd(), "src/hooks/useItemHandlers.ts"),
-    "utf8"
-  );
-  // "reorder" is enqueued from the drag-and-drop hook, not useItemHandlers.ts.
-  const dragDropSource = readFileSync(
-    resolve(process.cwd(), "src/hooks/useListDragDrop.ts"),
-    "utf8"
-  );
-
-  const factoryCases = extractFactoryCases(factorySource);
-  const inlineCases = extractAddMutationCases(handlersSource);
-  for (const [type, pairs] of extractAddMutationCases(dragDropSource)) {
-    const existing = inlineCases.get(type) ?? [];
-    inlineCases.set(type, [...existing, ...pairs]);
-  }
-
-  it("sanity: every extracted case yielded at least one (method, url) pair", () => {
-    for (const [type, pairs] of factoryCases) {
-      expect(
-        pairs.length,
-        `factory case "${type}" yielded zero fetch(...) calls -- extractFetchPairs likely failed to match its shape`
-      ).toBeGreaterThan(0);
-    }
-    for (const [type, pairs] of inlineCases) {
-      expect(
-        pairs.length,
-        `inline mutation "${type}" yielded zero fetch(...) calls -- extractFetchPairs likely failed to match its shape`
-      ).toBeGreaterThan(0);
-    }
+describe("mutation request parity: online vs. replay", () => {
+  it("has a sample for every executor-factory case", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/utils/executor-factory.ts"), "utf8");
+    const cases = [...source.matchAll(/case\s*"([a-zA-Z-]+)":/g)].map((m) => m[1]).sort();
+    expect(cases.length).toBeGreaterThan(0);
+    expect(Object.keys(SAMPLES).sort()).toEqual(cases);
   });
 
-  it("factory and inline sides handle the exact same set of mutation types", () => {
-    const factoryTypes = [...factoryCases.keys()].sort();
-    const inlineTypes = [...inlineCases.keys()].sort();
-    expect(inlineTypes).toEqual(factoryTypes);
-  });
+  for (const type of Object.keys(SAMPLES)) {
+    it(`"${type}": online and after a reload it sends the same request`, async () => {
+      const first = await online(type);
+      const replayed = await afterReload(type);
 
-  const allTypes = [...new Set([...factoryCases.keys(), ...inlineCases.keys()])].sort();
-
-  for (const type of allTypes) {
-    it(`"${type}": online and replay send the same request(s)`, () => {
-      const factoryPairs = factoryCases.get(type) ?? [];
-      const inlinePairs = inlineCases.get(type) ?? [];
-      const factorySet = [...new Set(factoryPairs.map(pairKey))].sort();
-      const inlineSet = [...new Set(inlinePairs.map(pairKey))].sort();
-
-      expect(
-        inlineSet,
-        `mutation type "${type}" diverges between online and replay -- this is the exact class of ` +
-          `bug fixed in 5f3dd51 (a mutation sending one request online and another on replay).\n` +
-          `  inline (online, useItemHandlers.ts / useListDragDrop.ts): ${pairSetToString(inlinePairs)}\n` +
-          `  factory (replay, executor-factory.ts):                    ${pairSetToString(factoryPairs)}`
-      ).toEqual(factorySet);
+      expect(first).toHaveLength(1);
+      expect(first[0].auth).toBe("Bearer jwt");
+      expect(replayed).toEqual(first);
     });
   }
 });

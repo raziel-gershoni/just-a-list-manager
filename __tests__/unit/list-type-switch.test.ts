@@ -15,6 +15,11 @@ vi.mock("react", async (importOriginal) => ({
     const set = (u: unknown) => { slot.value = typeof u === "function" ? (u as (p: unknown) => unknown)(slot.value) : u; };
     return [slot.value, set];
   },
+  useRef: (init: unknown) => {
+    const i = R.i++;
+    if (!R.slots[i]) R.slots[i] = { value: { current: init } };
+    return R.slots[i].value;
+  },
   useCallback: (fn: unknown) => (R.i++, fn),
   useMemo: (fn: () => unknown) => (R.i++, fn()),
   useEffect: () => void R.i++,

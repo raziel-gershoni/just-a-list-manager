@@ -33,7 +33,7 @@ import { groupByCategory, isActiveItem } from "@/src/utils/list-helpers";
 import type { ItemData, ListCategory } from "@/src/types";
 
 type Hook = ReturnType<typeof useListDragDrop>;
-type Queued = { type: string; payload: Record<string, unknown>; execute: () => Promise<string | void> };
+type Queued = { id: string; type: string; payload: Record<string, unknown> };
 
 const category = (id: string, position: number): ListCategory => ({
   id, list_id: "L", name_en: id, name_he: "", name_ru: "", position, created_by: null,
@@ -61,7 +61,6 @@ function world({ grouped = true } = {}) {
     items = typeof u === "function" ? u(items) : u;
   });
   const addMutation = vi.fn();
-  const jwtRef = { current: "jwt" };
   const groups = () => {
     const active = items.filter(isActiveItem).sort((a, b) => b.position - a.position);
     return groupByCategory(active, categories, "en", "Sorting…");
@@ -70,7 +69,7 @@ function world({ grouped = true } = {}) {
   // The list page re-renders with the latest items and categories.
   const render = (): Hook => {
     R.i = 0;
-    return useListDragDrop({ items, setItems, addMutation, listId: "L", jwtRef, groups: grouped ? groups() : null });
+    return useListDragDrop({ items, setItems, addMutation, listId: "L", groups: grouped ? groups() : null });
   };
 
   return {
@@ -176,39 +175,20 @@ describe("useListDragDrop grouped drops", () => {
     expect(w.queued()[1].payload.orderedIds).toEqual(["milk", "cheese", "apples", "yogurt", "bananas"]);
   });
 
-  it("PATCHes the item with its new category, and holds the drag lock until the reorder lands", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-    vi.stubGlobal("fetch", fetchMock);
+  it("queues the changes for the sync engine to send, and ends the drag at the drop", () => {
+    // The requests themselves are executor-factory's (executor-factory.test.ts). Until the
+    // reorder lands, the new positions are the engine's pending fields.
     const w = world();
     const h = w.render();
     start(h);
-    end(h, "apples", { group: "dairy", index: 1 });
-    const [setCategory, reorder] = w.queued();
-
-    await setCategory.execute();
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/lists/L/items");
-    expect(init.method).toBe("PATCH");
-    expect(init.headers.Authorization).toBe("Bearer jwt");
-    expect(JSON.parse(init.body)).toEqual({ itemId: "apples", categoryId: "dairy" });
     expect(h.isDraggingRef.current).toBe(true);
-
-    await reorder.execute();
-    expect(fetchMock.mock.calls[1][0]).toBe("/api/lists/L/items/reorder");
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
-      orderedIds: ["milk", "bananas", "cheese", "apples", "yogurt"],
-    });
-    expect(h.isDraggingRef.current).toBe(false);
-  });
-
-  it("throws when the server refuses the category, so the queue retries it", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
-    const w = world();
-    const h = w.render();
-    start(h);
     end(h, "apples", { group: "dairy", index: 1 });
 
-    await expect(w.queued()[0].execute()).rejects.toThrow(/500/);
+    expect(w.queued().map((m) => Object.keys(m).sort())).toEqual([
+      ["id", "payload", "type"],
+      ["id", "payload", "type"],
+    ]);
+    expect(h.isDraggingRef.current).toBe(false);
   });
 });
 

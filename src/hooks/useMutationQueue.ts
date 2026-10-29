@@ -1,200 +1,56 @@
 "use client";
 
 import { useRef, useCallback, useEffect } from "react";
-import { MutationQueue, QueuedMutation } from "@/src/utils/mutation-queue";
+import {
+  getSyncEngine,
+  type ExecutorFactory,
+  type MutationErrorInfo,
+  type QueuedMutation,
+} from "@/src/sync/engine";
+import { createExecutorFactory } from "@/src/utils/executor-factory";
 
-interface Mutation {
-  id: string;
-  type: string;
-  payload: Record<string, unknown>;
-  execute: () => Promise<string | void>;
-}
+export type { ExecutorFactory, MutationErrorInfo, QueuedMutation } from "@/src/sync/engine";
 
-export type ExecutorFactory = (
-  mutation: QueuedMutation,
-  getJwt: () => string
-) => (() => Promise<string | void>) | null;
+const defaultExecutorFactory = createExecutorFactory();
 
-const MUTATION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-export type MutationErrorInfo = {
-  mutationId: string;
-  type: string;
-  httpStatus: number | null;
-  message: string;
-  dropped: boolean; // true if dequeued (non-retriable), false if kept for retry
-  payload: Record<string, unknown>;
-};
-
+/**
+ * The list page's handle on its list's sync engine (src/sync/engine.ts). Every change goes
+ * through addMutation and is sent by the executor factory, online and on replay. Nothing is
+ * flushed here on mount: the page flushes once a JWT exists, and the provider flushes every
+ * list after auth.
+ */
 export function useMutationQueue(
   listId: string,
   getJwt: () => string | null,
   executorFactory?: ExecutorFactory,
-  onMutationError?: (info: MutationErrorInfo) => void
+  onMutationError?: (info: MutationErrorInfo) => void,
+  onMutationSuccess?: (m: QueuedMutation, result: unknown) => void,
+  onAuthNeeded?: () => void
 ) {
-  const queueRef = useRef(new MutationQueue(listId));
-  const isFlushingRef = useRef(false);
-  const pendingExecutors = useRef<Map<string, () => Promise<string | void>>>(
-    new Map()
-  );
-  const executorFactoryRef = useRef(executorFactory);
+  // Latest callbacks, read when the engine calls back, so a re-render never re-attaches.
+  const latest = useRef({ getJwt, executorFactory, onMutationError, onMutationSuccess, onAuthNeeded });
   useEffect(() => {
-    executorFactoryRef.current = executorFactory;
-  }, [executorFactory]);
-  const onMutationErrorRef = useRef(onMutationError);
-  useEffect(() => {
-    onMutationErrorRef.current = onMutationError;
-  }, [onMutationError]);
+    latest.current = { getJwt, executorFactory, onMutationError, onMutationSuccess, onAuthNeeded };
+  });
 
-  const executeMutation = useCallback(
-    async (id: string, type: string, payload: Record<string, unknown>, execute: () => Promise<string | void>): Promise<string | void> => {
-      queueRef.current.markInFlight(id);
-      try {
-        const result = await execute();
-        queueRef.current.dequeue(id);
-        pendingExecutors.current.delete(id);
-        return result;
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "";
-
-        // If offline, keep in queue for later
-        if (
-          message.includes("fetch") ||
-          message.includes("network") ||
-          message.includes("Failed to fetch") ||
-          !navigator.onLine
-        ) {
-          console.warn("[MutationQueue] Offline — queued for later:", id, type, error);
-          return;
-        }
-
-        // Extract HTTP status from error message (e.g. "Create failed: 404")
-        const statusMatch = message.match(/:\s*(\d{3})$/);
-        const httpStatus = statusMatch ? parseInt(statusMatch[1], 10) : null;
-
-        // 4xx client errors (except 408 timeout / 429 rate limit) won't succeed on retry — dequeue
-        if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 408 && httpStatus !== 429) {
-          console.error("[MutationQueue] Client error — dropping:", id, type, httpStatus, error);
-          queueRef.current.dequeue(id);
-          pendingExecutors.current.delete(id);
-          onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: true, payload });
-          return;
-        }
-
-        // 5xx server errors, 408, 429, or unknown — keep in queue for retry
-        console.error("[MutationQueue] Error (will retry):", id, type, error);
-        onMutationErrorRef.current?.({ mutationId: id, type, httpStatus, message, dropped: false, payload });
-      } finally {
-        queueRef.current.clearInFlight(id);
-      }
-    },
-    []
+  useEffect(
+    () =>
+      getSyncEngine(listId).attach({
+        getJwt: () => latest.current.getJwt(),
+        executorFactory: (m, jwt) => (latest.current.executorFactory ?? defaultExecutorFactory)(m, jwt),
+        onError: (info) => latest.current.onMutationError?.(info),
+        onSuccess: (m, result) => latest.current.onMutationSuccess?.(m, result),
+        onAuthNeeded: () => latest.current.onAuthNeeded?.(),
+      }),
+    [listId]
   );
-
-  const flushQueue = useCallback(async () => {
-    if (isFlushingRef.current) return;
-    isFlushingRef.current = true;
-
-    try {
-      const queue = queueRef.current.getQueue();
-      const tempToRealId = new Map<string, string>();
-      // Track temp IDs whose create mutation failed — skip dependent mutations
-      const failedTempIds = new Set<string>();
-
-      for (const mutation of queue) {
-        // Drop mutations older than 24 hours
-        if (Date.now() - mutation.timestamp > MUTATION_MAX_AGE_MS) {
-          console.log("[MutationQueue] Dropping stale mutation (>24h):", mutation.id, mutation.type);
-          queueRef.current.dequeue(mutation.id);
-          pendingExecutors.current.delete(mutation.id);
-          continue;
-        }
-
-        // Skip anything already being sent — its caller will dequeue it on success.
-        if (queueRef.current.isInFlight(mutation.id)) {
-          continue;
-        }
-
-        // Skip mutations that depend on a failed create (temp ID never resolved)
-        const payloadItemId = typeof mutation.payload?.itemId === "string" ? mutation.payload.itemId : undefined;
-        if (payloadItemId && failedTempIds.has(payloadItemId)) {
-          console.log("[MutationQueue] Skipping mutation (parent create failed):", mutation.id, mutation.type);
-          continue;
-        }
-
-        // Resolve temp IDs in payload for chained mutations (use a clone to avoid mutating persisted queue)
-        const resolvedMutation = (payloadItemId && tempToRealId.has(payloadItemId))
-          ? { ...mutation, payload: { ...mutation.payload, itemId: tempToRealId.get(payloadItemId)! } }
-          : mutation;
-
-        let executor = pendingExecutors.current.get(mutation.id);
-        // If payload was resolved (temp→real ID swap), discard the stored executor
-        // so the factory creates a fresh one with the resolved ID in its closure
-        if (resolvedMutation !== mutation && executor) {
-          pendingExecutors.current.delete(mutation.id);
-          executor = undefined;
-        }
-        if (!executor && executorFactoryRef.current) {
-          const jwt = getJwt();
-          if (jwt) {
-            executor = executorFactoryRef.current(resolvedMutation, () => getJwt()!) ?? undefined;
-            if (executor) {
-              pendingExecutors.current.set(mutation.id, executor);
-            }
-          }
-        }
-
-        if (executor) {
-          const result = await executeMutation(mutation.id, resolvedMutation.type, resolvedMutation.payload, executor);
-          const payloadTempId = typeof resolvedMutation.payload?.tempId === "string" ? resolvedMutation.payload.tempId : undefined;
-          // If create mutation returned a server-assigned ID, track for temp→real resolution
-          if (typeof result === "string" && resolvedMutation.type === "create" && payloadTempId) {
-            tempToRealId.set(payloadTempId, result);
-          }
-          // If create mutation failed (still in queue — no dequeue happened), mark temp ID as failed
-          if (result === undefined && resolvedMutation.type === "create" && payloadTempId) {
-            const stillInQueue = queueRef.current.getQueue().some((m) => m.id === mutation.id);
-            if (stillInQueue) {
-              failedTempIds.add(payloadTempId);
-            }
-          }
-        } else {
-          // Executor lost and no factory — can't replay, remove
-          console.log("[MutationQueue] No executor for mutation, dropping:", mutation.id, mutation.type);
-          queueRef.current.dequeue(mutation.id);
-        }
-      }
-    } finally {
-      isFlushingRef.current = false;
-    }
-  }, [executeMutation, getJwt]);
 
   const addMutation = useCallback(
-    (mutation: Mutation) => {
-      queueRef.current.enqueue({
-        id: mutation.id,
-        type: mutation.type,
-        payload: mutation.payload,
-      });
-
-      pendingExecutors.current.set(mutation.id, mutation.execute);
-
-      // Execute immediately. The queue entry stays until this succeeds, so a flush
-      // triggered while the request is in flight would otherwise replay the same
-      // executor — isInFlight is what prevents that.
-      executeMutation(mutation.id, mutation.type, mutation.payload, mutation.execute);
-    },
-    [executeMutation]
+    (mutation: { id: string; type: string; payload: Record<string, unknown> }) => getSyncEngine(listId).add(mutation),
+    [listId]
   );
+  const flushQueue = useCallback(() => getSyncEngine(listId).flush(), [listId]);
+  const pendingFields = useCallback((itemId: string) => getSyncEngine(listId).pendingFields(itemId), [listId]);
 
-  // Flush on mount — replays any mutations persisted from a previous session
-  useEffect(() => {
-    const queue = queueRef.current.getQueue();
-    if (queue.length > 0) {
-      console.log("[MutationQueue] Found", queue.length, "persisted mutations — flushing");
-      flushQueue();
-    }
-  }, [flushQueue]);
-
-  return { addMutation, flushQueue };
+  return { addMutation, flushQueue, pendingFields };
 }

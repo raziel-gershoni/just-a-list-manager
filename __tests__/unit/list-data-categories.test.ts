@@ -27,6 +27,8 @@ vi.mock("react", () => {
 });
 
 import { useListData } from "@/src/hooks/useListData";
+import { getSyncEngine, resetSyncEngines } from "@/src/sync/engine";
+import { createExecutorFactory } from "@/src/utils/executor-factory";
 
 const jwtRef: { current: string | null } = { current: "jwt" };
 const render = () => { R.i = 0; return useListData("L", jwtRef); };
@@ -49,12 +51,24 @@ function stubFetch(categories: "fail" | 500 | unknown[], type = "grocery") {
   return f;
 }
 
+// The list's offline queue: auto-unskip and auto-respawn go through its sync engine.
+const storage = new Map<string, string>();
+
 beforeEach(() => {
+  resetSyncEngines();
   R.slots = [];
+  storage.clear();
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => storage.get(k) ?? null,
+    setItem: (k: string, v: string) => void storage.set(k, v),
+    removeItem: (k: string) => void storage.delete(k),
+  });
+  vi.stubGlobal("navigator", { onLine: true });
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => {
+  resetSyncEngines();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -333,26 +347,52 @@ describe("useListData failed reads", () => {
   };
   const fiveHoursAgo = () => new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
 
-  it("an auto-unskip the server refuses is logged with its status", async () => {
-    stubRoutes({ items: { items: [{ ...milk, skipped_at: fiveHoursAgo() }] }, patch: 500 });
+  // Auto-unskip and auto-respawn are changes like the user's own (R22): the list's sync
+  // engine sends them in order with the user's changes, through executor-factory, and keeps
+  // one the server refuses for a retry.
+  const attachEngine = () =>
+    getSyncEngine("L").attach({ getJwt: () => "jwt", executorFactory: createExecutorFactory() });
+  const patches = (f: ReturnType<typeof stubRoutes>) =>
+    f.mock.calls.filter(([, init]) => init?.method === "PATCH").map(([, init]) => JSON.parse(String(init!.body)));
+  const queued = () => (JSON.parse(storage.get("mutation_queue:L") ?? "[]") as { type: string }[]).map((m) => m.type);
+
+  it("an auto-unskip is sent by the list's sync engine, which keeps it when the server refuses it", async () => {
+    attachEngine();
+    const f = stubRoutes({ items: { items: [{ ...milk, skipped_at: fiveHoursAgo() }] }, patch: 500 });
     await render().fetchItems();
     await settle();
     expect(render().items[0].skipped_at).toBeNull();
+    expect(patches(f)).toEqual([{ itemId: "a", skipped: false, at: expect.any(String) }]);
+    expect(queued()).toEqual(["skip"]);
     expect(console.warn).toHaveBeenCalledWith(
-      "[List] Auto-unskip PATCH failed for item a in list L:",
-      expect.objectContaining({ message: "Auto-unskip failed: 500" })
+      "[SyncEngine] Change failed, keeping it for a retry:",
+      expect.objectContaining({ listId: "L", type: "skip" }),
+      expect.objectContaining({ message: "Skip failed: 500" })
     );
   });
 
-  it("an auto-respawn the server refuses is logged with its status", async () => {
-    stubRoutes({ items: { items: [{ ...milk, recurring: true, completed: true, completed_at: fiveHoursAgo() }] }, patch: 500 });
+  it("an auto-respawn is sent by the list's sync engine, which keeps it when the server refuses it", async () => {
+    attachEngine();
+    const f = stubRoutes({ items: { items: [{ ...milk, recurring: true, completed: true, completed_at: fiveHoursAgo() }] }, patch: 500 });
     await render().fetchItems();
     await settle();
     expect(render().items[0].completed).toBe(false);
+    expect(patches(f)).toEqual([{ itemId: "a", restoreRecurring: true }]);
+    expect(queued()).toEqual(["restore-recurring"]);
     expect(console.warn).toHaveBeenCalledWith(
-      "[List] Auto-respawn PATCH failed for item a in list L:",
-      expect.objectContaining({ message: "Auto-respawn failed: 500" })
+      "[SyncEngine] Change failed, keeping it for a retry:",
+      expect.objectContaining({ listId: "L", type: "restore-recurring" }),
+      expect.objectContaining({ message: "Restore recurring failed: 500" })
     );
+  });
+
+  it("an auto-unskip that lands leaves nothing queued", async () => {
+    attachEngine();
+    const f = stubRoutes({ items: { items: [{ ...milk, skipped_at: fiveHoursAgo() }] } });
+    await render().fetchItems();
+    await settle();
+    expect(patches(f)).toEqual([{ itemId: "a", skipped: false, at: expect.any(String) }]);
+    expect(queued()).toEqual([]);
   });
 
   it("logs nothing when every read succeeds", async () => {

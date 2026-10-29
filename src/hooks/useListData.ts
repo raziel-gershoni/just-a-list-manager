@@ -6,6 +6,8 @@ import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 import { shouldRespawn } from "@/src/utils/recurring-respawn";
 import { sortCategories } from "@/src/utils/category-state";
 import { throwIfNotOk } from "@/src/utils/http";
+import { genMutId } from "@/src/utils/list-helpers";
+import { getSyncEngine } from "@/src/sync/engine";
 
 // The list cap is 500 non-deleted items (insert_item_if_under_limit uses the same
 // predicate as GET /items), so limit=500 covers every normal case. It is a cap, not a
@@ -117,40 +119,25 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
             users: undefined,
             editor: undefined,
           };
+          // Auto-unskip and auto-respawn are saved as changes through the list's sync
+          // engine, like the user's own, so they stay in order with them and are retried.
           // Auto-unskip items older than 4 hours
           if (base.skipped_at && now - new Date(base.skipped_at).getTime() > FOUR_HOURS) {
-            // Fire background PATCH to persist unskip
-            const currentJwt = jwtRef.current;
-            fetch(`/api/lists/${listId}/items`, {
-              method: "PATCH",
-              headers: {
-                Authorization: `Bearer ${currentJwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ itemId: base.id, skipped: false }),
-            })
-              .then((res) => throwIfNotOk(res, "Auto-unskip"))
-              .catch((err) => {
-                console.warn(`[List] Auto-unskip PATCH failed for item ${base.id} in list ${listId}:`, err);
-              });
+            getSyncEngine(listId).add({
+              id: genMutId(),
+              type: "skip",
+              payload: { listId, itemId: base.id, skipped: false, at: new Date(now).toISOString() },
+            });
             return { ...base, skipped_at: null };
           }
           // Auto-respawn recurring items past the same 4-hour threshold.
           // Deleting is final — shouldRespawn refuses any row carrying deleted_at.
           if (shouldRespawn(base, now)) {
-            const currentJwt = jwtRef.current;
-            fetch(`/api/lists/${listId}/items`, {
-              method: "PATCH",
-              headers: {
-                Authorization: `Bearer ${currentJwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ itemId: base.id, restoreRecurring: true }),
-            })
-              .then((res) => throwIfNotOk(res, "Auto-respawn"))
-              .catch((err) => {
-                console.warn(`[List] Auto-respawn PATCH failed for item ${base.id} in list ${listId}:`, err);
-              });
+            getSyncEngine(listId).add({
+              id: genMutId(),
+              type: "restore-recurring",
+              payload: { listId, itemId: base.id },
+            });
             return { ...base, completed: false, completed_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
           }
           return base;

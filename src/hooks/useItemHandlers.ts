@@ -17,7 +17,7 @@ interface UseItemHandlersParams {
   userId: string | null;
   items: ItemData[];
   setItems: React.Dispatch<React.SetStateAction<ItemData[]>>;
-  addMutation: (mutation: { id: string; type: string; payload: Record<string, unknown>; execute: () => Promise<string | void> }) => void;
+  addMutation: (mutation: { id: string; type: string; payload: Record<string, unknown> }) => void;
   setUndoAction: React.Dispatch<React.SetStateAction<{
     message: string;
     undo: () => void;
@@ -97,43 +97,20 @@ export function useItemHandlers({
         setItems((prev) => prev.map((i) => i.id === tempId ? { ...i, _justAdded: false } : i));
       }, 300);
 
+      // The page's create success handler swaps in the server's row.
       addMutation({
         id: mutId,
         type: "create",
         payload: { listId, text, position, idempotencyKey: mutId, tempId },
-        execute: async () => {
-          const currentJwt = jwtRef.current;
-          const res = await fetch(`/api/lists/${listId}/items`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${currentJwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ text, idempotencyKey: mutId, position }),
-            keepalive: true,
-          });
-          if (!res.ok) throw new Error(`Create failed: ${res.status}`);
-          const { items: created } = await res.json();
-          if (created?.[0]) {
-            setItems((prev) =>
-              prev.map((i) =>
-                i.id === tempId
-                  ? { ...created[0], creator_name: null, editor_name: null, _pending: false }
-                  : i
-              )
-            );
-            return created[0].id;
-          }
-        },
       });
     },
-    [jwtRef, listId, addMutation, userId, setItems]
+    [listId, addMutation, userId, setItems]
   );
 
   const handleAddItem = useCallback(
     async (text: string, recycleId?: string) => {
       // No JWT guard here — items are added optimistically and queued.
-      // The executor reads jwtRef.current at execution time (after reconnect).
+      // The sync engine sends them once a JWT exists.
 
       // Check for duplicate
       const normalized = normalizeForCompare(text);
@@ -162,19 +139,6 @@ export function useItemHandlers({
           id: mutId,
           type: "recycle",
           payload: { listId, recycleId, text },
-          execute: async () => {
-            const currentJwt = jwtRef.current;
-            const res = await fetch(`/api/lists/${listId}/items`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${currentJwt}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ text, recycleId }),
-              keepalive: true,
-            });
-            if (!res.ok) throw new Error(`Recycle failed: ${res.status}`);
-          },
         });
       } else {
         // Split comma-separated items into individual mutations
@@ -188,11 +152,13 @@ export function useItemHandlers({
         }
       }
     },
-    [jwtRef, listId, addMutation, addSingleItem, items, t, userId, setItems, setDuplicateWarning]
+    [listId, addMutation, addSingleItem, items, t, userId, setItems, setDuplicateWarning]
   );
 
   const handleToggle = useCallback(
     async (itemId: string, completed: boolean) => {
+      // Tap time: the server stamps completed_at with it, even when the change syncs later.
+      const at = new Date().toISOString();
       // Animate out then update
       if (completed) {
         setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, _exiting: true } : i));
@@ -206,7 +172,7 @@ export function useItemHandlers({
             ? {
                 ...i,
                 completed,
-                completed_at: completed ? new Date().toISOString() : null,
+                completed_at: completed ? at : null,
                 _exiting: false,
               }
             : i
@@ -217,23 +183,10 @@ export function useItemHandlers({
       addMutation({
         id: mutId,
         type: "toggle",
-        payload: { listId, itemId, completed },
-        execute: async () => {
-          const jwt = jwtRef.current;
-          const res = await fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${jwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId, completed }),
-            keepalive: true,
-          });
-          if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
-        },
+        payload: { listId, itemId, completed, at },
       });
     },
-    [jwtRef, listId, addMutation, setItems]
+    [listId, addMutation, setItems]
   );
 
   const handleDelete = useCallback(
@@ -268,21 +221,9 @@ export function useItemHandlers({
         id: mutId,
         type: "delete",
         payload: { listId, itemId },
-        execute: async () => {
-          const jwt = jwtRef.current;
-          const res = await fetch(
-            `/api/lists/${listId}/items?itemId=${itemId}`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${jwt}` },
-              keepalive: true,
-            }
-          );
-          if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
-        },
       });
     },
-    [jwtRef, listId, items, addMutation, t, setItems, setUndoAction, restoreOrRevert, removeAgain]
+    [listId, items, addMutation, t, setItems, setUndoAction, restoreOrRevert, removeAgain]
   );
 
   const handleEditItem = useCallback(
@@ -296,66 +237,42 @@ export function useItemHandlers({
         id: mutId,
         type: "edit",
         payload: { listId, itemId, text: newText },
-        execute: async () => {
-          const jwt = jwtRef.current;
-          const res = await fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${jwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId, text: newText }),
-            keepalive: true,
-          });
-          if (!res.ok) throw new Error(`Edit failed: ${res.status}`);
-        },
       });
     },
-    [jwtRef, listId, addMutation, userId, setItems]
+    [listId, addMutation, userId, setItems]
   );
 
   // Server side of a skip/unskip. Shared by handleSkip and Restore all, which uses
   // it for items still waiting for their offline create.
+  // `at` is the tap time the server stamps skipped_at with.
   const enqueueSkip = useCallback(
-    (itemId: string, skipped: boolean) => {
+    (itemId: string, skipped: boolean, at: string) => {
       const mutId = genMutId();
       addMutation({
         id: mutId,
         type: "skip",
-        payload: { listId, itemId, skipped },
-        execute: async () => {
-          const jwt = jwtRef.current;
-          const res = await fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${jwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId, skipped }),
-            keepalive: true,
-          });
-          if (!res.ok) throw new Error(`Skip failed: ${res.status}`);
-        },
+        payload: { listId, itemId, skipped, at },
       });
     },
-    [jwtRef, listId, addMutation]
+    [listId, addMutation]
   );
 
   const handleSkip = useCallback(
     (itemId: string, skipped: boolean) => {
       const tg = getTelegramWebApp();
       tg?.HapticFeedback?.impactOccurred("light");
+      const at = new Date().toISOString();
 
       // Optimistic update
       setItems((prev) =>
         prev.map((i) =>
           i.id === itemId
-            ? { ...i, skipped_at: skipped ? new Date().toISOString() : null }
+            ? { ...i, skipped_at: skipped ? at : null }
             : i
         )
       );
 
-      enqueueSkip(itemId, skipped);
+      enqueueSkip(itemId, skipped, at);
     },
     [enqueueSkip, setItems]
   );
@@ -373,12 +290,13 @@ export function useItemHandlers({
     setItems((prev) => computeUnskipAll(prev).next);
 
     // One request for the synced items, scoped to their ids so a late replay can't
-    // restore anything skipped after this tap. An item still waiting for its offline
-    // create has a temp- id the server doesn't know; its own skip mutation, queued
-    // behind the create, restores it once the queue swaps in the real id.
+    // restore anything skipped after this tap. An item still waiting for its create has a
+    // temp- id the server doesn't know; its own skip mutation waits behind the create in
+    // the sync engine, which sends it with the real id.
+    const at = new Date().toISOString();
     const itemIds: string[] = [];
     for (const id of affectedIds) {
-      if (id.startsWith("temp-")) enqueueSkip(id, false);
+      if (id.startsWith("temp-")) enqueueSkip(id, false, at);
       else itemIds.push(id);
     }
     if (itemIds.length === 0) return;
@@ -387,32 +305,20 @@ export function useItemHandlers({
       id: genMutId(),
       type: "unskip-all",
       payload: { listId, itemIds },
-      execute: async () => {
-        const jwt = jwtRef.current;
-        const res = await fetch(`/api/lists/${listId}/items/unskip-all`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${jwt}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ itemIds }),
-          keepalive: true,
-        });
-        if (!res.ok) throw new Error(`Restore all failed: ${res.status}`);
-      },
     });
-  }, [jwtRef, listId, items, addMutation, enqueueSkip, setItems]);
+  }, [listId, items, addMutation, enqueueSkip, setItems]);
 
   const handleOrder = useCallback(
     (itemId: string, ordered: boolean) => {
       const tg = getTelegramWebApp();
       tg?.HapticFeedback?.impactOccurred("light");
+      const at = new Date().toISOString();
 
       // Optimistic update — ordered and skipped are mutually exclusive
       setItems((prev) =>
         prev.map((i) =>
           i.id === itemId
-            ? { ...i, ordered_at: ordered ? new Date().toISOString() : null, skipped_at: ordered ? null : i.skipped_at }
+            ? { ...i, ordered_at: ordered ? at : null, skipped_at: ordered ? null : i.skipped_at }
             : i
         )
       );
@@ -421,23 +327,10 @@ export function useItemHandlers({
       addMutation({
         id: mutId,
         type: "order",
-        payload: { listId, itemId, ordered },
-        execute: async () => {
-          const jwt = jwtRef.current;
-          const res = await fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${jwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId, ordered }),
-            keepalive: true,
-          });
-          if (!res.ok) throw new Error(`Order failed: ${res.status}`);
-        },
+        payload: { listId, itemId, ordered, at },
       });
     },
-    [jwtRef, listId, addMutation, setItems]
+    [listId, addMutation, setItems]
   );
 
   const handleSetRecurring = useCallback(
@@ -454,22 +347,9 @@ export function useItemHandlers({
         id: mutId,
         type: "set-recurring",
         payload: { listId, itemId, recurring },
-        execute: async () => {
-          const jwt = jwtRef.current;
-          const res = await fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${jwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId, recurring }),
-            keepalive: true,
-          });
-          if (!res.ok) throw new Error(`Set recurring failed: ${res.status}`);
-        },
       });
     },
-    [jwtRef, listId, addMutation, setItems]
+    [listId, addMutation, setItems]
   );
 
   const handleRestoreRecurring = useCallback(
@@ -490,22 +370,9 @@ export function useItemHandlers({
         id: mutId,
         type: "restore-recurring",
         payload: { listId, itemId },
-        execute: async () => {
-          const jwt = jwtRef.current;
-          const res = await fetch(`/api/lists/${listId}/items`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${jwt}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ itemId, restoreRecurring: true }),
-            keepalive: true,
-          });
-          if (!res.ok) throw new Error(`Restore recurring failed: ${res.status}`);
-        },
       });
     },
-    [jwtRef, listId, addMutation, setItems]
+    [listId, addMutation, setItems]
   );
 
   const handleRemoveDuplicates = useCallback(
@@ -552,22 +419,10 @@ export function useItemHandlers({
           id: mutId,
           type: "delete",
           payload: { listId, itemId: item.id },
-          execute: async () => {
-            const jwt = jwtRef.current;
-            const res = await fetch(
-              `/api/lists/${listId}/items?itemId=${item.id}`,
-              {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${jwt}` },
-                keepalive: true,
-              }
-            );
-            if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
-          },
         });
       }
     },
-    [jwtRef, listId, items, addMutation, t, setItems, setUndoAction, restoreOrRevert, removeAgain]
+    [listId, items, addMutation, t, setItems, setUndoAction, restoreOrRevert, removeAgain]
   );
 
   const handleClearCompleted = useCallback(async () => {
