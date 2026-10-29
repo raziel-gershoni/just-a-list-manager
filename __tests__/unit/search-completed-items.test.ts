@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import type { ItemData } from "@/src/types";
-import { searchCompletedItems, computeSuggestions } from "@/src/utils/search-completed-items";
+import { searchCompletedItems, computeSuggestions, findCompletedExactMatch } from "@/src/utils/search-completed-items";
 
 function item(over: Partial<ItemData> & { id: string; text: string }): ItemData {
   return {
@@ -127,5 +127,34 @@ describe("source wiring", () => {
     expect(start).toBeGreaterThan(-1);
     // props precede onAddItem; stay within the opening tag's first lines
     expect(src.slice(start, start + 160)).toMatch(/\bitems=\{items\}/);
+  });
+});
+
+describe("findCompletedExactMatch", () => {
+  it("matches the whole text after normalization (case, curly quotes, spaces), never a substring", () => {
+    const items = [item({ id: "cake", text: "Mom's cake" }), item({ id: "cakes", text: "mom's cake mix" })];
+    expect(findCompletedExactMatch(items, "  mom’s   CAKE ")?.id).toBe("cake");
+    expect(findCompletedExactMatch(items, "cake")).toBeUndefined();
+    expect(findCompletedExactMatch(items, "   ")).toBeUndefined();
+  });
+
+  // The server recycles by id and checks only the text, so a match is found wherever it ranks
+  // (no top-ten limit, ruling R9), even below ten more recently completed substring matches.
+  it("finds an exact match however many more recent substring matches rank above it", () => {
+    const newer = Array.from({ length: 12 }, (_, k) =>
+      item({ id: `n${k}`, text: `milk ${k}`, completed_at: `2026-02-${String(k + 10)}T00:00:00+00:00` })
+    );
+    const exact = item({ id: "milk", text: "milk", completed_at: "2026-01-01T00:00:00+00:00" });
+    expect(findCompletedExactMatch([...newer, exact], "milk")?.id).toBe("milk");
+  });
+
+  it("skips excluded ids, falling back to the next most recently completed", () => {
+    const items = [
+      item({ id: "old", text: "milk", completed_at: "2026-01-01T00:00:00+00:00" }),
+      item({ id: "new", text: "milk", completed_at: "2026-01-02T00:00:00+00:00" }),
+    ];
+    expect(findCompletedExactMatch(items, "milk")?.id).toBe("new");
+    expect(findCompletedExactMatch(items, "milk", new Set(["new"]))?.id).toBe("old");
+    expect(findCompletedExactMatch(items, "milk", new Set(["new", "old"]))).toBeUndefined();
   });
 });

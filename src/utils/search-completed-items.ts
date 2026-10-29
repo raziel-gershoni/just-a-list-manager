@@ -43,6 +43,26 @@ export function searchCompletedItems(items: ItemData[], query: string, limit = 1
 }
 
 /**
+ * The completed item a typed add recycles: the same text after normalization (no
+ * substring), most recently completed first, skipping ids in `exclude`. Looks through
+ * every completed item on screen, not just the top-10 suggestions: the server recycles by
+ * id and checks only the text, so a typed add and a tap on the matching suggestion do the
+ * same thing.
+ */
+export function findCompletedExactMatch(
+  items: ItemData[],
+  text: string,
+  exclude: ReadonlySet<string> = new Set()
+): Suggestion | undefined {
+  const canonical = normalizeForStorage(text);
+  if (!canonical) return undefined;
+  const needle = normalizeForCompare(canonical);
+  return searchCompletedItems(items, canonical, items.length).find(
+    (s) => !exclude.has(s.id) && normalizeForCompare(s.text) === needle
+  );
+}
+
+/**
  * Suggestions for the add-item input: searches only the text after the last comma.
  * Pure so it can be derived from live items.
  */

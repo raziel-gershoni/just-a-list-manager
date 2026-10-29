@@ -3,11 +3,12 @@
 import { useCallback } from "react";
 import type { ItemData } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
-import { genMutId } from "@/src/utils/list-helpers";
+import { genMutId, isActiveItem } from "@/src/utils/list-helpers";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { computeUnmarkCompleted } from "@/src/utils/unmark-completed";
 import { computeClearCompleted } from "@/src/utils/clear-completed";
 import { computeUnskipAll } from "@/src/utils/unskip-all";
+import { findCompletedExactMatch } from "@/src/utils/search-completed-items";
 import { throwIfNotOk } from "@/src/utils/http";
 import { restoreItemsOnServer, type RestoreBody } from "@/src/utils/item-restore";
 
@@ -111,6 +112,22 @@ export function useItemHandlers({
     [listId, addMutation, userId, setItems]
   );
 
+  // Brings a completed item back to the active list: the suggestion tap, and a typed add
+  // whose text matches a completed item.
+  const recycleCompleted = useCallback(
+    (recycleId: string, text: string) => {
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === recycleId
+            ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, created_by: userId, creator_name: null }
+            : i
+        )
+      );
+      addMutation({ id: genMutId(), type: "recycle", payload: { listId, recycleId, text } });
+    },
+    [listId, addMutation, userId, setItems]
+  );
+
   const handleAddItem = useCallback(
     async (text: string, recycleId?: string) => {
       // No JWT guard here — items are added optimistically and queued.
@@ -129,21 +146,7 @@ export function useItemHandlers({
       }
 
       if (recycleId) {
-        // Recycle: optimistic update
-        setItems((prev) =>
-          prev.map((i) =>
-            i.id === recycleId
-              ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, created_by: userId, creator_name: null }
-              : i
-          )
-        );
-
-        const mutId = genMutId();
-        addMutation({
-          id: mutId,
-          type: "recycle",
-          payload: { listId, recycleId, text },
-        });
+        recycleCompleted(recycleId, text);
       } else {
         // Split comma-separated items into individual mutations
         const segments = text
@@ -151,12 +154,22 @@ export function useItemHandlers({
           .map((s) => s.trim())
           .filter((s) => s.length > 0);
 
+        // A typed item with the same text as a completed one recycles it, exactly like a
+        // tap on its suggestion (owner decision 1, 2026-10-29 sync spec). Each completed
+        // item is reused at most once per add, so "milk, milk" recycles one and adds one.
+        const used = new Set<string>();
         for (const segment of segments) {
-          addSingleItem(segment);
+          const match = findCompletedExactMatch(items, segment, used);
+          if (match) {
+            used.add(match.id);
+            recycleCompleted(match.id, match.text);
+          } else {
+            addSingleItem(segment);
+          }
         }
       }
     },
-    [listId, addMutation, addSingleItem, items, t, userId, setItems, setDuplicateWarning]
+    [addSingleItem, recycleCompleted, items, t, setDuplicateWarning]
   );
 
   const handleToggle = useCallback(
@@ -199,9 +212,9 @@ export function useItemHandlers({
       tg?.HapticFeedback?.notificationOccurred("warning");
 
       const deletedItem = items.find((i) => i.id === itemId);
-      // Animate out then remove
+      // Animate out then remove. Kept so an Undo inside the animation can cancel it.
       setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, _exiting: true } : i));
-      setTimeout(() => setItems((prev) => prev.filter((i) => i.id !== itemId)), 200);
+      const removal = setTimeout(() => setItems((prev) => prev.filter((i) => i.id !== itemId)), 200);
 
       // Show undo toast
       const timeout = setTimeout(() => setUndoAction(null), 4000);
@@ -210,24 +223,22 @@ export function useItemHandlers({
         message: t('items.deleted'),
         undo: () => {
           clearTimeout(timeout);
+          clearTimeout(removal);
           setUndoAction(null);
           if (deletedItem) {
-            setItems((prev) => [...prev, deletedItem]);
-            // Restore on server; if that fails, the item leaves the screen again.
-            restoreOrRevert([{ itemId, deleted_at: null }], removeAgain);
+            // Replaces the exiting copy when the Undo comes inside the animation.
+            setItems((prev) => [...prev.filter((i) => i.id !== itemId), deletedItem]);
+            // Queued on the item's chain, so it lands after the delete (in flight or kept
+            // for retry) and replays offline like any other change.
+            addMutation({ id: genMutId(), type: "restore", payload: { listId, itemId } });
           }
         },
         timeout,
       });
 
-      const mutId = genMutId();
-      addMutation({
-        id: mutId,
-        type: "delete",
-        payload: { listId, itemId },
-      });
+      addMutation({ id: genMutId(), type: "delete", payload: { listId, itemId } });
     },
-    [listId, items, addMutation, t, setItems, setUndoAction, restoreOrRevert, removeAgain]
+    [listId, items, addMutation, t, setItems, setUndoAction]
   );
 
   const handleEditItem = useCallback(
@@ -386,13 +397,16 @@ export function useItemHandlers({
 
       // Find all non-deleted items matching text (normalized)
       const normalized = normalizeForCompare(text);
+      // The active copy (the row whose badge was tapped) is kept, then the highest position.
+      // Completed and skipped copies are history: a drag renumbers active rows 1..N while
+      // done rows keep their large creation-time positions, so position alone would keep them.
       const matches = items
         .filter((i) => !i.deleted_at && normalizeForCompare(i.text) === normalized)
-        .sort((a, b) => b.position - a.position);
+        .sort((a, b) => Number(isActiveItem(b)) - Number(isActiveItem(a)) || b.position - a.position);
 
       if (matches.length <= 1) return;
 
-      // Keep the highest-position match, remove the rest
+      // Keep the first match, remove the rest
       const duplicatesToRemove = matches.slice(1);
       const removeIds = new Set(duplicatesToRemove.map((i) => i.id));
 
@@ -406,27 +420,21 @@ export function useItemHandlers({
         undo: () => {
           clearTimeout(timeout);
           setUndoAction(null);
-          setItems((prev) => [...prev, ...duplicatesToRemove]);
-          // Restore on server; duplicates whose restore fails leave the screen again.
-          restoreOrRevert(
-            duplicatesToRemove.map((item) => ({ itemId: item.id, deleted_at: null })),
-            removeAgain
-          );
+          setItems((prev) => [...prev.filter((i) => !removeIds.has(i.id)), ...duplicatesToRemove]);
+          // One restore per duplicate, each queued behind that duplicate's delete.
+          for (const item of duplicatesToRemove) {
+            addMutation({ id: genMutId(), type: "restore", payload: { listId, itemId: item.id } });
+          }
         },
         timeout,
       });
 
       // Queue delete mutations
       for (const item of duplicatesToRemove) {
-        const mutId = genMutId();
-        addMutation({
-          id: mutId,
-          type: "delete",
-          payload: { listId, itemId: item.id },
-        });
+        addMutation({ id: genMutId(), type: "delete", payload: { listId, itemId: item.id } });
       }
     },
-    [listId, items, addMutation, t, setItems, setUndoAction, restoreOrRevert, removeAgain]
+    [listId, items, addMutation, t, setItems, setUndoAction]
   );
 
   const handleClearCompleted = useCallback(async () => {
@@ -436,6 +444,10 @@ export function useItemHandlers({
     tg?.HapticFeedback?.notificationOccurred("warning");
 
     const { cleared: completedItems } = computeClearCompleted(items);
+    // The ids the screen showed: the server clears only these, never an item a collaborator
+    // ticked a moment ago. An item still waiting for its offline create has a temp- id the
+    // server doesn't know yet, so it is cleared on screen only.
+    const itemIds = completedItems.map((i) => i.id).filter((id) => !id.startsWith("temp-"));
     // Optimistic — recurring staples stay parked, not cleared (see
     // src/utils/clear-completed.ts)
     setItems((prev) => computeClearCompleted(prev).remaining);
@@ -450,9 +462,9 @@ export function useItemHandlers({
         clearTimeout(timeout);
         setUndoAction(null);
         setItems((prev) => [...prev, ...completedItems]);
-        // Restore on server; items whose restore fails leave the screen again.
+        // Restore on server what the clear sent; items whose restore fails leave the screen again.
         restoreOrRevert(
-          completedItems.map((item) => ({ itemId: item.id, deleted_at: null })),
+          itemIds.map((itemId) => ({ itemId, deleted_at: null })),
           (failed) => {
             if (bulkFailed) return;
             removeAgain(failed);
@@ -462,10 +474,12 @@ export function useItemHandlers({
       timeout,
     });
 
+    if (itemIds.length === 0) return;
     try {
       const res = await fetch(`/api/lists/${listId}/items/clear-completed`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIds }),
       });
       throwIfNotOk(res, "Clear completed");
     } catch (err) {
@@ -489,6 +503,9 @@ export function useItemHandlers({
 
     const { affectedIds } = computeUnmarkCompleted(items);
     if (affectedIds.length === 0) return;
+    // The ids the screen showed, as Clear completed sends them; temp- items are unmarked on
+    // screen only.
+    const itemIds = affectedIds.filter((id) => !id.startsWith("temp-"));
     // Completion times before the flip, put back if the server refuses it.
     const completedAtById = new Map(
       items.filter((i) => affectedIds.includes(i.id)).map((i) => [i.id, i.completed_at] as const)
@@ -520,7 +537,7 @@ export function useItemHandlers({
         );
         // Restore on server; items whose restore fails are unchecked again.
         restoreOrRevert(
-          affectedIds.map((id) => ({ itemId: id, completed: true })),
+          itemIds.map((id) => ({ itemId: id, completed: true })),
           (failed) => {
             if (bulkFailed) return;
             setItems((prev) =>
@@ -532,10 +549,12 @@ export function useItemHandlers({
       timeout,
     });
 
+    if (itemIds.length === 0) return;
     try {
       const res = await fetch(`/api/lists/${listId}/items/unmark-completed`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIds }),
       });
       throwIfNotOk(res, "Unmark all");
     } catch (err) {

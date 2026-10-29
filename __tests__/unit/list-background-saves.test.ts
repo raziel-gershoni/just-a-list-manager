@@ -46,6 +46,8 @@ function world(initial: ItemData[]) {
   const replies = new Map<string, Reply[]>();
   const held = new Map<string, (status: number) => void>();
   const sent: { key: string; body: unknown }[] = [];
+  // What the handlers queued, in order: "<type> <itemId | recycleId | text>".
+  const queued: string[] = [];
 
   vi.stubGlobal("window", {});
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: { method: string; body?: string }) => {
@@ -84,7 +86,10 @@ function world(initial: ItemData[]) {
       userId: "u",
       items,
       setItems,
-      addMutation: () => {},
+      addMutation: (m) => {
+        const p = m.payload;
+        queued.push(`${m.type} ${p.itemId ?? p.recycleId ?? p.text}`);
+      },
       setUndoAction: (u) => { undoAction = typeof u === "function" ? u(undoAction) : u; },
       setDuplicateWarning: () => {},
       setReminderToast: () => {},
@@ -102,6 +107,7 @@ function world(initial: ItemData[]) {
     undoAction: () => undoAction,
     errorToast: () => errorToast,
     sent,
+    queued,
   };
 }
 
@@ -300,54 +306,65 @@ describe("Unmark all done fails", () => {
 });
 
 describe("Undo restores on the list page", () => {
-  it("Undo of a delete whose restore fails takes the item off the screen again and says so", async () => {
+  // A failed restore is the queue's job now: a dropped one shows items.syncError and
+  // refreshes the list (onMutationError), a kept one is retried. See undo-delete-queued.test.ts.
+  it("Undo of a delete queues a restore behind the delete instead of sending its own PATCH", async () => {
     const w = world([item({ id: "a" }), item({ id: "b" })]);
-    w.when("PATCH b", 500);
 
     await w.h().handleDelete("b");
     await vi.advanceTimersByTimeAsync(200); // the exit animation
     expect(w.ids()).toEqual(["a"]);
     w.undoAction()!.undo();
-    expect(w.ids()).toEqual(["a", "b"]);
     await settle();
 
-    expect(w.sent).toContainEqual({ key: "PATCH b", body: { itemId: "b", deleted_at: null } });
-    expect(w.ids()).toEqual(["a"]);
-    expect(w.errorToast()).toBe("items.syncError");
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[ItemRestore] Undo restore failed:",
-      { listId: "L", itemId: "b" },
-      expect.objectContaining({ message: "Restore failed: 500" })
-    );
-  });
-
-  it("Undo of a delete whose restore lands keeps the item, with no error", async () => {
-    const w = world([item({ id: "a" }), item({ id: "b" })]);
-
-    await w.h().handleDelete("b");
-    await vi.advanceTimersByTimeAsync(200);
-    w.undoAction()!.undo();
-    await settle();
-
+    expect(w.queued).toEqual(["delete b", "restore b"]);
+    expect(w.sent).toEqual([]);
     expect(w.ids()).toEqual(["a", "b"]);
     expect(w.errorToast()).toBeNull();
   });
 
-  it("Undo of a duplicates removal takes off again only the duplicate whose restore failed", async () => {
+  it("an Undo inside the exit animation keeps the item on screen, once", async () => {
+    const w = world([item({ id: "a" }), item({ id: "b" })]);
+
+    await w.h().handleDelete("b");
+    w.undoAction()!.undo(); // before the 200 ms removal fires
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(w.ids()).toEqual(["a", "b"]);
+    expect(w.item("b")?._exiting).toBeFalsy();
+    expect(w.queued).toEqual(["delete b", "restore b"]);
+  });
+
+  it("Undo of a duplicates removal queues one restore per removed duplicate", async () => {
     const w = world([
       item({ id: "m1", text: "milk", position: 3 }),
       item({ id: "m2", text: "milk", position: 2 }),
       item({ id: "m3", text: "milk", position: 1 }),
     ]);
-    w.when("PATCH m3", 500);
 
     w.h().handleRemoveDuplicates("milk");
     expect(w.ids()).toEqual(["m1"]);
     w.undoAction()!.undo();
     await settle();
 
-    expect(w.ids()).toEqual(["m1", "m2"]);
-    expect(w.errorToast()).toBe("items.syncError");
+    expect(w.queued).toEqual(["delete m2", "delete m3", "restore m2", "restore m3"]);
+    expect(w.sent).toEqual([]);
+    expect(w.ids()).toEqual(["m1", "m2", "m3"]);
+  });
+
+  it("Undo of a clear restores on the server only what the clear sent; an unsaved item just comes back", async () => {
+    const w = world([
+      item({ id: "b", completed: true, completed_at: DONE_A }),
+      item({ id: "temp-x", text: "x", completed: true, completed_at: DONE_B, _pending: true }),
+    ]);
+
+    await w.h().handleClearCompleted();
+    w.undoAction()!.undo();
+    await settle();
+
+    expect(w.sent.map((s) => s.key)).toEqual(["POST clear-completed", "PATCH b"]);
+    expect(w.ids()).toEqual(["b", "temp-x"]);
+    expect(w.errorToast()).toBeNull();
   });
 
   it("Undo of a clear takes off again only the items whose restore failed", async () => {
@@ -380,6 +397,139 @@ describe("Undo restores on the list page", () => {
     expect(w.item("a")).toMatchObject({ completed: true });
     expect(w.item("b")).toMatchObject({ completed: false, completed_at: null });
     expect(w.errorToast()).toBe("items.syncError");
+  });
+});
+
+describe("Clear completed and Unmark all act only on what the screen showed", () => {
+  it("Clear completed sends the ids it cleared: no parked recurring item, no unsaved item", async () => {
+    const w = world([
+      item({ id: "a" }),
+      item({ id: "b", completed: true, completed_at: DONE_A }),
+      item({ id: "c", completed: true, completed_at: DONE_B }),
+      item({ id: "r", completed: true, completed_at: DONE_A, recurring: true }),
+      item({ id: "temp-x", text: "x", completed: true, completed_at: DONE_B, _pending: true }),
+    ]);
+
+    await w.h().handleClearCompleted();
+
+    expect(w.sent).toEqual([{ key: "POST clear-completed", body: { itemIds: ["b", "c"] } }]);
+    expect(w.ids()).toEqual(["a", "r"]);
+  });
+
+  it("Clear completed with only unsaved items sends nothing", async () => {
+    const w = world([item({ id: "temp-x", text: "x", completed: true, completed_at: DONE_A, _pending: true })]);
+
+    await w.h().handleClearCompleted();
+
+    expect(w.sent).toEqual([]);
+    expect(w.ids()).toEqual([]);
+    expect(w.undoAction()?.message).toBe("items.clearedCount");
+  });
+
+  it("Unmark all sends the ids it unmarked, without unsaved ones", async () => {
+    const w = world([
+      item({ id: "a", completed: true, completed_at: DONE_A }),
+      item({ id: "b", completed: true, completed_at: DONE_B }),
+      item({ id: "temp-y", text: "y", completed: true, completed_at: DONE_B, _pending: true }),
+      item({ id: "c" }),
+    ]);
+
+    await w.h().handleUnmarkAllDone();
+
+    expect(w.sent).toEqual([{ key: "POST unmark-completed", body: { itemIds: ["a", "b"] } }]);
+    expect(w.item("temp-y")).toMatchObject({ completed: false, completed_at: null });
+  });
+
+  it("Unmark all with only unsaved items sends nothing", async () => {
+    const w = world([item({ id: "temp-y", text: "y", completed: true, completed_at: DONE_A, _pending: true })]);
+
+    await w.h().handleUnmarkAllDone();
+
+    expect(w.sent).toEqual([]);
+    expect(w.item("temp-y")).toMatchObject({ completed: false });
+  });
+});
+
+describe("Remove duplicates keeps the active copy", () => {
+  it("after a drag, when the done copy has the higher position", () => {
+    const w = world([
+      item({ id: "active-milk", text: "milk", position: 3 }),
+      item({ id: "done-milk", text: "milk", position: 1730000000000, completed: true, completed_at: DONE_A }),
+    ]);
+
+    w.h().handleRemoveDuplicates("milk");
+
+    expect(w.queued).toEqual(["delete done-milk"]);
+    expect(w.ids()).toEqual(["active-milk"]);
+  });
+
+  it("when the done copy is the newer one", () => {
+    const w = world([
+      item({ id: "active-milk", text: "milk", position: 1729000000000 }),
+      item({ id: "done-milk", text: "Milk", position: 1730000000000, completed: true, completed_at: DONE_A }),
+    ]);
+
+    w.h().handleRemoveDuplicates("milk");
+
+    expect(w.queued).toEqual(["delete done-milk"]);
+  });
+
+  it("over a skipped copy, and keeps the higher position among active copies", () => {
+    const w = world([
+      item({ id: "skipped-milk", text: "milk", position: 9, skipped_at: DONE_A }),
+      item({ id: "low-milk", text: "milk", position: 2 }),
+      item({ id: "high-milk", text: "milk", position: 5 }),
+    ]);
+
+    w.h().handleRemoveDuplicates("milk");
+
+    expect(w.queued.sort()).toEqual(["delete low-milk", "delete skipped-milk"]);
+    expect(w.ids()).toEqual(["high-milk"]);
+  });
+});
+
+describe("a typed add recycles a completed item with the same text", () => {
+  it("Enter on a done item's text brings that item back instead of adding a second row", async () => {
+    const w = world([item({ id: "done-milk", text: "milk", completed: true, completed_at: DONE_A })]);
+
+    await w.h().handleAddItem("Milk");
+
+    expect(w.queued).toEqual(["recycle done-milk"]);
+    expect(w.ids()).toEqual(["done-milk"]);
+    expect(w.item("done-milk")).toMatchObject({ completed: false, completed_at: null, created_by: "u" });
+  });
+
+  it("each comma segment recycles its match once; the rest are added", async () => {
+    const w = world([item({ id: "done-milk", text: "milk", completed: true, completed_at: DONE_A })]);
+
+    await w.h().handleAddItem("bread, milk, milk");
+
+    expect(w.queued).toEqual(["create bread", "recycle done-milk", "create milk"]);
+  });
+
+  it("takes the most recently completed exact match; a substring match never recycles", async () => {
+    const w = world([
+      item({ id: "chocolate", text: "milk chocolate", completed: true, completed_at: "2026-10-22T08:00:00.000Z" }),
+      item({ id: "old-milk", text: "milk", completed: true, completed_at: DONE_A }),
+      item({ id: "new-milk", text: "milk", completed: true, completed_at: DONE_B }),
+    ]);
+
+    await w.h().handleAddItem("milk");
+    await w.h().handleAddItem("chocolate");
+
+    expect(w.queued).toEqual(["recycle new-milk", "create chocolate"]);
+  });
+
+  it("never recycles an active, deleted or unsaved row", async () => {
+    const w = world([
+      item({ id: "active-milk", text: "milk" }),
+      item({ id: "gone-milk", text: "milk", completed: true, completed_at: DONE_A, deleted_at: DONE_B }),
+      item({ id: "temp-milk", text: "milk", completed: true, completed_at: DONE_B, _pending: true }),
+    ]);
+
+    await w.h().handleAddItem("milk");
+
+    expect(w.queued).toEqual(["create milk"]);
   });
 });
 
