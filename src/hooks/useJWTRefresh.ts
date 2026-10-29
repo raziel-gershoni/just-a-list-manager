@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { readTokenClaims } from "@/src/lib/token-claims";
 
 /** How a token request ended. Only "unauthorized" means the server refused the credential. */
 export type TokenResult = { kind: "ok"; token: string } | { kind: "unauthorized" } | { kind: "transient" };
@@ -18,17 +19,6 @@ const INIT_DATA_MAX_AGE_MS = 5 * 60 * 1000;
 export function isInitDataFresh(initData: string, now = Date.now()): boolean {
   const authDate = Number(new URLSearchParams(initData).get("auth_date"));
   return authDate > 0 && now - authDate * 1000 < INIT_DATA_MAX_AGE_MS;
-}
-
-/** The claims of the app's own JWT (src/lib/jwt.ts) that the client reads. Not verified: the server does that. */
-export function readTokenClaims(token: string): { iat?: number; telegram_user_id?: number } | null {
-  try {
-    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(atob(payload));
-  } catch (err) {
-    console.warn("[TelegramProvider] Unreadable token claims:", err);
-    return null;
-  }
 }
 
 /** Milliseconds since the JWT was issued, or Infinity when that can't be read. */

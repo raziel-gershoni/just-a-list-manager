@@ -17,6 +17,11 @@
  * - What to send comes from memory, so a change still goes out online when the device can't
  *   save it (storage full or disabled); storage is the copy that survives a reload.
  * - A saved entry it can't read is dropped and reported, never thrown at a tap.
+ * - Each change is stamped with the account signed in when it was made (the token's
+ *   telegram_user_id). One saved by another account (a logout, then someone else signs in
+ *   on the device) is left in storage for that account's next session: never sent, dropped,
+ *   reported or waited for here, and not among this account's pending fields. A change
+ *   with no owner belongs to whoever replays it.
  * - flush() resolves once every change it could send when it started has settled once. A
  *   request already in flight then (perhaps hanging on a dead socket) doesn't hold it, nor
  *   do changes added while it runs, so a reconnect that awaits it always goes on.
@@ -25,6 +30,7 @@
  *   dropped or been kept for a later flush.
  */
 import { MutationQueue, type QueuedMutation } from "@/src/utils/mutation-queue";
+import { readTokenClaims } from "@/src/lib/token-claims";
 
 export type { QueuedMutation } from "@/src/utils/mutation-queue";
 
@@ -103,6 +109,19 @@ const str = (v: unknown): string | undefined => (typeof v === "string" ? v : und
 const strings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 const isTempId = (id: string) => id.startsWith("temp-");
+
+// The account a token signs in, remembered for the last token: pump and pendingFields ask often.
+let lastToken: string | null = null;
+let lastOwner: number | undefined;
+function ownerOf(token: string | null | undefined): number | undefined {
+  if (!token) return undefined;
+  if (token !== lastToken) {
+    const id = readTokenClaims(token)?.telegram_user_id;
+    lastToken = token;
+    lastOwner = typeof id === "number" ? id : undefined;
+  }
+  return lastOwner;
+}
 const reportedOffline = () => typeof navigator !== "undefined" && navigator.onLine === false;
 
 /** The item a change is about: its itemId, the tempId of a create, the recycled item of a recycle. */
@@ -198,14 +217,16 @@ class ListSyncEngine implements SyncEngine {
 
   add(m: { id: string; type: string; payload: Record<string, unknown> }): void {
     const payload = this.rewrite(m.payload);
-    this.queue.enqueue({ id: m.id, type: m.type, payload }, (evicted) => {
+    const owner = ownerOf(this.handlers?.getJwt());
+    const stamp = owner === undefined ? {} : { owner };
+    this.queue.enqueue({ id: m.id, type: m.type, payload, ...stamp }, (evicted) => {
       for (const e of evicted) {
         this.index.delete(e.id);
         console.error("[SyncEngine] Offline queue full, dropping its oldest change:", this.ctx(e));
         this.report(e, null, "Evicted: the offline queue is full", true);
       }
     });
-    this.index.set(m.id, { id: m.id, type: m.type, payload, timestamp: Date.now() });
+    this.index.set(m.id, { id: m.id, type: m.type, payload, timestamp: Date.now(), ...stamp });
     this.pump();
   }
 
@@ -216,12 +237,21 @@ class ListSyncEngine implements SyncEngine {
     this.parked.clear();
     this.authHold = false;
     this.expire();
+    const others = this.index.size - this.mine().length;
+    if (others > 0) {
+      console.info("[SyncEngine] Leaving changes saved by another account for its next session:", {
+        listId: this.listId,
+        count: others,
+      });
+    }
     // By default only what this flush can send: a request already in flight may hang (a
     // dead socket, a suspended WebView) and changes added after this point don't extend it,
     // so neither can hold a reconnect that awaits it. The list's first load passes
     // includeInFlight: it must not read the list before an earlier flush's replay landed.
     const strict = !!opts?.includeInFlight;
-    const ids = new Set([...this.index.keys()].filter((id) => strict || !this.inFlight.has(id)));
+    const ids = new Set(
+      this.mine().filter((m) => strict || !this.inFlight.has(m.id)).map((m) => m.id)
+    );
     const done = new Promise<void>((resolve) => this.flushWaiters.push({ ids, resolve }));
     this.pump();
     this.settleFlushes();
@@ -229,11 +259,11 @@ class ListSyncEngine implements SyncEngine {
   }
 
   pendingFields(itemId: string): Set<string> {
-    return this.pendingFieldsOf(this.index.values(), itemId);
+    return this.pendingFieldsOf(this.mine(), itemId);
   }
 
   pendingSnapshot(): QueuedMutation[] {
-    return [...this.index.values()];
+    return this.mine();
   }
 
   pendingFieldsOf(entries: Iterable<QueuedMutation>, itemId: string): Set<string> {
@@ -261,6 +291,13 @@ class ListSyncEngine implements SyncEngine {
     for (const w of waiters) w.resolve();
   }
 
+  /** The queued and in-flight entries, in queue order, without another account's. */
+  private mine(): QueuedMutation[] {
+    const current = ownerOf(this.handlers?.getJwt());
+    // Unknown on either side (no owner saved, no readable token): not another account's.
+    return [...this.index.values()].filter((m) => m.owner === undefined || current === undefined || m.owner === current);
+  }
+
   // --- sending ---
 
   private chainKey(m: QueuedMutation): string {
@@ -275,8 +312,9 @@ class ListSyncEngine implements SyncEngine {
     const jwt = handlers.getJwt();
     if (!jwt) return;
 
-    // A copy: a drop or a synchronous failure below changes the index.
-    const queue = [...this.index.values()];
+    // A copy: a drop or a synchronous failure below changes the index. Another account's
+    // changes are left out, so they neither go out nor hold this account's.
+    const queue = this.mine();
     const pendingCreates = new Set(
       queue.filter((m) => m.type === "create").map((m) => str(m.payload.tempId))
     );
@@ -384,9 +422,10 @@ class ListSyncEngine implements SyncEngine {
     this.callHandler("onSuccess", () => this.handlers?.onSuccess?.(m, result));
   }
 
+  /** Drops this account's changes older than 24 hours; another account's wait for its session. */
   private expire() {
     const now = Date.now();
-    for (const m of [...this.index.values()]) {
+    for (const m of this.mine()) {
       if (this.inFlight.has(m.id) || now - m.timestamp <= MAX_AGE_MS) continue;
       console.warn("[SyncEngine] Dropping a change older than 24 hours:", this.ctx(m));
       this.remove(m);

@@ -18,7 +18,8 @@ import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
 import ruMessages from "@/messages/ru.json";
 
-import { useJWTRefresh, isInitDataFresh, readStoredToken, readTokenClaims } from "@/src/hooks/useJWTRefresh";
+import { useJWTRefresh, isInitDataFresh, readStoredToken } from "@/src/hooks/useJWTRefresh";
+import { readTokenClaims } from "@/src/lib/token-claims";
 import { useLocaleSync } from "@/src/hooks/useLocaleSync";
 import { useHomeScreen } from "@/src/hooks/useHomeScreen";
 import { useReconnectOrchestrator, MAX_RETRIES } from "@/src/hooks/useReconnectOrchestrator";

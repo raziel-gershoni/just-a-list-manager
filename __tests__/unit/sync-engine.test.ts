@@ -47,7 +47,7 @@ function world(listId = "L") {
         m.type === "create" ? p.tempId : m.type === "reorder" ? (p.orderedIds as string[]).join(",") : p.itemId;
       const line = `${m.type} ${String(target)}${"value" in p ? ` ${String(p.value)}` : ""}`;
       sent.push(line);
-      expect(getJwt()).toBe("jwt");
+      expect(getJwt()).toBe(jwt.current);
       let reply = replies.get(line)?.shift() ?? "ok";
       if (reply === "hold") reply = await new Promise<Reply>((resolve) => held.set(line, resolve));
       if (reply === "neterr") throw new TypeError("Failed to fetch");
@@ -109,6 +109,10 @@ function world(listId = "L") {
 const settle = async () => {
   for (let i = 0; i < 10; i++) await vi.advanceTimersByTimeAsync(0);
 };
+
+// A token for this Telegram account, readable the way the client reads the app's JWT (unverified).
+const jwtFor = (telegramUserId: number) =>
+  `h.${btoa(JSON.stringify({ telegram_user_id: telegramUserId })).replace(/=+$/, "")}.sig`;
 
 const entry = (id: string, type: string, payload: Record<string, unknown>, timestamp = Date.now()): QueuedMutation => ({
   id,
@@ -800,6 +804,75 @@ describe("a full queue or an old change is reported, never silent (H15)", () => 
     expect(w.sent).toEqual(["toggle i1 true", "toggle i1 true"]);
     expect(w.stored()).toEqual([]);
     expect(w.successes).toEqual([]);
+  });
+});
+
+describe("saved changes belong to the account that made them (C2)", () => {
+  it("a change saved by one account is not sent with another's token, stays saved, and goes out once its account is back", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const w = world();
+    w.jwt.current = jwtFor(1);
+    w.when("toggle i1 true", "neterr");
+    w.add("toggle", { itemId: "i1", value: true });
+    await settle();
+    expect(w.sent).toEqual(["toggle i1 true"]);
+
+    // User 1 signs out offline; user 2 signs in on the same device.
+    w.jwt.current = jwtFor(2);
+    w.reload();
+    w.add("toggle", { itemId: "i2", value: true });
+    await flushAllQueues(() => w.jwt.current, w.factory);
+    await w.engine().flush({ includeInFlight: true });
+
+    expect(w.sent).toEqual(["toggle i1 true", "toggle i2 true"]);
+    expect(w.stored().map((m) => m.payload.itemId)).toEqual(["i1"]);
+    expect(w.errors.filter((e) => e.dropped)).toEqual([]);
+    expect(w.engine().pendingFields("i1")).toEqual(new Set());
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("[SyncEngine]"), { listId: "L", count: 1 });
+
+    w.jwt.current = jwtFor(1);
+    await w.engine().flush();
+
+    expect(w.sent).toEqual(["toggle i1 true", "toggle i2 true", "toggle i1 true"]);
+    expect(w.stored()).toEqual([]);
+  });
+
+  it("a change saved without an account (before owners existed, or with no token) is sent by whoever replays it", async () => {
+    const w = world();
+    w.seed("L", [entry("old", "toggle", { itemId: "i1", value: true })]);
+    w.jwt.current = jwtFor(2);
+    w.reload();
+
+    await flushAllQueues(() => w.jwt.current, w.factory);
+
+    expect(w.sent).toEqual(["toggle i1 true"]);
+    expect(w.stored()).toEqual([]);
+  });
+
+  it("another account's change past 24 hours is left for that account, not dropped or reported here", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const w = world();
+    w.seed("L", [{ ...entry("theirs", "toggle", { itemId: "i1", value: true }, Date.now() - DAY - 1), owner: 1 }]);
+    w.jwt.current = jwtFor(2);
+    w.reload();
+
+    await w.engine().flush();
+
+    expect(w.stored().map((m) => m.id)).toEqual(["theirs"]);
+    expect(w.errors).toEqual([]);
+  });
+
+  it("another account's change on an item does not hold this account's change on it", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const w = world();
+    w.seed("L", [{ ...entry("theirs", "toggle", { itemId: "i1", value: true }), owner: 1 }]);
+    w.jwt.current = jwtFor(2);
+    w.reload();
+    w.add("edit", { itemId: "i1", value: "x" });
+    await w.engine().flush();
+
+    expect(w.sent).toEqual(["edit i1 x"]);
+    expect(w.stored().map((m) => m.id)).toEqual(["theirs"]);
   });
 });
 

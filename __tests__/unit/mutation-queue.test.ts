@@ -41,6 +41,16 @@ describe("MutationQueue", () => {
     errors.mockRestore();
   });
 
+  it("loads an entry saved with the account that made it, and one saved before owners existed", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const owned = { id: "a", type: "toggle", payload: { itemId: "i1" }, timestamp: 1, owner: 111 };
+    const old = { id: "b", type: "toggle", payload: { itemId: "i2" }, timestamp: 1 };
+    const broken = { id: "c", type: "toggle", payload: { itemId: "i3" }, timestamp: 1, owner: "111" };
+    storage.set("mutation_queue:list-1", JSON.stringify([owned, old, broken]));
+
+    expect(new MutationQueue("list-1").getQueue()).toEqual([owned, old]);
+  });
+
   it("getQueue treats a stored value that isn't a list as empty, and logs it", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     storage.set("mutation_queue:list-1", JSON.stringify({ id: "a" }));

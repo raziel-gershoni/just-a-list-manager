@@ -8,6 +8,9 @@ export interface QueuedMutation {
   type: string;
   payload: Record<string, unknown>;
   timestamp: number;
+  // The telegram_user_id of the account signed in when the change was made. Absent (saved
+  // before owners existed, or made with no token): it belongs to whoever replays it.
+  owner?: number;
 }
 
 export const MAX_QUEUE_SIZE = 500;
@@ -19,6 +22,7 @@ function isQueuedMutation(v: unknown): v is QueuedMutation {
     typeof m.id === "string" &&
     typeof m.type === "string" &&
     typeof m.timestamp === "number" &&
+    (m.owner === undefined || typeof m.owner === "number") &&
     !!m.payload &&
     typeof m.payload === "object" &&
     !Array.isArray(m.payload)
