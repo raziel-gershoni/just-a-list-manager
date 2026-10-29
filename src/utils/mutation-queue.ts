@@ -1,6 +1,6 @@
 /**
- * Offline mutation queue with localStorage persistence.
- * Stores pending mutations when offline, flushes on reconnect.
+ * Offline mutation queue with localStorage persistence: the storage layer of the sync
+ * engine (src/sync/engine.ts), which decides what is sent and when.
  */
 
 export interface QueuedMutation {
@@ -10,7 +10,7 @@ export interface QueuedMutation {
   timestamp: number;
 }
 
-const MAX_QUEUE_SIZE = 100;
+export const MAX_QUEUE_SIZE = 500;
 
 export class MutationQueue {
   private storageKey: string;
@@ -43,7 +43,11 @@ export class MutationQueue {
     }
   }
 
-  enqueue(mutation: Omit<QueuedMutation, "timestamp">): string {
+  /** Appends a change. Past MAX_QUEUE_SIZE the oldest entries are evicted and handed to `onEvict`. */
+  enqueue(
+    mutation: Omit<QueuedMutation, "timestamp">,
+    onEvict?: (evicted: QueuedMutation[]) => void
+  ): string {
     const queue = this.getQueue();
     const entry: QueuedMutation = {
       ...mutation,
@@ -52,18 +56,28 @@ export class MutationQueue {
 
     queue.push(entry);
 
-    // Drop oldest if exceeded
-    if (queue.length > MAX_QUEUE_SIZE) {
-      queue.splice(0, queue.length - MAX_QUEUE_SIZE);
-    }
+    const evicted = queue.length > MAX_QUEUE_SIZE ? queue.splice(0, queue.length - MAX_QUEUE_SIZE) : [];
 
     this.saveQueue(queue);
+    if (evicted.length > 0) onEvict?.(evicted);
     return mutation.id;
   }
 
   dequeue(id: string) {
     const queue = this.getQueue().filter((m) => m.id !== id);
     this.saveQueue(queue);
+  }
+
+  /** Rewrites stored payloads in place (e.g. a temp id swapped for the real one). `rewrite` returns the same object when nothing changes. */
+  rewritePayloads(rewrite: (payload: Record<string, unknown>) => Record<string, unknown>) {
+    let changed = false;
+    const next = this.getQueue().map((m) => {
+      const payload = rewrite(m.payload);
+      if (payload === m.payload) return m;
+      changed = true;
+      return { ...m, payload };
+    });
+    if (changed) this.saveQueue(next);
   }
 
   clear() {

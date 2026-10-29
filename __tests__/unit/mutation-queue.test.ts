@@ -74,16 +74,26 @@ describe("MutationQueue", () => {
     expect(queue.getQueue()).toEqual([]);
   });
 
-  it("trims oldest items when exceeding 100", () => {
+  it("trims oldest items when exceeding 500, and hands them to onEvict", () => {
     const queue = new MutationQueue("list-1");
-    for (let i = 0; i < 105; i++) {
-      queue.enqueue({ id: `m${i}`, type: "add", payload: {} });
+    const evicted: string[] = [];
+    for (let i = 0; i < 505; i++) {
+      queue.enqueue({ id: `m${i}`, type: "add", payload: {} }, (gone) => evicted.push(...gone.map((m) => m.id)));
     }
     const items = queue.getQueue();
-    expect(items).toHaveLength(100);
-    // Oldest 5 should have been dropped
+    expect(items).toHaveLength(500);
+    // Oldest 5 should have been dropped, and reported
     expect(items[0].id).toBe("m5");
-    expect(items[99].id).toBe("m104");
+    expect(items[499].id).toBe("m504");
+    expect(evicted).toEqual(["m0", "m1", "m2", "m3", "m4"]);
+  });
+
+  it("rewritePayloads saves rewritten payloads and leaves untouched entries as they were", () => {
+    const queue = new MutationQueue("list-1");
+    queue.enqueue({ id: "m1", type: "toggle", payload: { itemId: "temp-1" } });
+    queue.enqueue({ id: "m2", type: "toggle", payload: { itemId: "i2" } });
+    queue.rewritePayloads((p) => (p.itemId === "temp-1" ? { ...p, itemId: "real-1" } : p));
+    expect(queue.getQueue().map((m) => m.payload.itemId)).toEqual(["real-1", "i2"]);
   });
 
   it("maintains independent queues for different listIds", () => {
