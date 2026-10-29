@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { isRtl, type SupportedLocale } from "@/src/lib/i18n";
+import { throwIfNotOk } from "@/src/utils/http";
 
 export function useLocaleSync(jwtRef: React.RefObject<string | null>) {
   const [locale, setLocale] = useState<SupportedLocale>("en");
@@ -17,13 +18,17 @@ export function useLocaleSync(jwtRef: React.RefObject<string | null>) {
     }
   }, []);
 
+  // Applies the language at once, then saves it. Resolves false when it was not saved.
   const setLanguage = useCallback(
-    async (lang: SupportedLocale) => {
+    async (lang: SupportedLocale): Promise<boolean> => {
       applyLocale(lang);
       const token = jwtRef.current;
-      if (!token) return;
+      if (!token) {
+        console.warn("[LocaleSync] No session token, language not saved:", { lang });
+        return false;
+      }
       try {
-        await fetch("/api/user", {
+        const res = await fetch("/api/user", {
           method: "PATCH",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -31,8 +36,11 @@ export function useLocaleSync(jwtRef: React.RefObject<string | null>) {
           },
           body: JSON.stringify({ language: lang }),
         });
+        throwIfNotOk(res, "Language save");
+        return true;
       } catch (e) {
-        console.error("[TelegramProvider] Language update error:", e);
+        console.error("[LocaleSync] Language save failed:", { lang }, e);
+        return false;
       }
     },
     [applyLocale, jwtRef]

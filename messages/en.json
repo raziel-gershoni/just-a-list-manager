@@ -63,6 +63,7 @@
     "listArchived": "List archived",
     "listUnarchived": "List unarchived",
     "archiveFailed": "Couldn't archive the list",
+    "deleteFailed": "Couldn't delete the list",
     "emptyArchived": "No archived lists",
     "reorderFailed": "Couldn't save the new order"
   },

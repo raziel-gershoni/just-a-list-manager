@@ -53,7 +53,8 @@ interface TelegramContextType {
   jwt: string | null;
   jwtRef: React.RefObject<string | null>;
   locale: SupportedLocale;
-  setLanguage: (lang: SupportedLocale) => Promise<void>;
+  /** Resolves false when the language could not be saved (it stays applied on screen). */
+  setLanguage: (lang: SupportedLocale) => Promise<boolean>;
   supabaseClient: SupabaseClient | null;
   supabaseClientRef: React.RefObject<SupabaseClient | null>;
   isReady: boolean;
@@ -74,7 +75,7 @@ const TelegramContext = createContext<TelegramContextType>({
   jwt: null,
   jwtRef: { current: null },
   locale: "en",
-  setLanguage: async () => {},
+  setLanguage: async () => false,
   supabaseClient: null,
   supabaseClientRef: { current: null },
   isReady: false,

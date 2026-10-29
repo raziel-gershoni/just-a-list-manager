@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { X, Copy, Check, Link2 } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import { useTelegram } from "./TelegramProvider";
+import { throwIfNotOk } from "@/src/utils/http";
 
 interface Collaborator {
   id: string;
@@ -29,28 +30,32 @@ export default function ShareDialog({
 }: ShareDialogProps) {
   const { jwtRef } = useTelegram();
   const t = useTranslations('share');
+  const tErrors = useTranslations('errors');
   const [permission, setPermission] = useState<"view" | "edit">("edit");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [loading, setLoading] = useState(false);
+  // A load or link request failed. Shown inline: the dialog covers the page's toasts.
+  const [error, setError] = useState(false);
 
   const loadCollaborators = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
+    setError(false);
     try {
       const res = await fetch(`/api/share?listId=${listId}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setCollaborators(data.collaborators || []);
-        if (data.activeLink) {
-          setInviteLink(data.activeLink);
-        }
+      throwIfNotOk(res, "Share load");
+      const data = await res.json();
+      setCollaborators(data.collaborators || []);
+      if (data.activeLink) {
+        setInviteLink(data.activeLink);
       }
     } catch (e) {
-      console.error("[ShareDialog] Failed to load:", e);
+      console.error("[ShareDialog] Failed to load:", { listId }, e);
+      setError(true);
     }
   }, [jwtRef, listId]);
 
@@ -64,6 +69,7 @@ export default function ShareDialog({
     const jwt = jwtRef.current;
     if (!jwt) return;
     setLoading(true);
+    setError(false);
     try {
       const res = await fetch("/api/share", {
         method: "POST",
@@ -73,12 +79,12 @@ export default function ShareDialog({
         },
         body: JSON.stringify({ listId, permission }),
       });
-      if (res.ok) {
-        const { link } = await res.json();
-        setInviteLink(link);
-      }
+      throwIfNotOk(res, "Link create");
+      const { link } = await res.json();
+      setInviteLink(link);
     } catch (e) {
-      console.error("[ShareDialog] Failed to generate link:", e);
+      console.error("[ShareDialog] Failed to generate link:", { listId }, e);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -138,6 +144,10 @@ export default function ShareDialog({
             {t('view')}
           </button>
         </div>
+
+        {error && (
+          <p role="alert" className="mb-4 text-sm text-tg-destructive">{tErrors('generic')}</p>
+        )}
 
         {/* Generate or show link */}
         {inviteLink ? (

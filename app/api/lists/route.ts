@@ -167,6 +167,8 @@ export async function POST(request: NextRequest) {
       {
         error:
           "You've reached the 50-list limit. Delete a list to create more.",
+        // The home page shows its own translated message for this code.
+        code: "maxLists",
       },
       { status: 400 }
     );

@@ -124,6 +124,16 @@ describe("POST /api/lists (50-list cap)", () => {
     expect(console.error).toHaveBeenCalledWith("[lists/POST] List count read failed:", { userId: "u1" }, boom);
   });
 
+  it("answers the cap with a 400 that carries the maxLists code, and inserts nothing", async () => {
+    fakeDb((c) => c.op === "select"
+      ? ({ data: null, error: null, count: 50 } as FakeResult)
+      : { data: { id: LIST, name: "Groceries" }, error: null });
+    const res = await create();
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual(expect.objectContaining({ code: "maxLists" }));
+    expect(calls("lists", "insert")).toEqual([]);
+  });
+
   it("creates the list when the count is under the cap", async () => {
     fakeDb((c) => c.op === "select"
       ? ({ data: null, error: null, count: 3 } as FakeResult)

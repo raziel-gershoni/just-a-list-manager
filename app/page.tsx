@@ -13,6 +13,7 @@ import EmptyState from "@/components/EmptyState";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import IconColorPicker from "@/components/IconColorPicker";
 import { getTelegramWebApp } from "@/src/types/telegram";
+import { throwIfNotOk } from "@/src/utils/http";
 import type { SupportedLocale } from "@/src/lib/i18n";
 import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 
@@ -26,6 +27,17 @@ interface ListData {
   completed_count: number;
   is_shared: boolean;
   role: "owner" | "view" | "edit";
+}
+
+// The `code` an API error body carries (e.g. "maxLists"), or null when there is none.
+async function readErrorCode(res: Response): Promise<string | null> {
+  try {
+    const body = await res.json();
+    return typeof body?.code === "string" ? body.code : null;
+  } catch (e) {
+    console.warn("[Home] Could not read the error body:", e);
+    return null;
+  }
 }
 
 function HomeContent() {
@@ -155,6 +167,17 @@ function HomeContent() {
     if (isReady) fetchLists();
   }, [isReady, fetchLists]);
 
+  // A message-only bottom toast for a failed background save; replaces any toast showing.
+  const showToast = useCallback((key: string) => {
+    setToast((prev) => {
+      if (prev) clearTimeout(prev.timeout);
+      return {
+        message: t(key),
+        timeout: setTimeout(() => setToast(null), 4000),
+      };
+    });
+  }, [t]);
+
   const handleReorderFailed = useCallback(() => {
     setToast((prev) => {
       if (prev) clearTimeout(prev.timeout);
@@ -212,7 +235,14 @@ function HomeContent() {
                 return next;
               });
             }
-            void post(!archived, jwtRef.current);
+            post(!archived, jwtRef.current)
+              .then((res) => throwIfNotOk(res, "Undo archive"))
+              .catch((e) => {
+                console.error("[Home] Undo archive failed:", { listId: list.id }, e);
+                showToast("errors.generic");
+                // silent: show the server's state without the full-page error view
+                if (stillSameView()) fetchLists({ silent: true });
+              });
           },
           timeout,
         };
@@ -238,7 +268,7 @@ function HomeContent() {
           fetchLists({ silent: true });
         });
     },
-    [lists, view, jwtRef, t, fetchLists]
+    [lists, view, jwtRef, t, fetchLists, showToast]
   );
 
   const { handleDragStart, handleDragEnd, shouldSuppressClick } = useListsDragDrop({
@@ -274,20 +304,24 @@ function HomeContent() {
           color: newListColor,
         }),
       });
-      if (res.ok) {
-        const list = await res.json();
-        setNewListName("");
-        setNewListType("regular");
-        setNewListIcon(null);
-        setNewListColor(null);
-        setShowCreate(false);
-        router.push(`/list/${list.id}`);
-      } else {
-        const err = await res.json();
-        alert(err.error || "Failed to create list");
+      if (res.status === 400 && (await readErrorCode(res)) === "maxLists") {
+        // The 50-list cap keeps its own reason; the sheet stays open with the name.
+        console.warn("[Home] Create list refused: list limit reached");
+        showToast("lists.maxLists");
+        return;
       }
+      throwIfNotOk(res, "Create list");
+      const list = await res.json();
+      setNewListName("");
+      setNewListType("regular");
+      setNewListIcon(null);
+      setNewListColor(null);
+      setShowCreate(false);
+      router.push(`/list/${list.id}`);
     } catch (e) {
-      console.error("[Home] Create list error:", e);
+      // The sheet stays open with the user's input, so Create can be tapped again.
+      console.error("[Home] Create list failed:", e);
+      showToast("errors.generic");
     } finally {
       setCreating(false);
     }
@@ -305,6 +339,7 @@ function HomeContent() {
   const handleEditSubmit = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!editName.trim() || !jwt || !editTargetRef.current) return;
+    const listId = editTargetRef.current;
     setEditSaving(true);
     try {
       const res = await fetch("/api/lists", {
@@ -320,22 +355,23 @@ function HomeContent() {
           color: editColor,
         }),
       });
-      if (res.ok) {
-        setLists((prev) =>
-          prev.map((l) =>
-            l.id === editTargetRef.current
-              ? { ...l, name: editName.trim(), icon: editIcon, color: editColor }
-              : l
-          )
-        );
-        setShowEdit(false);
-      }
+      throwIfNotOk(res, "Edit");
+      setLists((prev) =>
+        prev.map((l) =>
+          l.id === editTargetRef.current
+            ? { ...l, name: editName.trim(), icon: editIcon, color: editColor }
+            : l
+        )
+      );
+      setShowEdit(false);
     } catch (e) {
-      console.error("[Home] Edit error:", e);
+      // The sheet stays open with the user's input, so Save can be tapped again.
+      console.error("[Home] Edit list failed:", { listId }, e);
+      showToast("errors.generic");
     } finally {
       setEditSaving(false);
     }
-  }, [editName, editIcon, editColor, jwtRef]);
+  }, [editName, editIcon, editColor, jwtRef, showToast]);
 
   const handleDeleteList = useCallback((listToDelete: ListData) => {
     const jwt = jwtRef.current;
@@ -348,6 +384,18 @@ function HomeContent() {
       // Optimistic removal — remember the slot so undo restores it in place
       const deletedIndex = lists.findIndex((l) => l.id === listToDelete.id);
       setLists((prev) => prev.filter((l) => l.id !== listToDelete.id));
+      // A failure must not write this view's card into another tab's lists.
+      const actionView = view;
+      const stillSameView = () => viewRef.current === actionView;
+      // Back at the slot it was removed from, unless it is already there: Undo and a
+      // failed delete can both put it back.
+      const putBack = () =>
+        setLists((prev) => {
+          if (prev.some((l) => l.id === listToDelete.id)) return prev;
+          const next = [...prev];
+          next.splice(deletedIndex === -1 ? next.length : deletedIndex, 0, listToDelete);
+          return next;
+        });
 
       // Clear any existing undo
       setToast((prev) => {
@@ -363,15 +411,7 @@ function HomeContent() {
           clearTimeout(timeout);
           setToast(null);
           // Restore optimistically, back at the position it was removed from
-          setLists((prev) => {
-            const next = [...prev];
-            next.splice(
-              deletedIndex === -1 ? next.length : deletedIndex,
-              0,
-              listToDelete
-            );
-            return next;
-          });
+          putBack();
           // Restore on server
           const currentJwt = jwtRef.current;
           fetch("/api/lists", {
@@ -381,7 +421,14 @@ function HomeContent() {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ id: listToDelete.id, restore: true }),
-          });
+          })
+            .then((res) => throwIfNotOk(res, "Restore"))
+            .catch((e) => {
+              console.error("[Home] Undo delete failed:", { listId: listToDelete.id }, e);
+              showToast("errors.generic");
+              // silent: show the server's state without the full-page error view
+              if (stillSameView()) fetchLists({ silent: true });
+            });
         },
         timeout,
       });
@@ -390,7 +437,17 @@ function HomeContent() {
       fetch(`/api/lists?id=${listToDelete.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${jwt}` },
-      });
+      })
+        .then((res) => throwIfNotOk(res, "Delete"))
+        .catch((e) => {
+          console.error("[Home] Delete list failed:", { listId: listToDelete.id }, e);
+          clearTimeout(timeout);
+          showToast("lists.deleteFailed");
+          if (!stillSameView()) return;
+          putBack();
+          // silent: show the server's state without the full-page error view
+          fetchLists({ silent: true });
+        });
     };
 
     // Use Telegram native confirm if available, fallback to window.confirm
@@ -403,7 +460,7 @@ function HomeContent() {
         doDelete();
       }
     }
-  }, [lists, jwtRef, t]);
+  }, [lists, view, jwtRef, t, showToast, fetchLists]);
 
   if (loading) {
     return (
@@ -628,8 +685,10 @@ function HomeContent() {
         <LanguageSheet
           currentLocale={locale}
           onSelect={async (lang) => {
-            await setLanguage(lang);
+            const saved = await setLanguage(lang);
             setShowLanguage(false);
+            // The chosen language stays on screen; the toast says it wasn't saved.
+            if (!saved) showToast("errors.generic");
           }}
           onClose={() => setShowLanguage(false)}
         />
@@ -637,7 +696,7 @@ function HomeContent() {
 
       {/* Bottom toast */}
       {toast && (
-        <div className="fixed bottom-8 start-5 end-5 bg-foreground text-background rounded-2xl py-3.5 px-5 flex items-center justify-between z-30 shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <div className={`fixed bottom-8 start-5 end-5 bg-foreground text-background rounded-2xl py-3.5 px-5 flex items-center justify-between z-[60] shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300${toast.undo ? "" : " pointer-events-none"}`}>
           <span className="text-sm">{toast.message}</span>
           {toast.undo && (
             <button
