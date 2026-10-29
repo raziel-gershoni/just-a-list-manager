@@ -110,9 +110,9 @@ describe("recycleItem scoping", () => {
 
     expect(
       callSites.length,
-      `expected exactly 3 live recycleItem( call sites (route.ts + 2 in voice-handler.ts), ` +
+      `expected exactly 2 live recycleItem( call sites (route.ts + recycleOrThrow in voice-handler.ts), ` +
         `found ${callSites.length}: ${callSites.map((c) => c.file).join(", ")}`
-    ).toBe(3);
+    ).toBe(2);
 
     for (const { file, args } of callSites) {
       const argCount = args.split(",").length;

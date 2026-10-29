@@ -22,6 +22,15 @@ function escapeIlike(input: string): string {
 
 const MAX_VOICE_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
+/**
+ * postgrest resolves a failed call with a plain { code, message } object instead of rejecting.
+ * Wrap it in an Error that names the step, so the catch that receives it logs what failed.
+ * Only code and message are kept: `details` can quote row values (item text).
+ */
+function dbFailure(what: string, error: { code?: string; message?: string }): Error {
+  return new Error(`[VoiceHandler] ${what} failed: ${error.code ?? "?"} ${error.message ?? ""}`.trimEnd());
+}
+
 export interface TgVoice {
   file_id: string;
   file_unique_id: string;
@@ -77,11 +86,12 @@ export async function handleVoiceMessage(
     const supabase = createServerClient();
 
     // Look up user
-    const { data: user } = await supabase
+    const { data: user, error: userError } = await supabase
       .from("users")
       .select("id, language")
       .eq("telegram_id", telegramUserId)
-      .single();
+      .maybeSingle();
+    if (userError) throw dbFailure("User lookup", userError);
 
     if (!user) {
       try {
@@ -110,17 +120,21 @@ export async function handleVoiceMessage(
     lang = user.language || from.language_code;
 
     // Get user's lists
-    const { data: ownedLists } = await supabase
+    // Each read below fails the whole message: a partial set of lists would change which
+    // list the items land in.
+    const { data: ownedLists, error: ownedError } = await supabase
       .from("lists")
       .select("id, name")
       .eq("owner_id", user.id)
       .is("deleted_at", null);
+    if (ownedError) throw dbFailure("Owned lists read", ownedError);
 
-    const { data: collabRecords } = await supabase
+    const { data: collabRecords, error: collabError } = await supabase
       .from("collaborators")
       .select("list_id, permission")
       .eq("user_id", user.id)
       .eq("status", "approved");
+    if (collabError) throw dbFailure("Collaborators read", collabError);
 
     let collabLists: { id: string; name: string }[] = [];
     const collabListIds = (collabRecords || [])
@@ -128,11 +142,12 @@ export async function handleVoiceMessage(
       .map((c) => c.list_id);
 
     if (collabListIds.length > 0) {
-      const { data } = await supabase
+      const { data, error: sharedError } = await supabase
         .from("lists")
         .select("id, name")
         .in("id", collabListIds)
         .is("deleted_at", null);
+      if (sharedError) throw dbFailure("Shared lists read", sharedError);
       collabLists = data || [];
     }
 
@@ -144,11 +159,12 @@ export async function handleVoiceMessage(
     // Archive is per-user: a list this speaker archived should not be a target
     // for "add milk to X", so its name never reaches Gemini. Note this makes
     // the single-list default below more likely to fire as lists get archived.
-    const { data: archivedRows } = await supabase
+    const { data: archivedRows, error: archivedError } = await supabase
       .from("user_list_state")
       .select("list_id")
       .eq("user_id", user.id)
       .not("archived_at", "is", null);
+    if (archivedError) throw dbFailure("Archived lists read", archivedError);
     const archivedListIds = new Set((archivedRows || []).map((r) => r.list_id));
     const uniqueLists = visibleLists.filter((l) => !archivedListIds.has(l.id));
 
@@ -197,6 +213,10 @@ export async function handleVoiceMessage(
     // Download voice file
     const fileUrl = await bot.getFileLink(voice.file_id);
     const audioResponse = await fetch(fileUrl);
+    // Status only: fileUrl contains the bot token and must never be logged.
+    if (!audioResponse.ok) {
+      throw new Error(`Telegram voice download failed: ${audioResponse.status}`);
+    }
     const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
 
     if (audioBuffer.length > MAX_VOICE_FILE_SIZE) {
@@ -297,28 +317,48 @@ export async function handleVoiceMessage(
         removed: [],
       };
 
-      if (voiceItem.action === "add") {
-        await processAddItem(
-          supabase,
-          bot,
-          chatId,
-          targetList.id,
-          voiceItem,
-          user.id,
-          receipt,
-          lang
+      // One item's failure must not stop the rest: that item gets its own line and
+      // stays out of the receipt, the others are receipted as usual.
+      try {
+        if (voiceItem.action === "add") {
+          await processAddItem(
+            supabase,
+            bot,
+            chatId,
+            targetList.id,
+            voiceItem,
+            user.id,
+            receipt,
+            lang
+          );
+        } else {
+          await processRemoveItem(
+            supabase,
+            bot,
+            chatId,
+            targetList.id,
+            voiceItem,
+            receipt,
+            lang,
+            targetList.name
+          );
+        }
+      } catch (itemErr) {
+        console.error(
+          "[VoiceHandler] Item update failed:",
+          { action: voiceItem.action, chatId, listId: targetList.id },
+          itemErr
         );
-      } else {
-        await processRemoveItem(
-          supabase,
-          bot,
-          chatId,
-          targetList.id,
-          voiceItem,
-          receipt,
-          lang,
-          targetList.name
-        );
+        try {
+          await bot.sendMessage(
+            chatId,
+            getMsg(lang, "voice.itemFailed")
+              .replace("{item}", () => voiceItem.text)
+              .replace("{listName}", () => receipt.listName)
+          );
+        } catch (sendErr) {
+          console.error("[VoiceHandler] Failed to send item-failed notice, chatId:", chatId, "listId:", targetList.id, sendErr);
+        }
       }
 
       receipts.set(targetList.id, receipt);
@@ -326,6 +366,9 @@ export async function handleVoiceMessage(
 
     // Send receipt messages
     for (const receipt of receipts.values()) {
+      // Nothing changed on this list (every item failed or was not found): no receipt.
+      if (receipt.added.length === 0 && receipt.removed.length === 0) continue;
+
       const lines: string[] = [];
 
       if (receipt.added.length > 0 && receipt.removed.length === 0) {
@@ -357,7 +400,7 @@ export async function handleVoiceMessage(
 
     listsToSort.push(...receipts.keys());
   } catch (error) {
-    console.error("[VoiceHandler] Processing error:", error);
+    console.error("[VoiceHandler] Processing error, chatId:", chatId, error);
     try {
       await bot.sendMessage(
         chatId,
@@ -402,7 +445,7 @@ async function processAddItem(
 
     if (similarity > 0.6) {
       // High confidence — auto-recycle
-      await recycleItem(match.id, userId, listId);
+      await recycleOrThrow(match.id, userId, listId);
       receipt.added.push(`${match.text} ${getMsg(lang, "voice.recycledLabel")}`);
       return match.id;
     }
@@ -415,7 +458,7 @@ async function processAddItem(
       voiceItem.text.toLowerCase()
     );
     if (similarity > 0.6) {
-      await recycleItem(bestMatch.id, userId, listId);
+      await recycleOrThrow(bestMatch.id, userId, listId);
       receipt.added.push(`${bestMatch.text} ${getMsg(lang, "voice.recycledLabel")}`);
       return bestMatch.id;
     }
@@ -423,21 +466,23 @@ async function processAddItem(
   }
 
   // No match — create new item
-  const { data: maxPosResult } = await supabase
+  const { data: maxPosResult, error: maxPosError } = await supabase
     .from("items")
     .select("position")
     .eq("list_id", listId)
     .order("position", { ascending: false })
     .limit(1);
+  if (maxPosError) throw dbFailure("Max position read", maxPosError);
 
   const nextPosition = (maxPosResult?.[0]?.position || 0) + 1;
 
-  const { data: created } = await supabase.from("items").insert({
+  const { data: created, error: insertError } = await supabase.from("items").insert({
     list_id: listId,
     text: normalizeForStorage(voiceItem.text),
     position: nextPosition,
     created_by: userId,
   }).select("id").single();
+  if (insertError) throw dbFailure("Item insert", insertError);
 
   receipt.added.push(voiceItem.text);
   return created?.id ?? null;
@@ -456,7 +501,7 @@ async function processRemoveItem(
   const { getMsg } = await import("./bot");
   const canonical = normalizeForStorage(voiceItem.text);
   // Search active items by exact match first
-  const { data: exactMatches } = await supabase
+  const { data: exactMatches, error: exactError } = await supabase
     .from("items")
     .select("id, text")
     .eq("list_id", listId)
@@ -465,25 +510,24 @@ async function processRemoveItem(
     .ilike("text", escapeIlike(canonical))
     .order("created_at", { ascending: false })
     .limit(1);
+  if (exactError) throw dbFailure("Exact match lookup", exactError);
 
   if (exactMatches && exactMatches.length > 0) {
     // Soft-delete the most recent match
-    await supabase
-      .from("items")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", exactMatches[0].id);
+    await softDeleteItem(supabase, exactMatches[0].id);
     receipt.removed.push(exactMatches[0].text);
     return;
   }
 
   // No exact match — try fuzzy on active items (limited to avoid fetching entire list)
-  const { data: fuzzyActive } = await supabase
+  const { data: fuzzyActive, error: fuzzyError } = await supabase
     .from("items")
     .select("id, text")
     .eq("list_id", listId)
     .eq("completed", false)
     .is("deleted_at", null)
     .limit(200);
+  if (fuzzyError) throw dbFailure("Fuzzy match lookup", fuzzyError);
 
   if (fuzzyActive) {
     const scored = fuzzyActive
@@ -498,17 +542,14 @@ async function processRemoveItem(
       .sort((a, b) => b.score - a.score);
 
     if (scored.length > 0 && scored[0].score > 0.6) {
-      await supabase
-        .from("items")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", scored[0].id);
+      await softDeleteItem(supabase, scored[0].id);
       receipt.removed.push(scored[0].text);
       return;
     }
   }
 
   // Check if it's already completed
-  const { data: completedMatch } = await supabase
+  const { data: completedMatch, error: completedError } = await supabase
     .from("items")
     .select("text")
     .eq("list_id", listId)
@@ -516,6 +557,7 @@ async function processRemoveItem(
     .is("deleted_at", null)
     .ilike("text", escapeIlike(canonical))
     .limit(1);
+  if (completedError) throw dbFailure("Completed match lookup", completedError);
 
   if (completedMatch && completedMatch.length > 0) {
     try {
@@ -541,6 +583,24 @@ async function processRemoveItem(
   } catch (err) {
     console.error("[VoiceHandler] Failed to send item-not-found notice, chatId:", chatId, "listId:", listId, err);
   }
+}
+
+/** Soft-deletes one item. Throws when the write fails, so the receipt never claims it. */
+async function softDeleteItem(supabase: SupabaseClient, itemId: string): Promise<void> {
+  const { error } = await supabase
+    .from("items")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", itemId);
+  if (error) throw dbFailure("Item soft-delete", error);
+}
+
+/**
+ * recycleItem throws on a database error and returns null when the row is gone. Either way
+ * the item was not recycled, so this throws and the receipt never claims it.
+ */
+async function recycleOrThrow(itemId: string, userId: string, listId: string): Promise<void> {
+  const recycled = await recycleItem(itemId, userId, listId);
+  if (!recycled) throw new Error(`[VoiceHandler] Recycle found no item ${itemId} in list ${listId}`);
 }
 
 // Simple text similarity (Dice coefficient on character bigrams)
