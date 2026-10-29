@@ -45,16 +45,15 @@ beforeEach(() => {
 });
 
 describe("POST items (batch): a failed recycle check skips the item and never inserts a duplicate", () => {
-  it("skips an item whose recycle check fails, logs it, and still adds the rest", async () => {
+  it("C16: a suggestion tap is one item: recycleItem gets the whole text, never a comma piece", async () => {
     const boom = new Error("Recycle item lookup failed");
-    h.recycle.mockImplementation(async (_id: string, _userId: string, _listId: string, text: string) => {
-      if (text === "milk") throw boom;
-      return null;
-    });
+    h.recycle.mockRejectedValue(boom);
     const res = await POST(req({ text: "milk, eggs", recycleId: OLD }), params);
-    expect(res.status).toBe(201);
-    expect(inserted()).toEqual(["eggs"]);
-    expect((await res.json()).items.map((i: { text: string }) => i.text)).toEqual(["eggs"]);
+    // The only item failed: a 500 the queue retries, and nothing is inserted.
+    expect(res.status).toBe(500);
+    expect(h.recycle).toHaveBeenCalledTimes(1);
+    expect(h.recycle).toHaveBeenCalledWith(OLD, "u1", "L", "milk, eggs");
+    expect(inserted()).toEqual([]);
     expect(console.error).toHaveBeenCalledWith("[items/POST] Recycle check failed, skipping item (batch):", { listId: "L" }, boom);
   });
 

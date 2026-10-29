@@ -5,6 +5,8 @@ export const createItemIdempotentSchema = z.object({
   text: z.string().min(1).max(500),
   idempotencyKey: z.string().min(1),
   position: z.number().optional(),
+  // A suggestion tap: the completed item to bring back (see the route).
+  recycleId: z.string().uuid().optional(),
 });
 
 // POST /api/lists/[id]/items — non-idempotent paths

@@ -15,6 +15,8 @@ export type ItemRow = {
   recurring: boolean;
   position: number;
   created_by: string | null;
+  // Set by the insert RPC when it is given p_idempotency_key.
+  idempotency_key?: string | null;
 };
 
 export function itemRow(over: Partial<ItemRow> & { id: string }): ItemRow {
@@ -57,6 +59,8 @@ function matches(row: ItemRow, filter: string): boolean {
   if ((m = filter.match(/^is:([^=]+)=null$/))) return cell(m[1]) == null;
   if ((m = filter.match(/^in:([^=]+)=(.*)$/))) return m[2].split(",").includes(String(cell(m[1])));
   if ((m = filter.match(/^not:([^:]+):is:null$/))) return cell(m[1]) != null;
+  // Rows here carry no created_at, so the idempotency-key sweep (created_at older than 24 h) matches none.
+  if ((m = filter.match(/^lt:([^=]+)=(.*)$/))) return cell(m[1]) != null && String(cell(m[1])) < m[2];
   if ((m = filter.match(/^ilike:([^=]+)=(.*)$/))) return ilike(String(cell(m[1])), m[2]);
   if (SHAPE.test(filter)) return true;
   // An unknown filter must fail the test loudly, never match everything by accident.
@@ -90,8 +94,9 @@ export function fakeItemsTable(initial: ItemRow[]) {
   let created = 0;
   const fake = fakeSupabase((call: FakeCall): FakeResult => {
     if (call.op === "rpc" && call.table === "insert_item_if_under_limit") {
-      const v = call.values as { p_list_id: string; p_text: string; p_position: number; p_created_by: string };
+      const v = call.values as { p_list_id: string; p_text: string; p_position: number; p_created_by: string; p_idempotency_key?: string };
       const row = itemRow({ id: `new-${++created}`, list_id: v.p_list_id, text: v.p_text, position: v.p_position, created_by: v.p_created_by });
+      if (v.p_idempotency_key !== undefined) row.idempotency_key = v.p_idempotency_key;
       rows.push(row);
       return { data: [{ ...row }], error: null };
     }

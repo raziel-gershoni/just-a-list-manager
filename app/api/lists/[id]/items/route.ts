@@ -135,6 +135,26 @@ export async function POST(
       );
     }
 
+    // A suggestion tap names the item to recycle. Tried first, with the same check as the
+    // batch path below (recycleItem: this list, not deleted, same text), and answered the same
+    // way: a completed item comes back to the top, an active one comes back unchanged, so a
+    // replay lands once. Whatever it can't recycle (the target was deleted or edited meanwhile)
+    // falls through to the keyed insert below, so a replay of that returns the first attempt's
+    // row instead of adding another. A failed check is a 500 the queue retries, never a
+    // duplicate. The whole text is the item: it is never split on commas.
+    if (parsed.data.recycleId) {
+      let recycled: RecyclableItem | null;
+      try {
+        recycled = await recycleItem(parsed.data.recycleId, auth.userId, listId, text);
+      } catch (err) {
+        console.error("[items/POST] Recycle check failed (idempotent):", { listId }, err);
+        return NextResponse.json({ error: "Recycle check failed" }, { status: 500 });
+      }
+      if (recycled) {
+        return NextResponse.json({ items: [{ ...recycled, recycled: true }] }, { status: 201 });
+      }
+    }
+
     // Check for existing item with same idempotency key. maybeSingle: no row is the normal
     // answer, so `error` is a real failure (500, the queue retries).
     const { data: existing, error: lookupError } = await supabase
@@ -234,8 +254,10 @@ export async function POST(
 
   let itemTexts: string[] = [];
   if (parsedCreate.data.text) {
-    itemTexts = parsedCreate.data.text
-      .split(",")
+    // A suggestion tap names one stored item, whose text may hold a comma (an edit keeps it):
+    // split, no piece would match it. Only a typed add is a comma list.
+    const pieces = parsedCreate.data.recycleId ? [parsedCreate.data.text] : parsedCreate.data.text.split(",");
+    itemTexts = pieces
       .map((t: string) => normalizeForStorage(t))
       .filter((t: string) => t.length > 0 && t.length <= 500);
   } else if (Array.isArray(parsedCreate.data.items)) {

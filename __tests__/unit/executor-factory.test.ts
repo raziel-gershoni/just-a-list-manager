@@ -160,6 +160,17 @@ describe("createExecutorFactory - server rows", () => {
     await expect(factory({ id: "m", type, payload: { listId: "l1", ...fields }, timestamp: 0 }, () => "jwt")!()).resolves.toMatchObject(row);
   });
 
+  // C15: a recycle whose target is gone falls back to an insert; the mutation id as the
+  // idempotency key lets the server answer a replay with the first attempt's row.
+  it("recycle sends the mutation id as its idempotency key", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ items: [{ ...row, recycled: true }] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await factory({ id: "mut-9", type: "recycle", payload: { listId: "l1", text: "milk", recycleId: row.id }, timestamp: 0 }, () => "jwt")!();
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ text: "milk", recycleId: row.id, idempotencyKey: "mut-9" });
+  });
+
   it("create resolves with null when the server created nothing", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ items: [] }) }));
 

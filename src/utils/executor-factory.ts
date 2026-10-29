@@ -150,7 +150,9 @@ export const createExecutorFactory = (): ExecutorFactory => {
               Authorization: `Bearer ${jwt}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ text: payload.text, recycleId: payload.recycleId }),
+            // The mutation id is the idempotency key, as for a create: a replay after a lost
+            // answer returns the first attempt's row instead of adding a second copy.
+            body: JSON.stringify({ text: payload.text, recycleId: payload.recycleId, idempotencyKey: mutation.id }),
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Recycle failed: ${res.status}`);

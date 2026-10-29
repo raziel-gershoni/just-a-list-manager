@@ -46,12 +46,14 @@ describe("recycleItem scoping", () => {
   const routePath = resolve(root, "app/api/lists/[id]/items/route.ts");
   const routeSource = readFileSync(routePath, "utf8");
 
-  it("POST /api/lists/[id]/items makes one recycleItem call, with the list and the item's text", () => {
+  it("POST /api/lists/[id]/items calls recycleItem on its idempotent and batch paths, each with the list and the item's text", () => {
     // The text is what lets recycleItem refuse an id that names some other item, and
     // return an already-active item unchanged instead of a second copy.
     const calls = findRecycleItemCalls(routeSource);
-    expect(calls.length, "expected exactly one recycleItem( call in this route").toBe(1);
-    expect(calls[0].split(",").map((a) => a.trim())).toEqual(["recycleId", "auth.userId", "listId", "text"]);
+    expect(calls.length, "expected exactly two recycleItem( calls in this route (idempotent path, batch path)").toBe(2);
+    for (const args of calls) {
+      expect(args.split(",").map((a) => a.trim())).toEqual([expect.stringMatching(/recycleId$/), "auth.userId", "listId", "text"]);
+    }
   });
 
   const recyclerPath = resolve(root, "src/services/item-recycler.ts");
@@ -100,9 +102,9 @@ describe("recycleItem scoping", () => {
 
     expect(
       callSites.length,
-      `expected exactly 2 live recycleItem( call sites (route.ts + recycleOrThrow in voice-handler.ts), ` +
+      `expected exactly 3 live recycleItem( call sites (route.ts idempotent + batch paths, recycleOrThrow in voice-handler.ts), ` +
         `found ${callSites.length}: ${callSites.map((c) => c.file).join(", ")}`
-    ).toBe(2);
+    ).toBe(3);
 
     for (const { file, args } of callSites) {
       const argCount = args.split(",").length;
