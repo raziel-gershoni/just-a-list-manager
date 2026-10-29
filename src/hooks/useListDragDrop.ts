@@ -23,19 +23,19 @@ export function useListDragDrop({
   groups,
 }: UseListDragDropParams) {
   const isDraggingRef = useRef(false);
-  const previousItemsRef = useRef<ItemData[]>([]);
 
   const handleDragStart: DragDropEvents["dragstart"] = useCallback(() => {
     isDraggingRef.current = true;
-    previousItemsRef.current = [...items];
     const tg = getTelegramWebApp();
     tg?.HapticFeedback?.impactOccurred("medium");
-  }, [items]);
+  }, []);
 
   const handleDragEnd: DragDropEvents["dragend"] = useCallback(
     (event) => {
+      // The items change only at a drop, so a canceled drag has nothing to put back. A copy
+      // taken at the drag's start would undo what came in during it (a collaborator's change,
+      // a create's answer turning a temp row into the saved row).
       if (event.canceled) {
-        setItems(previousItemsRef.current);
         isDraggingRef.current = false;
         return;
       }

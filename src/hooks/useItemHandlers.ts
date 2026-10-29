@@ -11,6 +11,7 @@ import { computeUnskipAll } from "@/src/utils/unskip-all";
 import { findCompletedExactMatch } from "@/src/utils/search-completed-items";
 import { throwIfNotOk } from "@/src/utils/http";
 import { restoreItemsOnServer, type RestoreBody } from "@/src/utils/item-restore";
+import { getSyncEngine } from "@/src/sync/engine";
 
 /**
  * The ids a bulk route (Clear completed, Unmark all) says it changed, from its `field`. An
@@ -82,6 +83,27 @@ export function useItemHandlers({
   const removeAgain = useCallback(
     (failed: Set<string>) => setItems((prev) => prev.filter((i) => !failed.has(i.id))),
     [setItems]
+  );
+
+  // An id captured at a tap may be a new item's temp id whose create has landed since: its
+  // row is now on screen under the saved id. Updates applied later match either one.
+  const sameItem = useCallback(
+    (capturedId: string) => {
+      const savedId = getSyncEngine(listId).resolveId(capturedId);
+      return (i: ItemData) => i.id === capturedId || i.id === savedId;
+    },
+    [listId]
+  );
+
+  // A copy taken before a delete, put back by its Undo: under the saved id, and saved, when
+  // its create landed in between (the queued restore keeps the captured id; the engine
+  // resolves it).
+  const undoCopy = useCallback(
+    (item: ItemData): ItemData => {
+      const savedId = getSyncEngine(listId).resolveId(item.id);
+      return savedId === item.id ? item : { ...item, id: savedId, _pending: false };
+    },
+    [listId]
   );
 
   const addSingleItem = useCallback(
@@ -199,9 +221,10 @@ export function useItemHandlers({
       }
 
       // Optimistic
+      const isItem = sameItem(itemId);
       setItems((prev) =>
         prev.map((i) =>
-          i.id === itemId
+          isItem(i)
             ? {
                 ...i,
                 completed,
@@ -219,7 +242,7 @@ export function useItemHandlers({
         payload: { listId, itemId, completed, at },
       });
     },
-    [listId, addMutation, setItems]
+    [listId, addMutation, setItems, sameItem]
   );
 
   const handleDelete = useCallback(
@@ -230,7 +253,10 @@ export function useItemHandlers({
       const deletedItem = items.find((i) => i.id === itemId);
       // Animate out then remove. Kept so an Undo inside the animation can cancel it.
       setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, _exiting: true } : i));
-      const removal = setTimeout(() => setItems((prev) => prev.filter((i) => i.id !== itemId)), 200);
+      const removal = setTimeout(() => {
+        const isItem = sameItem(itemId);
+        setItems((prev) => prev.filter((i) => !isItem(i)));
+      }, 200);
 
       // Show undo toast
       const timeout = setTimeout(() => setUndoAction(null), 4000);
@@ -243,7 +269,8 @@ export function useItemHandlers({
           setUndoAction(null);
           if (deletedItem) {
             // Replaces the exiting copy when the Undo comes inside the animation.
-            setItems((prev) => [...prev.filter((i) => i.id !== itemId), deletedItem]);
+            const isItem = sameItem(itemId);
+            setItems((prev) => [...prev.filter((i) => !isItem(i)), undoCopy(deletedItem)]);
             // Queued on the item's chain, so it lands after the delete (in flight or kept
             // for retry) and replays offline like any other change.
             addMutation({ id: genMutId(), type: "restore", payload: { listId, itemId } });
@@ -254,7 +281,7 @@ export function useItemHandlers({
 
       addMutation({ id: genMutId(), type: "delete", payload: { listId, itemId } });
     },
-    [listId, items, addMutation, t, setItems, setUndoAction]
+    [listId, items, addMutation, t, setItems, setUndoAction, sameItem, undoCopy]
   );
 
   const handleEditItem = useCallback(
@@ -436,7 +463,9 @@ export function useItemHandlers({
         undo: () => {
           clearTimeout(timeout);
           setUndoAction(null);
-          setItems((prev) => [...prev.filter((i) => !removeIds.has(i.id)), ...duplicatesToRemove]);
+          const copies = duplicatesToRemove.map(undoCopy);
+          const backIds = new Set([...removeIds, ...copies.map((i) => i.id)]);
+          setItems((prev) => [...prev.filter((i) => !backIds.has(i.id)), ...copies]);
           // One restore per duplicate, each queued behind that duplicate's delete.
           for (const item of duplicatesToRemove) {
             addMutation({ id: genMutId(), type: "restore", payload: { listId, itemId: item.id } });
@@ -450,7 +479,7 @@ export function useItemHandlers({
         addMutation({ id: genMutId(), type: "delete", payload: { listId, itemId: item.id } });
       }
     },
-    [listId, items, addMutation, t, setItems, setUndoAction]
+    [listId, items, addMutation, t, setItems, setUndoAction, undoCopy]
   );
 
   const handleClearCompleted = useCallback(async () => {
@@ -478,7 +507,9 @@ export function useItemHandlers({
       undo: () => {
         clearTimeout(timeout);
         setUndoAction(null);
-        setItems((prev) => [...prev, ...completedItems]);
+        const copies = completedItems.map(undoCopy);
+        const backIds = new Set(copies.map((i) => i.id));
+        setItems((prev) => [...prev.filter((i) => !backIds.has(i.id)), ...copies]);
         // Items whose restore fails leave the screen again. After a failed clear the server
         // changed nothing, so there is nothing to restore.
         void cleared.then((ids) => {
@@ -505,15 +536,16 @@ export function useItemHandlers({
         clearTimeout(timeout);
         setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
         // Skip items already back on screen (an Undo tapped before this failed).
+        const copies = completedItems.map(undoCopy);
         setItems((prev) => {
           const present = new Set(prev.map((i) => i.id));
-          return [...prev, ...completedItems.filter((i) => !present.has(i.id))];
+          return [...prev, ...copies.filter((i) => !present.has(i.id))];
         });
         showSyncError();
         return null;
       });
     await cleared;
-  }, [jwtRef, listId, items, t, setItems, setUndoAction, restoreOrRevert, removeAgain, showSyncError]);
+  }, [jwtRef, listId, items, t, setItems, setUndoAction, restoreOrRevert, removeAgain, showSyncError, undoCopy]);
 
   const handleUnmarkAllDone = useCallback(async () => {
     const jwt = jwtRef.current;
@@ -535,7 +567,12 @@ export function useItemHandlers({
     // Optimistic: flip completed -> active
     setItems((prev) => computeUnmarkCompleted(prev).next);
 
-    const idSet = new Set(affectedIds);
+    // Ids matched when the Undo or a failure applies: with the saved id of a new item whose
+    // create landed since.
+    const shownIds = () => {
+      const engine = getSyncEngine(listId);
+      return new Set(affectedIds.flatMap((id) => [id, engine.resolveId(id)]));
+    };
     // The ids the server unmarked, or null when the unmark failed; never rejects. The Undo
     // re-checks on the server only once the unmark has landed (a re-check that got there
     // first would be unticked by it), and only what it unmarked.
@@ -547,6 +584,7 @@ export function useItemHandlers({
         clearTimeout(timeout);
         setUndoAction(null);
         // Re-check optimistically
+        const idSet = shownIds();
         setItems((prev) =>
           prev.map((i) =>
             idSet.has(i.id)
@@ -585,10 +623,14 @@ export function useItemHandlers({
         console.error("[List] Unmark all failed:", { listId }, err);
         clearTimeout(timeout);
         setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
+        const engine = getSyncEngine(listId);
+        const completedAt = new Map(
+          [...completedAtById].flatMap(([id, at]) => [[id, at], [engine.resolveId(id), at]] as const)
+        );
         setItems((prev) =>
           prev.map((i) =>
-            completedAtById.has(i.id)
-              ? { ...i, completed: true, completed_at: completedAtById.get(i.id) ?? null }
+            completedAt.has(i.id)
+              ? { ...i, completed: true, completed_at: completedAt.get(i.id) ?? null }
               : i
           )
         );

@@ -123,6 +123,8 @@ function page(serverItems: ItemData[]) {
 
   const jwtRef = { current: "jwt" as string | null };
   const engine = getSyncEngine(listId);
+  // The Undo toast's action, as the page keeps it.
+  let undoAction: { undo: () => void } | null = null;
   let data!: ReturnType<typeof useListData>;
   const render = () => {
     R.i = 0;
@@ -150,7 +152,7 @@ function page(serverItems: ItemData[]) {
       setItems: data.setItems,
       addMutation: (m: { id: string; type: string; payload: Record<string, unknown> }) =>
         engine.add({ id: m.id, type: m.type, payload: m.payload }),
-      setUndoAction: () => {},
+      setUndoAction: (u) => { undoAction = typeof u === "function" ? u(undoAction as never) : u; },
       setDuplicateWarning: () => {},
       setReminderToast: () => {},
       setErrorToast: () => {},
@@ -189,6 +191,7 @@ function page(serverItems: ItemData[]) {
       render();
       await data.refreshItems();
     },
+    undo: () => undoAction!.undo(),
     items: () => { render(); return data.items; },
     item: (id: string) => { render(); return data.items.find((i) => i.id === id); },
     sent,
@@ -522,5 +525,186 @@ describe("a recycled item comes back at the top", () => {
     await settle();
 
     expect(p.item("a")).toMatchObject({ completed: false, position: 6 });
+  });
+});
+
+describe("a change made to a new item while its create is on its way shows on the saved row", () => {
+  it("a tick whose animation the create's answer lands in leaves the saved row ticked", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(100);
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    await vi.advanceTimersByTimeAsync(100);
+    await ticking;
+    await settle();
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _exiting: false })]);
+    expect(p.sent.find((s) => s.key === "PATCH r1")?.body).toMatchObject({ completed: true });
+  });
+
+  it("a delete whose animation the create's answer lands in takes the saved row off", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+
+    await p.render().handleDelete(tempId);
+    await vi.advanceTimersByTimeAsync(100);
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(p.items()).toEqual([]);
+    expect(p.sent.map((s) => s.key)).toContain("DELETE r1");
+  });
+
+  it("an Undo inside the delete animation, after the create's answer, leaves the saved row once", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+
+    await p.render().handleDelete(tempId);
+    await vi.advanceTimersByTimeAsync(100);
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    p.undo();
+    await settle();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", _pending: false })]);
+  });
+
+  it("an Undo of the delete after the create's answer brings back the saved row once, through a refresh", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+
+    await p.render().handleDelete(tempId);
+    await vi.advanceTimersByTimeAsync(300);
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    p.undo();
+    await settle();
+
+    expect(p.sent.map((s) => s.key)).toEqual(["GET items", "POST 1", "DELETE r1", "PATCH r1"]);
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", text: "bread", _pending: false })]);
+
+    p.server.items = [row({ id: "r1", text: "bread" })];
+    await p.refresh();
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", _pending: false })]);
+  });
+
+  it("an Undo of Remove duplicates after the create's answer brings back the saved row once, through a refresh", async () => {
+    const p = await open([row({ id: "old", text: "milk", position: 9e15 })]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("milk");
+
+    p.render().handleRemoveDuplicates("milk");
+    expect(p.items().map((i) => i.id)).toEqual(["old"]);
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "milk" })] });
+    await settle();
+    p.undo();
+    await settle();
+
+    expect(p.items().map((i) => [i.id, i._pending ?? false]).sort()).toEqual([["old", false], ["r1", false]]);
+
+    p.server.items = [row({ id: "old", text: "milk", position: 9e15 }), row({ id: "r1", text: "milk" })];
+    await p.refresh();
+
+    expect(p.items().map((i) => i.id).sort()).toEqual(["old", "r1"]);
+  });
+
+  it("an Undo of Clear completed after the create's answer brings back the saved row once, through a refresh", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    // Not saved yet, so cleared on screen only.
+    await p.render().handleClearCompleted();
+    expect(p.items()).toEqual([]);
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    p.undo();
+    await settle();
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _pending: false })]);
+
+    p.server.items = [row({ id: "r1", text: "bread", completed: true, completed_at: DONE })];
+    await p.refresh();
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true })]);
+  });
+
+  it("an Undo of Unmark all after the create's answer re-checks the saved row", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    // Not saved yet, so unmarked on screen only.
+    await p.render().handleUnmarkAllDone();
+    expect(p.items()).toEqual([expect.objectContaining({ completed: false })]);
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    p.undo();
+    await settle();
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true })]);
+  });
+
+  it("a Clear completed that fails after the create's answer puts the saved row back once", async () => {
+    const p = await open([row({ id: "a", completed: true, completed_at: DONE })]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items().find((i) => i.text === "bread")!.id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    p.hold("POST 2");
+    const clearing = p.render().handleClearCompleted();
+    await settle();
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    p.release("POST 2", 500);
+    await clearing;
+
+    expect(p.items().map((i) => [i.id, i._pending ?? false]).sort()).toEqual([["a", false], ["r1", false]]);
+  });
+
+  it("an Unmark all that fails after the create's answer re-checks the saved row", async () => {
+    const p = await open([row({ id: "a", completed: true, completed_at: DONE })]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items().find((i) => i.text === "bread")!.id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    p.hold("POST 2");
+    const unmarking = p.render().handleUnmarkAllDone();
+    await settle();
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    p.release("POST 2", 500);
+    await unmarking;
+
+    expect(p.item("r1")).toMatchObject({ completed: true });
+    expect(p.item("a")).toMatchObject({ completed: true, completed_at: DONE });
   });
 });

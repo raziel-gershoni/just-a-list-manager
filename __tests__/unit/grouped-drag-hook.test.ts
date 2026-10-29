@@ -163,6 +163,21 @@ describe("useListDragDrop grouped drops", () => {
     expect(h.isDraggingRef.current).toBe(false);
   });
 
+  it("a canceled drag queues nothing, keeps a new item's saved row that landed during it, and ends the drag", () => {
+    const w = world();
+    w.setItems((prev) => [{ ...item("temp-1", 6, null), _pending: true }, ...prev]);
+    const h = w.render();
+    start(h);
+    // The new item's create answers mid-drag: its temp row becomes the saved row.
+    w.setItems((prev) => prev.map((i) => (i.id === "temp-1" ? { ...i, id: "r1", _pending: false } : i)));
+    (h.handleDragEnd as unknown as (e: unknown) => void)({ canceled: true, operation: { source: null, target: null } });
+
+    expect(w.queued()).toEqual([]);
+    expect(w.item("r1")).toMatchObject({ _pending: false });
+    expect(w.item("temp-1")).toBeUndefined();
+    expect(h.isDraggingRef.current).toBe(false);
+  });
+
   it("uses the new walk order after the categories change while the items stay the same", () => {
     const w = world();
     w.render();
