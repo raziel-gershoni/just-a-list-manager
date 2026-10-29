@@ -25,6 +25,7 @@ import { useHomeScreen } from "@/src/hooks/useHomeScreen";
 import { useReconnectOrchestrator, MAX_RETRIES } from "@/src/hooks/useReconnectOrchestrator";
 import { flushAllQueues } from "@/src/sync/engine";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
+import { AUTO_OPENED_SINGLE_LIST_KEY } from "@/src/lib/auto-open";
 
 const executorFactory = createExecutorFactory();
 
@@ -226,6 +227,15 @@ export default function TelegramProvider({
 
   // === Bootstrap Effect ===
   useEffect(() => {
+    // Home auto-opens a single list only when the launch starts there.
+    if (window.location.pathname !== "/") {
+      try {
+        sessionStorage.setItem(AUTO_OPENED_SINGLE_LIST_KEY, "true");
+      } catch (err) {
+        console.warn("[TelegramProvider] Could not mark the launch route:", err);
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tg = (window as unknown as Record<string, any>).Telegram?.WebApp;
     // In a regular browser, Telegram.WebApp exists (script loaded) but initData is empty

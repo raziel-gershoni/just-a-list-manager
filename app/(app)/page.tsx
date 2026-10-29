@@ -14,6 +14,7 @@ import OfflineIndicator from "@/components/OfflineIndicator";
 import IconColorPicker from "@/components/IconColorPicker";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import { throwIfNotOk } from "@/src/utils/http";
+import { AUTO_OPENED_SINGLE_LIST_KEY } from "@/src/lib/auto-open";
 import type { SupportedLocale } from "@/src/lib/i18n";
 import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 
@@ -148,13 +149,15 @@ export default function HomePage() {
         // Any load that worked replaces an error screen, a silent one included.
         setError(false);
 
-        // Auto-open a single list at launch only: the first active-view load of the
-        // session decides, and every later one (a refetch, Back from a list, deleting
-        // down to one list) leaves the user on Home. The archived view never touches
-        // the flag, so visiting Archived first doesn't use up the launch.
+        // Auto-open a single list at launch only: the first active-view load of a launch
+        // that started on Home decides, and every later one (a refetch, Back from a list,
+        // deleting down to one list) leaves the user on Home. A launch that started
+        // elsewhere (a bot "Open list" button) had the provider use up the flag, so the
+        // first Back to Home stays there. The archived view never touches the flag, so
+        // visiting Archived first doesn't use up the launch.
         if (requestedView === "active") {
-          const autoOpened = sessionStorage.getItem("autoOpenedSingleList");
-          sessionStorage.setItem("autoOpenedSingleList", "true");
+          const autoOpened = sessionStorage.getItem(AUTO_OPENED_SINGLE_LIST_KEY);
+          sessionStorage.setItem(AUTO_OPENED_SINGLE_LIST_KEY, "true");
           if (data.length === 1 && !autoOpened) {
             router.push(`/list/${data[0].id}`);
           }

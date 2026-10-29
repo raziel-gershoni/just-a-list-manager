@@ -783,6 +783,48 @@ describe("TelegramProvider tries a failed user load again", () => {
   });
 });
 
+// Home auto-opens a single list only at launch. A launch that starts on a list (the bot's
+// "Open list" button) must not bounce the first Back to Home into that list again.
+describe("the launch route decides the single-list auto-open", () => {
+  it("a Mini App launch on a list uses up the auto-open", async () => {
+    win.location.pathname = "/list/A";
+    miniApp();
+    tokenReplies = [200];
+
+    await advance();
+    expect(session.get("autoOpenedSingleList")).toBe("true");
+  });
+
+  it("a web launch on a list uses it up too", async () => {
+    win.location.pathname = "/list/A";
+    local.set("web_auth_token", jwtAt(LAUNCH - HOUR));
+    tokenReplies = [200];
+
+    await advance();
+    expect(session.get("autoOpenedSingleList")).toBe("true");
+  });
+
+  it("a launch on Home leaves it for Home to use", async () => {
+    miniApp();
+    tokenReplies = [200];
+
+    await advance();
+    expect(session.has("autoOpenedSingleList")).toBe(false);
+  });
+
+  it("storage that throws is logged, never fatal", async () => {
+    win.location.pathname = "/list/A";
+    miniApp();
+    tokenReplies = [200];
+    const blocked = new Error("blocked");
+    vi.stubGlobal("sessionStorage", { ...storage(session), setItem: () => { throw blocked; } });
+
+    const ctx = await advance();
+    expect(ctx.jwt).toBe(issued[0]);
+    expect(console.warn).toHaveBeenCalledWith("[TelegramProvider] Could not mark the launch route:", blocked);
+  });
+});
+
 describe("TelegramProvider logs a failed cleanup of the old client's channels", () => {
   it("warns with the answers that were not ok when the client is replaced", async () => {
     miniApp();
