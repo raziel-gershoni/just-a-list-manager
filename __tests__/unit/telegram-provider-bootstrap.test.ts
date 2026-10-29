@@ -202,6 +202,7 @@ beforeEach(() => {
   R.slots = [];
   H.clients = [];
   H.removeAnswers = [];
+  H.applyLocale = () => {};
   tokenReplies = [];
   held = null;
   issued = [];
@@ -665,6 +666,120 @@ describe("TelegramProvider logs a failed user load", () => {
     expect(console.error).toHaveBeenCalledWith("[TelegramProvider] User load failed:", { status: 503 });
     expect(logged()).not.toContain(issued[0]);
     expect(logged()).not.toContain(stored);
+  });
+});
+
+// The provider lives for the whole launch, so a failed user load must not stick until the
+// app is reopened: it is tried again on the next token or once a reconnect lands.
+describe("TelegramProvider tries a failed user load again", () => {
+  const OK_USER = { status: 200, body: { id: "user-1", language: "he", telegram_id: 7, first_name: "A" } };
+
+  it("a reconnect after a failed load loads the user, with the JWT once the initData is stale", async () => {
+    const applied: string[] = [];
+    H.applyLocale = (lang) => void applied.push(lang);
+    miniApp();
+    tokenReplies = [200];
+    userReply = { status: 503, body: {} };
+    let ctx = await advance();
+    expect(userRequests).toHaveLength(1);
+    expect(ctx.userId).toBeNull();
+
+    userReply = OK_USER;
+    vi.setSystemTime(LAUNCH + 10 * MIN);
+    focus();
+    ctx = await advance();
+    expect(userRequests).toHaveLength(2);
+    expect(userRequests[1]).toEqual({ method: "GET", headers: { Authorization: `Bearer ${issued[0]}` } });
+    expect(ctx.userId).toBe("user-1");
+    expect(applied).toContain("he");
+
+    // Loaded: a later reconnect does not load it again.
+    vi.setSystemTime(LAUNCH + 20 * MIN);
+    focus();
+    await advance();
+    expect(userRequests).toHaveLength(2);
+  });
+
+  it("a new token after a failed load loads the user", async () => {
+    miniApp();
+    tokenReplies = [200];
+    userReply = { status: 500, body: {} };
+    let ctx = await advance();
+    expect(ctx.userId).toBeNull();
+
+    userReply = OK_USER;
+    vi.setSystemTime(LAUNCH + 2 * MIN);
+    tokenReplies = [200];
+    ctx.requestTokenRefresh();
+    ctx = await advance(6000);
+    expect(ctx.jwt).toBe(issued[1]);
+    expect(userRequests).toHaveLength(2);
+    expect(ctx.userId).toBe("user-1");
+  });
+
+  it("after a failed load, a reconnect still under way waits for its end before trying again", async () => {
+    miniApp();
+    tokenReplies = [200];
+    userReply = { status: 503, body: {} };
+    await advance();
+
+    userReply = OK_USER;
+    vi.setSystemTime(LAUNCH + 25 * HOUR); // the reconnect refreshes the day-old token
+    tokenReplies = ["hold"];
+    focus();
+    let ctx = await advance();
+    expect(ctx.connectionStatus).toBe("connecting");
+    expect(userRequests).toHaveLength(1);
+
+    held!(200);
+    ctx = await advance();
+    expect(ctx.connectionStatus).toBe("connected");
+    expect(userRequests).toEqual([
+      expect.objectContaining({ method: "POST" }),
+      { method: "GET", headers: { Authorization: `Bearer ${issued[1]}` } },
+    ]);
+    expect(ctx.userId).toBe("user-1");
+  });
+
+  it("a load that throws is tried again on the next reconnect", async () => {
+    miniApp();
+    tokenReplies = [200];
+    const realFetch = vi.mocked(fetch).getMockImplementation()!;
+    let userCalls = 0;
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (url === "/api/user" && userCalls++ === 0) throw new TypeError("Load failed");
+      return realFetch(url as string, init as { method?: string; headers: Record<string, string> });
+    });
+    let ctx = await advance();
+    expect(ctx.userId).toBeNull();
+    expect(console.error).toHaveBeenCalledWith("[TelegramProvider] User load error:", { register: true }, expect.any(TypeError));
+
+    vi.setSystemTime(LAUNCH + 10 * MIN);
+    focus();
+    ctx = await advance();
+    expect(userRequests).toHaveLength(1); // the throwing call never reached the fake route
+    expect(ctx.userId).toBe("user-1");
+  });
+
+  it("a reconnect while the first load is still waiting starts no second load", async () => {
+    miniApp();
+    tokenReplies = [200];
+    let release!: () => void;
+    const realFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (url === "/api/user") await new Promise<void>((r) => (release = r));
+      return realFetch(url as string, init as { method?: string; headers: Record<string, string> });
+    });
+    await advance();
+    vi.setSystemTime(LAUNCH + 10 * MIN);
+    focus();
+    await advance();
+    expect(fetch).toHaveBeenCalledWith("/api/user", expect.anything());
+    expect(vi.mocked(fetch).mock.calls.filter(([u]) => u === "/api/user")).toHaveLength(1);
+
+    release();
+    const ctx = await advance();
+    expect(ctx.userId).toBe("user-1");
   });
 });
 

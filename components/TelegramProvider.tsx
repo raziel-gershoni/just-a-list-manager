@@ -123,8 +123,9 @@ export default function TelegramProvider({
   const realtimeTokenRef = useRef<string | null>(null);
   // Set on unmount: an in-flight reconnect or a late heartbeat must not revive a client.
   const unmountedRef = useRef(false);
-  // The user record is loaded once per session.
-  const userLoadedRef = useRef(false);
+  // The user record is loaded once per session: "loading" stops a second load running at
+  // once, and a "failed" load is tried again on the next token or once a reconnect lands.
+  const userLoadRef = useRef<"idle" | "loading" | "loaded" | "failed">("idle");
 
   // Callback refs for page registration
   const onFlushNeededRef = useRef<(() => Promise<void>) | null>(null);
@@ -371,9 +372,9 @@ export default function TelegramProvider({
 
   // Who the user is, once per session and once a JWT exists. The Mini App registers with its
   // initData while that is fresh (a new user gets their Telegram language); otherwise, and on
-  // the web, the JWT identifies the user.
+  // the web, the JWT identifies the user. Resolves whether the user was loaded.
   const loadUser = useCallback(
-    async (token: string) => {
+    async (token: string): Promise<boolean> => {
       const register = !isWebAppRef.current && !!initData && isInitDataFresh(initData);
       try {
         const userRes = register
@@ -384,7 +385,7 @@ export default function TelegramProvider({
             register ? "[TelegramProvider] User registration failed:" : "[TelegramProvider] User load failed:",
             { status: userRes.status }
           );
-          return;
+          return false;
         }
         const userData = await userRes.json();
         if (userData?.id) setUserId(userData.id);
@@ -402,18 +403,25 @@ export default function TelegramProvider({
             username: userData.username,
           });
         }
+        return true;
       } catch (e) {
         console.error("[TelegramProvider] User load error:", { register }, e);
+        return false;
       }
     },
     [initData, applyLocale]
   );
 
+  const isConnected = connectionStatus === "connected";
   useEffect(() => {
-    if (!isReady || !jwt || userLoadedRef.current) return;
-    userLoadedRef.current = true;
-    void loadUser(jwt);
-  }, [isReady, jwt, loadUser]);
+    if (!isReady || !jwt) return;
+    const state = userLoadRef.current;
+    if (state === "loading" || state === "loaded" || (state === "failed" && !isConnected)) return;
+    userLoadRef.current = "loading";
+    void loadUser(jwt).then((ok) => {
+      userLoadRef.current = ok ? "loaded" : "failed";
+    });
+  }, [isReady, jwt, isConnected, loadUser]);
 
   // Unmount (leaving the signed-in screens): close the socket, so its heartbeat can't
   // reconnect a provider that is gone.
