@@ -54,14 +54,30 @@ function getAppUrl(): string {
 
 type CommandHandler = (msg: TelegramBot.Message, match: RegExpExecArray | null) => Promise<void>;
 
+// Command handlers still running. processUpdate calls onText handlers synchronously, so a
+// handler's promise is in this set by the time processUpdate returns.
+const inFlight = new Set<Promise<void>>();
+
 // onText drops the promise an async handler returns, so a failure would otherwise be an
-// unhandled rejection. Log it here instead, with the chat it came from.
+// unhandled rejection. Log it here instead, with the chat it came from, and track the
+// promise so the webhook can wait for it (waitForBotHandlers).
 function logFailures(command: string, handler: CommandHandler) {
   return (msg: TelegramBot.Message, match: RegExpExecArray | null) => {
-    handler(msg, match).catch((err) => {
+    const run = handler(msg, match).catch((err) => {
       console.error(`[Bot] ${command} handler failed, chatId:`, msg.chat.id, err);
     });
+    inFlight.add(run);
+    void run.finally(() => inFlight.delete(run));
   };
+}
+
+/**
+ * Resolves once every command handler started so far has finished (failures are already
+ * logged by logFailures). The webhook awaits this inside after(), so the function is not
+ * frozen mid-handler. No timeout of its own: the platform's function limit applies.
+ */
+export async function waitForBotHandlers(): Promise<void> {
+  await Promise.allSettled([...inFlight]);
 }
 
 function registerBotHandlers(botInstance: TelegramBot) {

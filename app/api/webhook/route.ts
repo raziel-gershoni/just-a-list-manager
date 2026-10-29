@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   // Process asynchronously after response
   after(async () => {
     try {
-      const bot = (await import("@/src/services/bot")).default;
+      const { default: bot, waitForBotHandlers } = await import("@/src/services/bot");
 
       // Check for voice message
       if (body.message?.voice) {
@@ -66,8 +66,11 @@ export async function POST(request: NextRequest) {
         return;
       }
 
-      // Feed all other updates to bot for command handling
+      // Feed all other updates to bot for command handling. processUpdate starts the
+      // /start and /help handlers without waiting for them; wait here so the function
+      // is not frozen before their database write and reply finish.
       bot.processUpdate(body as TelegramBot.Update);
+      await waitForBotHandlers();
     } catch (error) {
       console.error("[Webhook] Error processing update:", error);
     }

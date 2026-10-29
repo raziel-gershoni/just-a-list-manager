@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import en from "@/messages/en.json";
 
 // node-telegram-bot-api calls /start and /help handlers and drops the promise they return, so
 // a failed send used to become an unhandled rejection. Each handler now logs its own failure.
@@ -6,6 +7,9 @@ type Handler = (msg: unknown, match: RegExpExecArray | null) => unknown;
 const h = vi.hoisted(() => ({
   handlers: [] as { regexp: RegExp; handler: (msg: unknown, match: RegExpExecArray | null) => unknown }[],
   sendError: null as Error | null,
+  // While set, sendMessage waits for it: lets a test hold a handler mid-flight.
+  sendGate: null as Promise<void> | null,
+  sends: [] as { chatId: number; text: string }[],
 }));
 
 vi.mock("@/src/lib/env", () => ({
@@ -23,8 +27,10 @@ vi.mock("node-telegram-bot-api", () => ({
     onText(regexp: RegExp, handler: Handler) {
       h.handlers.push({ regexp, handler });
     }
-    async sendMessage() {
+    async sendMessage(chatId: number, text: string) {
+      if (h.sendGate) await h.sendGate;
       if (h.sendError) throw h.sendError;
+      h.sends.push({ chatId, text });
       return {};
     }
     async setChatMenuButton() {
@@ -46,6 +52,8 @@ async function commandHandler(text: string): Promise<Handler> {
 describe("bot command handlers log their own failures", () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
+    h.sendGate = null;
+    h.sends = [];
     h.sendError = new Error("ETELEGRAM: 403 Forbidden: bot was blocked by the user");
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -67,5 +75,59 @@ describe("bot command handlers log their own failures", () => {
     expect(outcome).toBe("settled");
     const command = text.split(" ")[0];
     expect(errorSpy).toHaveBeenCalledWith(`[Bot] ${command} handler failed, chatId:`, 42, h.sendError);
+  });
+});
+
+// The webhook runs processUpdate inside after() and then awaits waitForBotHandlers(), so Vercel
+// keeps the function alive until /start and /help have finished their writes and sends.
+describe("waitForBotHandlers", () => {
+  beforeEach(() => {
+    h.sendGate = null;
+    h.sendError = null;
+    h.sends = [];
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("stays pending until a running handler finishes, then resolves", async () => {
+    const handler = await commandHandler("/help");
+    const { waitForBotHandlers } = await import("@/src/services/bot");
+    let release!: () => void;
+    h.sendGate = new Promise<void>((r) => (release = r));
+
+    handler(msg, null);
+    let done = false;
+    const waiting = waitForBotHandlers().then(() => {
+      done = true;
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(done).toBe(false);
+    expect(h.sends).toEqual([]);
+
+    release();
+    await waiting;
+
+    expect(done).toBe(true);
+    expect(h.sends).toEqual([{ chatId: 42, text: en.bot.help }]);
+  });
+
+  it("resolves when a handler fails, and the failure is logged once", async () => {
+    h.sendError = new Error("ETELEGRAM: 403 Forbidden: bot was blocked by the user");
+    const handler = await commandHandler("/help");
+    const { waitForBotHandlers } = await import("@/src/services/bot");
+
+    handler(msg, null);
+    await expect(waitForBotHandlers()).resolves.toBeUndefined();
+
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith("[Bot] /help handler failed, chatId:", 42, h.sendError);
+  });
+
+  it("resolves at once when nothing is running", async () => {
+    const { waitForBotHandlers } = await import("@/src/services/bot");
+
+    await expect(waitForBotHandlers()).resolves.toBeUndefined();
   });
 });
