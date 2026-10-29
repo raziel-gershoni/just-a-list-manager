@@ -227,14 +227,16 @@ export default function TelegramProvider({
 
   // === Bootstrap Effect ===
   useEffect(() => {
-    // Home auto-opens a single list only when the launch starts there.
-    if (window.location.pathname !== "/") {
+    // Home auto-opens a single list only when the launch starts there. Called once the launch
+    // will load its route, so a web launch sent to /login leaves the auto-open for Home.
+    const markLaunchRoute = () => {
+      if (window.location.pathname === "/") return;
       try {
         sessionStorage.setItem(AUTO_OPENED_SINGLE_LIST_KEY, "true");
       } catch (err) {
         console.warn("[TelegramProvider] Could not mark the launch route:", err);
       }
-    }
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tg = (window as unknown as Record<string, any>).Telegram?.WebApp;
@@ -257,6 +259,7 @@ export default function TelegramProvider({
         return;
       }
 
+      markLaunchRoute();
       setToken(storedToken);
 
       // Apply locale from localStorage
@@ -277,6 +280,7 @@ export default function TelegramProvider({
       return;
     }
 
+    markLaunchRoute();
     tg.ready();
     tg.expand();
 

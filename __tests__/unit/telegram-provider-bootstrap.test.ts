@@ -804,6 +804,16 @@ describe("the launch route decides the single-list auto-open", () => {
     expect(session.get("autoOpenedSingleList")).toBe("true");
   });
 
+  // The list route never loads, and the sign-in returns this tab to Home, whose first
+  // signed-in load must still auto-open the only list.
+  it("a signed-out web launch on a list goes to /login and leaves it for Home to use", async () => {
+    win.location.pathname = "/list/A";
+
+    await advance();
+    expect(push).toHaveBeenCalledWith("/login");
+    expect(session.has("autoOpenedSingleList")).toBe(false);
+  });
+
   it("a launch on Home leaves it for Home to use", async () => {
     miniApp();
     tokenReplies = [200];
