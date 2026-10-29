@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { ItemData, ListCategory } from "@/src/types";
 import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 import { shouldRespawn } from "@/src/utils/recurring-respawn";
@@ -8,6 +8,7 @@ import { sortCategories } from "@/src/utils/category-state";
 import { throwIfNotOk } from "@/src/utils/http";
 import { genMutId } from "@/src/utils/list-helpers";
 import { getSyncEngine } from "@/src/sync/engine";
+import { mergeRefresh } from "@/src/sync/merge";
 
 // The list cap is 500 non-deleted items (insert_item_if_under_limit uses the same
 // predicate as GET /items), so limit=500 covers every normal case. It is a cap, not a
@@ -28,6 +29,12 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [listIcon, setListIcon] = useState<ListIconName | null>(null);
   const [listColor, setListColor] = useState<ListColor | null>(null);
   const [categories, setCategories] = useState<ListCategory[]>([]);
+  // The rows on screen as of the last render: a refresh compares them with the rows on screen
+  // when its answer comes back, to tell what changed while the GET was out.
+  const itemsRef = useRef<ItemData[]>(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // The list works without categories (items show under "Sorting…"), so a failed request
   // (an error status or no answer at all) is only logged: it must never turn into the
@@ -163,6 +170,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const refreshItems = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
+    const base = itemsRef.current;
     try {
       const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
@@ -173,7 +181,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       }
       const { items: fetchedItems } = await res.json();
 
-      const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string }) => {
+      const mapped: ItemData[] = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string }) => {
         return {
           ...item,
           creator_name: item.users?.name ?? null,
@@ -183,35 +191,12 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           editor: undefined,
         };
       });
-      setItems((prev) => {
-        const pendingItems = prev.filter((i) => i._pending);
-        const serverIds = new Set(mapped.map((i: ItemData) => i.id));
-
-        // Count server items by text for count-aware dedup
-        // (handles duplicate-text items correctly — only consume one match per server item)
-        const serverTextCounts = new Map<string, number>();
-        for (const item of mapped) {
-          const key = item.text.toLowerCase();
-          serverTextCounts.set(key, (serverTextCounts.get(key) || 0) + 1);
-        }
-
-        const unresolvedPending: ItemData[] = [];
-        for (const pending of pendingItems) {
-          if (serverIds.has(pending.id)) continue;
-          const key = pending.text.toLowerCase();
-          const serverCount = serverTextCounts.get(key) || 0;
-          if (serverCount > 0) {
-            serverTextCounts.set(key, serverCount - 1);
-          } else {
-            unresolvedPending.push(pending);
-          }
-        }
-
-        return [...unresolvedPending, ...mapped];
-      });
+      // Merge, never replace: a change the server hasn't confirmed keeps its fields on screen.
+      const engine = getSyncEngine(listId);
+      setItems((prev) => mergeRefresh(prev, base, mapped, (id) => engine.pendingFields(id)));
       if (listType === "grocery") await loadCategories();
     } catch (e) {
-      console.error("[List] Background refresh error:", e);
+      console.error("[List] Background refresh error:", { listId }, e);
     }
   }, [jwtRef, listId, listType, loadCategories]);
 

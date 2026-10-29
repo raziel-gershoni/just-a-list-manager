@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import type { ItemData } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import { genMutId } from "@/src/utils/list-helpers";
-import { normalizeForCompare } from "@/src/utils/text-normalize";
+import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { computeUnmarkCompleted } from "@/src/utils/unmark-completed";
 import { computeClearCompleted } from "@/src/utils/clear-completed";
 import { computeUnskipAll } from "@/src/utils/unskip-all";
@@ -68,7 +68,11 @@ export function useItemHandlers({
   );
 
   const addSingleItem = useCallback(
-    (text: string) => {
+    (typed: string) => {
+      // The server stores normalizeForStorage(text). Showing and sending that same text lets
+      // the realtime INSERT find this row, so the item never shows twice.
+      const text = normalizeForStorage(typed);
+      if (!text) return;
       const tempId = `temp-${Date.now()}-${Math.random()}`;
       const position = Date.now();
       const mutId = genMutId();

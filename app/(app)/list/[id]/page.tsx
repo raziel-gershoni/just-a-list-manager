@@ -18,7 +18,7 @@ import CompletedItemsSection from "@/components/list/CompletedItemsSection";
 import ToastContainer from "@/components/list/ToastContainer";
 import { useMutationQueue, type MutationErrorInfo, type QueuedMutation } from "@/src/hooks/useMutationQueue";
 import { getSyncEngine } from "@/src/sync/engine";
-import { overlayPending } from "@/src/sync/overlay";
+import { applyCreateResult } from "@/src/sync/merge";
 import { coalesce } from "@/src/utils/coalesce";
 import { useListData } from "@/src/hooks/useListData";
 import { useItemHandlers } from "@/src/hooks/useItemHandlers";
@@ -114,14 +114,9 @@ export default function ListPage() {
     if (m.type !== "create" || typeof m.payload.tempId !== "string") return;
     const tempId = m.payload.tempId;
     const row = result as ItemData;
-    const pending = getSyncEngine(listId).pendingFields(row.id);
-    setItems((prev) =>
-      prev.map((i) =>
-        i.id === tempId
-          ? { ...overlayPending(row, i, pending), creator_name: null, editor_name: null, _pending: false }
-          : i
-      )
-    );
+    const engine = getSyncEngine(listId);
+    // The realtime INSERT may have put the saved row on screen first: then the temp row just goes.
+    setItems((prev) => applyCreateResult(prev, tempId, row, (id) => engine.pendingFields(id)));
   }, [listId, setItems]);
 
   const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError, onMutationSuccess, requestTokenRefresh);

@@ -2,8 +2,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Runs the real useListData against a faked network with a minimal slot-based React
-// stand-in (state persists across calls, callbacks follow their deps). Nothing renders.
-type Slot = { value?: unknown; deps?: unknown[] };
+// stand-in (state and refs persist across calls, callbacks follow their deps, effects run
+// during render when their deps change). Nothing renders.
+type Slot = { value?: unknown; current?: unknown; deps?: unknown[] };
 const R = vi.hoisted(() => ({ slots: [] as Slot[], i: 0 }));
 vi.mock("react", () => {
   const same = (a?: unknown[], b?: unknown[]) =>
@@ -22,6 +23,18 @@ vi.mock("react", () => {
       if (s && same(s.deps, deps)) return s.value;
       R.slots[i] = { value: fn, deps };
       return fn;
+    },
+    useRef: (init: unknown) => {
+      const i = R.i++;
+      if (!R.slots[i]) R.slots[i] = { current: init };
+      return R.slots[i];
+    },
+    useEffect: (fn: () => void, deps?: unknown[]) => {
+      const i = R.i++;
+      const s = R.slots[i];
+      if (s && deps && same(s.deps, deps)) return;
+      R.slots[i] = { deps };
+      fn();
     },
   };
 });

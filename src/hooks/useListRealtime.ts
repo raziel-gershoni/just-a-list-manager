@@ -7,6 +7,8 @@ import type { RealtimeChange } from "@/src/types";
 import { useRealtimeList } from "@/src/hooks/useRealtimeList";
 import { lookupUserName } from "@/src/utils/list-helpers";
 import { applyCategoryChange } from "@/src/utils/category-state";
+import { getSyncEngine } from "@/src/sync/engine";
+import { overlayPending } from "@/src/sync/overlay";
 
 interface UseListRealtimeParams {
   supabaseClient: SupabaseClient | null;
@@ -61,6 +63,7 @@ export function useListRealtime({
             return [...prev, serverItem];
           });
         } else if (change.eventType === "UPDATE") {
+          const engine = getSyncEngine(listId);
           setItems((prev) =>
             prev.map((i) => {
               if (i.id !== newRec.id) return i;
@@ -78,7 +81,9 @@ export function useListRealtime({
               if (updates.edited_by && updates.edited_by !== i.edited_by) {
                 merged.editor_name = lookupUserName(prev, updates.edited_by as string);
               }
-              return merged;
+              // A change of the user's the server hasn't confirmed keeps its fields: the echo of
+              // an older change, or a collaborator's write to the same field, must not undo it.
+              return overlayPending(merged, i, engine.pendingFields(i.id));
             })
           );
         } else if (change.eventType === "DELETE") {
@@ -96,7 +101,7 @@ export function useListRealtime({
         }
       }
     },
-    [setItems, setListName, setCategories, isDraggingRef, onListDeleted]
+    [setItems, setListName, setCategories, isDraggingRef, onListDeleted, listId]
   );
 
   return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange, onChannelClosed);
