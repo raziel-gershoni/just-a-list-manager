@@ -55,7 +55,7 @@ export default function ItemRow({
   const t = useTranslations("items");
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -63,6 +63,15 @@ export default function ItemRow({
       inputRef.current.select();
     }
   }, [isEditing]);
+
+  // The edit box grows with its text, so a long item is edited in full rather than
+  // scrolled sideways in a one-line field.
+  useEffect(() => {
+    const box = inputRef.current;
+    if (!isEditing || !box) return;
+    box.style.height = "auto";
+    box.style.height = `${box.scrollHeight}px`;
+  }, [isEditing, editText]);
 
   const handleToggle = () => {
     const tg = getTelegramWebApp();
@@ -95,13 +104,13 @@ export default function ItemRow({
   };
 
   return (
-    <div className={`flex items-center gap-3 py-3.5 px-5 border-b border-separator ${isExiting ? "item-exit" : ""} ${isJustAdded ? "item-enter" : ""}`}>
+    <div className={`flex items-start gap-3 py-3.5 px-5 border-b border-separator ${isExiting ? "item-exit" : ""} ${isJustAdded ? "item-enter" : ""}`}>
       <button
         onClick={(e) => {
           e.stopPropagation();
           handleToggle();
         }}
-        className={`w-[22px] h-[22px] rounded-full flex items-center justify-center shrink-0 transition-all duration-200 ${
+        className={`w-[22px] h-[22px] mt-1 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 ${
           completed
             ? "bg-tg-button border-[1.5px] border-tg-button"
             : "border-[1.5px] border-tg-hint/60"
@@ -110,17 +119,18 @@ export default function ItemRow({
         {completed && <Check className="w-3.5 h-3.5 text-tg-button-text" />}
       </button>
 
-      <div className={`flex-1 min-w-0 ${isPending ? "opacity-60" : ""} ${skipped ? "opacity-50" : ""}`}>
+      <div className={`flex-1 min-w-0 ${isEditing && !completed ? "" : "pt-[3px]"} ${isPending ? "opacity-60" : ""} ${skipped ? "opacity-50" : ""}`}>
         {isEditing && !completed ? (
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
+            rows={1}
             value={editText}
-            onChange={(e) => setEditText(e.target.value)}
+            // An item is one line of text: a pasted line break becomes a space.
+            onChange={(e) => setEditText(e.target.value.replace(/[^\S\r\n]*[\r\n]+[^\S\r\n]*/g, " "))}
             onBlur={handleSave}
             onKeyDown={handleKeyDown}
             onPointerDown={(e) => e.stopPropagation()}
-            className="w-full bg-transparent text-tg-text outline-none border-b-2 border-tg-button/60 py-1"
+            className="block w-full resize-none overflow-hidden wrap-anywhere bg-transparent text-tg-text outline-none border-b-2 border-tg-button/60 py-1"
             maxLength={500}
           />
         ) : (
@@ -132,9 +142,9 @@ export default function ItemRow({
               }
             }}
           >
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-start gap-1.5">
               <span
-                className={`truncate ${
+                className={`min-w-0 wrap-anywhere ${
                   completed ? "line-through text-tg-hint" : "text-tg-text"
                 }`}
               >
@@ -147,12 +157,12 @@ export default function ItemRow({
                       e.stopPropagation();
                       onRemoveDuplicates(text);
                     }}
-                    className="shrink-0 p-0.5 -m-0.5 rounded active:bg-amber-500/20"
+                    className="shrink-0 p-0.5 -m-0.5 mt-1.5 rounded active:bg-amber-500/20"
                   >
                     <Copy className="w-3 h-3 text-amber-500/70" />
                   </button>
                 ) : (
-                  <Copy className="w-3 h-3 text-amber-500/70 shrink-0" />
+                  <Copy className="w-3 h-3 mt-1.5 text-amber-500/70 shrink-0" />
                 )
               )}
             </div>
@@ -173,7 +183,7 @@ export default function ItemRow({
       </div>
 
       {isPending && (
-        <Clock className="w-4 h-4 text-tg-hint shrink-0" />
+        <Clock className="w-4 h-4 mt-[7px] text-tg-hint shrink-0" />
       )}
 
       {onSkip && !completed && (
