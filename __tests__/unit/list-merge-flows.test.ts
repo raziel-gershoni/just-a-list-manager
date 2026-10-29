@@ -318,6 +318,42 @@ describe("a background refresh merges into the screen", () => {
     expect(p.item("a")?.completed).toBe(true);
   });
 
+  it("a tick in flight when the GET left, saved before its answer with the echo missed, stays ticked", async () => {
+    const p = await open([row({ id: "a" })]);
+    p.hold("PATCH a");
+    const ticking = p.render().handleToggle("a", true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+    p.hold("GET items");
+    const refreshing = p.refresh();
+    await settle();
+
+    // The GET read before the tick committed; the tick's answer comes first, its echo never.
+    p.release("PATCH a", 200);
+    await settle();
+    p.release("GET items", 200, { items: [row({ id: "a" })] });
+    await refreshing;
+
+    expect(p.item("a")?.completed).toBe(true);
+  });
+
+  it("an item whose delete was in flight when the GET left, saved before its answer, is not brought back", async () => {
+    const p = await open([row({ id: "a" }), row({ id: "b" })]);
+    p.hold("DELETE a");
+    await p.render().handleDelete("a");
+    await vi.advanceTimersByTimeAsync(200);
+    p.hold("GET items");
+    const refreshing = p.refresh();
+    await settle();
+
+    p.release("DELETE a", 200);
+    await settle();
+    p.release("GET items", 200, { items: [row({ id: "a" }), row({ id: "b" })] });
+    await refreshing;
+
+    expect(p.items().map((i) => i.id)).toEqual(["b"]);
+  });
+
   it("an item a collaborator deleted while the GET was out is not brought back by the older snapshot", async () => {
     const p = await open([row({ id: "a" }), row({ id: "b" })]);
     p.hold("GET items");

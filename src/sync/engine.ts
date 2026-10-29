@@ -64,6 +64,10 @@ export interface SyncEngine {
   flush(opts?: { includeInFlight?: boolean }): Promise<void>;
   /** Fields touched by queued or in-flight entries for that item (after temp → real aliasing). */
   pendingFields(itemId: string): Set<string>;
+  /** The entries queued or in flight now: a refresh takes it when its GET leaves. */
+  pendingSnapshot(): QueuedMutation[];
+  /** Fields those entries touch for that item, matched by real id at the time of the call. */
+  pendingFieldsOf(entries: QueuedMutation[], itemId: string): Set<string>;
   /** The real id for a resolved temp id, else the id itself. */
   resolveId(id: string): string;
 }
@@ -225,9 +229,17 @@ class ListSyncEngine implements SyncEngine {
   }
 
   pendingFields(itemId: string): Set<string> {
+    return this.pendingFieldsOf(this.index.values(), itemId);
+  }
+
+  pendingSnapshot(): QueuedMutation[] {
+    return [...this.index.values()];
+  }
+
+  pendingFieldsOf(entries: Iterable<QueuedMutation>, itemId: string): Set<string> {
     const target = this.resolveId(itemId);
     const fields = new Set<string>();
-    for (const m of this.index.values()) {
+    for (const m of entries) {
       for (const [id, touchedFields] of touched(m)) {
         if (this.resolveId(id) === target) for (const f of touchedFields) fields.add(f);
       }

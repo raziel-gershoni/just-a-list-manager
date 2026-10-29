@@ -686,6 +686,21 @@ describe("pendingFields", () => {
     expect(w.engine().pendingFields("i1")).toEqual(new Set(["completed", "completed_at", "text"]));
   });
 
+  it("a snapshot keeps the fields of changes that landed after it, matched under the item's saved id", async () => {
+    const w = world();
+    w.when("create temp-1", "hold");
+    w.add("create", { tempId: "temp-1", text: "milk" });
+    w.add("toggle", { itemId: "temp-1", value: true });
+    await settle();
+    const snapshot = w.engine().pendingSnapshot();
+
+    w.release("create temp-1");
+    await settle();
+
+    expect(w.engine().pendingFields("r-temp-1")).toEqual(new Set());
+    expect(w.engine().pendingFieldsOf(snapshot, "r-temp-1")).toEqual(new Set(["created", "completed", "completed_at"]));
+  });
+
   it("no longer lists a change by the time its page hears it landed", async () => {
     const w = world();
     const seen: Set<string>[] = [];

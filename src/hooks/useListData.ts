@@ -177,6 +177,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     if (!jwt) return;
     const base = itemsRef.current;
     try {
+      const engine = getSyncEngine(listId);
+      // What is on its way as the GET leaves: a change that lands before the answer must
+      // still win over the older snapshot (its echo may never come, and a deleted row isn't
+      // on screen for its echo to find).
+      const pendingAtStart = engine.pendingSnapshot();
       const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
@@ -195,9 +200,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           editor: undefined,
         };
       });
-      // Merge, never replace: a change the server hasn't confirmed keeps its fields on screen.
-      const engine = getSyncEngine(listId);
-      setItems((prev) => mergeRefresh(prev, base, mapped, (id) => engine.pendingFields(id)));
+      // Merge, never replace: a change the server hasn't confirmed, or that was on its way
+      // when the GET left, keeps its fields on screen.
+      const pendingFields = (id: string) =>
+        new Set([...engine.pendingFields(id), ...engine.pendingFieldsOf(pendingAtStart, id)]);
+      setItems((prev) => mergeRefresh(prev, base, mapped, pendingFields));
       if (listType === "grocery") await loadCategories();
     } catch (e) {
       console.error("[List] Background refresh error:", { listId }, e);
