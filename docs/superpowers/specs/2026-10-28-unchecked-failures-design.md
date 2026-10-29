@@ -1,7 +1,7 @@
 # Unchecked failures: design
 
 **Date:** 2026-10-28
-**Status:** draft, waiting for the owner's approval
+**Status:** approved 2026-10-29 (the owner said "decide yourself": all six picks are A)
 **Background:** this follows the silent-catch sweep (`d1ff341`). That sweep made every thrown error get logged. This one covers failures that come back as a *value* and are then ignored:
 
 - A Supabase call returns `{ data, error }` and nobody reads `error`.
