@@ -41,6 +41,17 @@ describe("computeUnmarkCompleted", () => {
     expect(next[2]).toBe(items[2]); // deleted-but-completed item left alone
   });
 
+  it("leaves a parked recurring item alone: the Completed section never shows it", () => {
+    const items = [
+      item({ id: "shown", completed: true, completed_at: "2026-07-01T00:00:00Z" }),
+      item({ id: "parked", completed: true, completed_at: "2026-07-01T00:00:00Z", recurring: true }),
+    ];
+    const { next, affectedIds } = computeUnmarkCompleted(items);
+
+    expect(affectedIds).toEqual(["shown"]);
+    expect(next[1]).toBe(items[1]);
+  });
+
   it("returns empty affectedIds when nothing is completed", () => {
     const items = [item({ id: "a" }), item({ id: "b" })];
     const { next, affectedIds } = computeUnmarkCompleted(items);

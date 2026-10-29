@@ -46,6 +46,11 @@ function world(initial: ItemData[]) {
   const replies = new Map<string, Reply[]>();
   const held = new Map<string, (status: number) => void>();
   const sent: { key: string; body: unknown }[] = [];
+  // What a bulk route answers: by default it changed every id it was sent, as the real
+  // routes do when nothing else touched those rows.
+  const changed = new Map<string, string[]>();
+  // The count the last Undo toast showed.
+  let undoCount: unknown;
   // What the handlers queued, in order: "<type> <itemId | recycleId | text>".
   const queued: string[] = [];
 
@@ -57,7 +62,11 @@ function world(initial: ItemData[]) {
     const reply = replies.get(key)?.shift() ?? 200;
     if (reply === "neterr") throw new TypeError("Failed to fetch");
     const status = reply === "hold" ? await new Promise<number>((resolve) => held.set(key, resolve)) : reply;
-    return { ok: status >= 200 && status < 300, status, json: async () => ({}) };
+    const answer =
+      key === "POST clear-completed" ? { clearedIds: changed.get(key) ?? body.itemIds }
+      : key === "POST unmark-completed" ? { unmarkedIds: changed.get(key) ?? body.itemIds }
+      : {};
+    return { ok: status >= 200 && status < 300, status, json: async () => answer };
   }));
 
   const jwtRef = { current: "jwt" as string | null };
@@ -99,13 +108,19 @@ function world(initial: ItemData[]) {
       setDuplicateWarning: () => {},
       setReminderToast: () => {},
       setErrorToast: (u) => { errorToast = typeof u === "function" ? u(errorToast) : u; },
-      t: (key) => key,
+      t: (key, values) => {
+        if (key === "items.clearedCount" || key === "items.unmarkedCount") undoCount = values?.count;
+        return key;
+      },
     });
 
   return {
     h,
     realtime,
     when: (key: string, ...r: Reply[]) => replies.set(key, r),
+    // The ids a bulk route says it changed (its clearedIds / unmarkedIds).
+    changes: (key: string, ids: string[]) => changed.set(key, ids),
+    undoCount: () => undoCount,
     release: (key: string, status: number) => held.get(key)!(status),
     ids: () => items.map((i) => i.id).sort(),
     item: (id: string) => items.find((i) => i.id === id),
@@ -443,6 +458,19 @@ describe("Clear completed and Unmark all act only on what the screen showed", ()
 
     expect(w.sent).toEqual([{ key: "POST unmark-completed", body: { itemIds: ["a", "b"] } }]);
     expect(w.item("temp-y")).toMatchObject({ completed: false, completed_at: null });
+  });
+
+  it("Unmark all leaves a parked recurring item a regular list never shows, and counts only the shown one", async () => {
+    const w = world([
+      item({ id: "shown", completed: true, completed_at: DONE_A }),
+      item({ id: "parked", completed: true, completed_at: DONE_B, recurring: true }),
+    ]);
+
+    await w.h().handleUnmarkAllDone();
+
+    expect(w.sent).toEqual([{ key: "POST unmark-completed", body: { itemIds: ["shown"] } }]);
+    expect(w.undoCount()).toBe(1);
+    expect(w.item("parked")).toMatchObject({ completed: true, completed_at: DONE_B });
   });
 
   it("Unmark all with only unsaved items sends nothing", async () => {
