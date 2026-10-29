@@ -123,6 +123,18 @@ describe("applyCreateResult", () => {
     expect(out.map((i) => i.id)).toEqual(["r1"]);
   });
 
+  it("takes off the saved row the INSERT put on screen when the new item's delete is on its way", () => {
+    const out = applyCreateResult([saved, item({ id: "b" })], "temp-1", saved, pending({ r1: ["created", "deleted"] }));
+    expect(out.map((i) => i.id)).toEqual(["b"]);
+  });
+
+  it("keeps an edit of the new item that is on its way on the saved row the INSERT put on screen", () => {
+    const temp = item({ id: "temp-1", text: "milk", _pending: true });
+    const echoed = item({ id: "r1", text: "mlik" });
+    const out = applyCreateResult([temp, echoed], "temp-1", { ...echoed }, pending({ r1: ["text"] }));
+    expect(out).toEqual([expect.objectContaining({ id: "r1", text: "milk" })]);
+  });
+
   it("keeps a tick made on the new item that is still on its way", () => {
     const temp = item({ id: "temp-1", text: "Kid's cereal", _pending: true, completed: true, completed_at: DONE });
     const out = applyCreateResult([temp], "temp-1", saved, pending({ r1: ["completed", "completed_at"] }));

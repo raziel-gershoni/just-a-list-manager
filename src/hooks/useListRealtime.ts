@@ -58,6 +58,7 @@ export function useListRealtime({
       const oldRec = change.old as Record<string, any>;
       if (change.table === "items") {
         if (change.eventType === "INSERT") {
+          const engine = getSyncEngine(listId);
           setItems((prev) => {
             if (prev.find((i) => i.id === newRec.id)) return prev;
             const serverItem = {
@@ -66,19 +67,35 @@ export function useListRealtime({
               editor_name: lookupUserName(prev, newRec.edited_by),
               _pending: false,
             } as ItemData;
-            // Replace pending optimistic item if it matches this server item. A change made to
-            // it after the add and still on its way (queued under the temp id) keeps its
-            // on-screen value.
+            // The echo of the user's own add, before its create answered: the create still on
+            // its way with this text (the server stores the text the client sent). Its temp row
+            // becomes the saved row, keeping the on-screen value of a change made to it after
+            // the add and still on its way, an edit of its text included. With the temp row off
+            // the screen, or its delete on the way, the user deleted the new item: the create's
+            // answer and the queued delete settle it.
+            const tempId = engine.pendingCreateFor(newRec.text);
+            if (tempId) {
+              const tempIndex = prev.findIndex((i) => i.id === tempId);
+              if (tempIndex === -1) return prev;
+              const fields = withoutCreated(engine.pendingFields(tempId));
+              if (fields.has("deleted")) return prev;
+              const updated = [...prev];
+              updated[tempIndex] = overlayPending(serverItem, prev[tempIndex], fields);
+              return updated;
+            }
+            // Otherwise an unsaved row with the same text is taken to be this item.
             const pendingIndex = prev.findIndex(
               (i) => i._pending && i.text === newRec.text
             );
             if (pendingIndex !== -1) {
               const temp = prev[pendingIndex];
-              const fields = withoutCreated(getSyncEngine(listId).pendingFields(temp.id));
+              const fields = withoutCreated(engine.pendingFields(temp.id));
               const updated = [...prev];
               updated[pendingIndex] = overlayPending(serverItem, temp, fields);
               return updated;
             }
+            // A new item the user deleted after its create answered: its delete is on its way.
+            if (engine.pendingFields(newRec.id).has("deleted")) return prev;
             return [...prev, serverItem];
           });
         } else if (change.eventType === "UPDATE") {

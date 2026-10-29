@@ -443,6 +443,83 @@ describe("an added item shows once", () => {
     expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _pending: false })]);
   });
 
+  it("an INSERT that beats the answer of a new item already deleted does not bring it back", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("eggs");
+    await p.render().handleDelete(p.items()[0].id);
+    await vi.advanceTimersByTimeAsync(300);
+
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "eggs" }) });
+    expect(p.items()).toEqual([]);
+
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "eggs" })] });
+    await settle();
+    expect(p.items()).toEqual([]);
+    expect(p.sent.map((s) => s.key)).toContain("DELETE r1");
+  });
+
+  it("an INSERT that comes after the answer of a new item already deleted does not bring it back", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("eggs");
+    await p.render().handleDelete(p.items()[0].id);
+    await vi.advanceTimersByTimeAsync(300);
+    p.hold("DELETE r1");
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "eggs" })] });
+    await settle();
+
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "eggs" }) });
+
+    expect(p.items()).toEqual([]);
+  });
+
+  it("an INSERT that comes during the delete animation of a new item does not bring it back", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("eggs");
+    await p.render().handleDelete(p.items()[0].id);
+    await vi.advanceTimersByTimeAsync(100);
+
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "eggs" }) });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(p.items()).toEqual([]);
+
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "eggs" })] });
+    await settle();
+    expect(p.items()).toEqual([]);
+  });
+
+  it("an INSERT that beats the answer of a new item deleted and brought back by Undo leaves it once, saved", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("eggs");
+    await p.render().handleDelete(p.items()[0].id);
+    await vi.advanceTimersByTimeAsync(300);
+    p.undo();
+
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "eggs" }) });
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "eggs" })] });
+    await settle();
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", _pending: false })]);
+  });
+
+  it("an INSERT that beats the answer of a new item edited meanwhile shows it once, with the edit", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    p.hold("PATCH r1");
+    await p.render().handleAddItem("eggs");
+    await p.render().handleEditItem(p.items()[0].id, "brown eggs");
+
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "eggs" }) });
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", text: "brown eggs" })]);
+
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "eggs" })] });
+    await settle();
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", text: "brown eggs" })]);
+  });
+
   it("an item that is only invisible characters is not added", async () => {
     const p = await open([]);
     await p.render().handleAddItem("‎‏");

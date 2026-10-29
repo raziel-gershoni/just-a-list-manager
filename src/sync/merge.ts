@@ -49,7 +49,8 @@ export function mergeRefresh(
  * The create's answer turns its temp row into the saved row, keeping the on-screen values of
  * any change made to the new item that is still on its way (a tick right after adding). When
  * the realtime INSERT got there first, the saved row is already on screen, so the temp row
- * just goes: the same id never shows twice.
+ * just goes (the same id never shows twice) and the saved row gets those changes too: a
+ * delete on its way takes it off, any other change keeps the temp row's value.
  */
 export function applyCreateResult(
   prev: ItemData[],
@@ -57,10 +58,17 @@ export function applyCreateResult(
   created: ItemData,
   pendingFields: PendingFieldsOf
 ): ItemData[] {
-  if (prev.some((i) => i.id === created.id)) return prev.filter((i) => i.id !== tempId);
   // The engine maps the temp id to the saved one before it reports success, so the item's
   // pending fields are under the saved id. The create itself is no longer among them.
   const fields = withoutCreated(pendingFields(created.id));
+  if (prev.some((i) => i.id === created.id)) {
+    const temp = prev.find((i) => i.id === tempId);
+    return prev.flatMap((i) => {
+      if (i.id === tempId) return [];
+      if (i.id !== created.id) return [i];
+      return fields.has("deleted") ? [] : [overlayPending(i, temp ?? i, fields)];
+    });
+  }
   return prev.map((i) =>
     i.id === tempId
       ? overlayPending({ ...created, creator_name: null, editor_name: null, _pending: false }, i, fields)
