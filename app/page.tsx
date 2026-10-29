@@ -79,9 +79,11 @@ function HomeContent() {
   const [editColor, setEditColor] = useState<ListColor | null>(null);
   const [editType, setEditType] = useState<ListType>("regular");
   const [editSaving, setEditSaving] = useState(false);
-  // Bottom toast. `undo` is optional — reorder failures show a message only.
+  // Bottom toast. `undo` is optional — reorder failures show a message only. `key` is
+  // translated when the toast renders, so it follows a language switched meanwhile.
   const [toast, setToast] = useState<{
-    message: string;
+    message?: string;
+    key?: string;
     undo?: () => void;
     timeout: NodeJS.Timeout;
   } | null>(null);
@@ -173,11 +175,11 @@ function HomeContent() {
     setToast((prev) => {
       if (prev) clearTimeout(prev.timeout);
       return {
-        message: t(key),
+        key,
         timeout: setTimeout(() => setToast(null), 4000),
       };
     });
-  }, [t]);
+  }, []);
 
   const handleReorderFailed = useCallback(() => {
     setToast((prev) => {
@@ -698,7 +700,7 @@ function HomeContent() {
       {/* Bottom toast */}
       {toast && (
         <div className={`fixed bottom-8 start-5 end-5 bg-foreground text-background rounded-2xl py-3.5 px-5 flex items-center justify-between ${toast.undo ? "z-30" : "z-[60] pointer-events-none"} shadow-xl shadow-black/10 dark:shadow-black/30 animate-in fade-in slide-in-from-bottom-4 duration-300`}>
-          <span className="text-sm">{toast.message}</span>
+          <span className="text-sm">{toast.key ? t(toast.key) : toast.message}</span>
           {toast.undo && (
             <button
               onClick={toast.undo}

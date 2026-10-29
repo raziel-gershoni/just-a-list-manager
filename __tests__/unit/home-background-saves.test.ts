@@ -437,6 +437,22 @@ describe("Home: language", () => {
     expect(toast()).toEqual({ message: "errors.generic", undo: undefined });
   });
 
+  it("the failure message follows the language now on screen, not the one being left", async () => {
+    H.setLanguage = async () => false;
+    await boot();
+    const english = H.t;
+
+    // The save fails while the page is still rendering with the old language's translator;
+    // the next render runs with the new one, as next-intl does after a locale switch.
+    await chooseHebrew();
+    H.t = (key: string) => `he:${key}`;
+    try {
+      expect(toast()).toEqual({ message: "he:errors.generic", undo: undefined });
+    } finally {
+      H.t = english;
+    }
+  });
+
   it("a saved language shows no error", async () => {
     await boot();
 
