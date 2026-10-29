@@ -4,7 +4,7 @@
  */
 
 import { createServerClient } from "@/src/lib/supabase";
-import { normalizeForStorage } from "@/src/utils/text-normalize";
+import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 
 /** Escape ILIKE special characters to prevent wildcard injection */
 function escapeIlike(input: string): string {
@@ -52,30 +52,36 @@ export async function findRecyclableItems(
   return (completedItems || []) as RecyclableItem[];
 }
 
+const RECYCLE_COLUMNS = "id, text, completed, completed_at, deleted_at, position";
+
 /**
- * Recycle an item — restore it to active state.
- * Sets completed=false, completed_at=null, deleted_at=null,
- * and position to MAX(position)+1 (top of list).
- * Returns null only when the item is not (or no longer) in this list. A failed read or
- * write is logged and thrown, so a caller never mistakes it for "nothing to recycle".
+ * Recycle an item — bring it back to the top of the active list.
+ * Acts only on a live row of this list that still has the text the caller expects
+ * (`text`, compared normalized); anything else answers null and writes nothing.
+ * - Completed: sets completed=false, clears completed_at, skipped_at and ordered_at,
+ *   and moves it to MAX(position)+1 (top of list).
+ * - Already active: returned unchanged. A replayed recycle, or a second device tapping
+ *   the same suggestion, lands once instead of adding a second copy.
+ * A failed read or write is logged and thrown, so a caller never mistakes it for
+ * "nothing to recycle".
  */
 export async function recycleItem(
   itemId: string,
   userId: string,
-  listId: string
+  listId: string,
+  text: string
 ): Promise<RecyclableItem | null> {
   const supabase = createServerClient();
 
-  // Get the item's list to find max position. Scoped to listId (defence in depth):
-  // callers are expected to have already validated itemId against a list-scoped
-  // lookup (see pickRecyclable), but this guard means a cross-list id can never
-  // reach the update below even if that validation is skipped or forgotten by a
-  // future caller.
+  // The caller may pass a client-supplied id. Scoped to listId, so an id from another
+  // list never reaches the update below, and to live rows, so a deleted item stays
+  // deleted (deleting is final).
   const { data: item, error: lookupError } = await supabase
     .from("items")
-    .select("list_id")
+    .select(RECYCLE_COLUMNS)
     .eq("id", itemId)
     .eq("list_id", listId)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (lookupError) {
@@ -83,12 +89,20 @@ export async function recycleItem(
     throw new Error("Recycle item lookup failed", { cause: lookupError });
   }
   if (!item) return null;
+  // The id must name the item the caller means: an id with other text is not reused.
+  if (normalizeForCompare(normalizeForStorage(item.text)) !== normalizeForCompare(normalizeForStorage(text))) {
+    return null;
+  }
+  if (!item.completed) {
+    console.warn("[ItemRecycler] Item already active, returning it unchanged:", { listId, itemId });
+    return item as RecyclableItem;
+  }
 
   // Get max position
   const { data: maxPosResult, error: maxPosError } = await supabase
     .from("items")
     .select("position")
-    .eq("list_id", item.list_id)
+    .eq("list_id", listId)
     .order("position", { ascending: false })
     .limit(1);
 
@@ -112,7 +126,7 @@ export async function recycleItem(
     })
     .eq("id", itemId)
     .eq("list_id", listId)
-    .select("id, text, completed, completed_at, deleted_at, position")
+    .select(RECYCLE_COLUMNS)
     .maybeSingle();
 
   if (error) {

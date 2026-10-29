@@ -165,7 +165,7 @@ describe("voice: a failed item is never receipted, the rest still are", () => {
     arrange();
     await speak([{ action: "add", text: "milk", targetList: "Groceries" }]);
 
-    expect(h.recycle).toHaveBeenCalledWith("old-milk", "u1", "L1");
+    expect(h.recycle).toHaveBeenCalledWith("old-milk", "u1", "L1", "milk");
     expect(texts()).toEqual([itemFailed("milk", "Groceries")]);
     expect(itemWrites()).toEqual([]);
     expect(errorSpy).toHaveBeenCalledWith(
@@ -181,6 +181,16 @@ describe("voice: a failed item is never receipted, the rest still are", () => {
     await speak([{ action: "add", text: "milk", targetList: "Groceries" }]);
     expect(texts()).toEqual(["Added to Groceries:\n- milk (recycled)"]);
   });
+
+  it("a fuzzy recycle hands recycleItem the matched item's own text, so its same-text check accepts it", async () => {
+    h.fuzzy!.mockResolvedValue([{ id: "old-milk", text: "milk", completed: true, completed_at: null, deleted_at: null, position: 1 }]);
+    h.recycle!.mockResolvedValue({ id: "old-milk", text: "milk", completed: false, completed_at: null, deleted_at: null, position: 4 });
+    await speak([{ action: "add", text: "milks", targetList: "Groceries" }]);
+    expect(h.recycle).toHaveBeenCalledWith("old-milk", "u1", "L1", "milk");
+    expect(texts()).toEqual(["Added to Groceries:\n- milk (recycled)"]);
+    expect(itemWrites()).toEqual([]);
+  });
+
 
   it("findFuzzyMatch rejects: voice.itemFailed and no insert", async () => {
     h.fuzzy!.mockRejectedValue(new Error("[ItemRecycler] Recyclable items read failed"));

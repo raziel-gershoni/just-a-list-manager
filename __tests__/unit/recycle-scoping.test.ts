@@ -5,14 +5,13 @@ import { resolve, join } from "path";
 // 5eb9dc4 closed a cross-list write: recycleItem used to be called with the
 // client's raw recycleId, so any authenticated user could pass an arbitrary
 // item id from someone else's list and have it resurrected/re-attributed into
-// theirs. The fix has three independent parts — the route resolves the id
-// against a list-scoped lookup (pickRecyclable) before calling in, the
-// service itself scopes both of its queries by list_id as defence in depth,
-// and every call site is required to pass listId at all. None of that is
-// exercised by pick-recyclable.test.ts, which only tests the pure helper in
-// isolation — so a revert of any one of the three parts would leave the full
-// suite green while reopening the hole. That is exactly the "compiles fine,
-// fails only in production" class this file exists to catch.
+// theirs. Since the sync repair (spec 2026-10-29, H8) the route hands the
+// client's recycleId to recycleItem, and the service is the guard: its lookup
+// is scoped to list_id and to live rows, it reuses only a row with the
+// expected text, and its update is scoped to list_id again. The behaviour is
+// proven in recycle-replay.test.ts and item-recycler.test.ts; this file keeps
+// the call-site rules a future caller could break without any test noticing:
+// all three queries keep list_id, and every call passes listId and the text.
 
 const root = process.cwd();
 
@@ -47,30 +46,22 @@ describe("recycleItem scoping", () => {
   const routePath = resolve(root, "app/api/lists/[id]/items/route.ts");
   const routeSource = readFileSync(routePath, "utf8");
 
-  it("POST /api/lists/[id]/items never passes the raw client recycleId into recycleItem", () => {
-    // The whole point of pickRecyclable is that the client-supplied id is
-    // resolved against the server's own list-scoped lookup first. Passing
-    // parsedCreate.data.recycleId straight through would let a client name
-    // any item id, in any list, as the thing to resurrect.
-    expect(routeSource).not.toContain("recycleItem(parsedCreate.data.recycleId");
-
+  it("POST /api/lists/[id]/items makes one recycleItem call, with the list and the item's text", () => {
+    // The text is what lets recycleItem refuse an id that names some other item, and
+    // return an already-active item unchanged instead of a second copy.
     const calls = findRecycleItemCalls(routeSource);
     expect(calls.length, "expected exactly one recycleItem( call in this route").toBe(1);
-    expect(
-      calls[0].trim().startsWith("toRecycle.id"),
-      `recycleItem's first argument must be toRecycle.id (the value pickRecyclable already ` +
-        `validated against this list), got: recycleItem(${calls[0]})`
-    ).toBe(true);
+    expect(calls[0].split(",").map((a) => a.trim())).toEqual(["recycleId", "auth.userId", "listId", "text"]);
   });
 
   const recyclerPath = resolve(root, "src/services/item-recycler.ts");
   const recyclerSource = readFileSync(recyclerPath, "utf8");
 
-  it("recycleItem scopes both of its queries to list_id, not just id", () => {
+  it("recycleItem scopes all three of its queries to list_id, not just id", () => {
     // Scoped to the recycleItem function body on purpose: other functions in
     // this file (findRecyclableItems, findFuzzyMatch) also filter by
     // list_id, so an unscoped assertion over the whole file would pass even
-    // if recycleItem's own two queries lost their list_id guard.
+    // if recycleItem's own lookup, max-position read or update lost its guard.
     const start = recyclerSource.indexOf("export async function recycleItem");
     expect(start, "recycleItem export not found in item-recycler.ts").toBeGreaterThanOrEqual(0);
     const nextExportIdx = recyclerSource.indexOf(
@@ -86,18 +77,17 @@ describe("recycleItem scoping", () => {
     const occurrences = fn.split('.eq("list_id", listId)').length - 1;
     expect(
       occurrences,
-      `recycleItem must scope both its lookup and its update by .eq("list_id", listId); ` +
-        `found ${occurrences} occurrence(s). Dropping either one lets a cross-list itemId ` +
-        `reach the write even when pickRecyclable is bypassed.`
-    ).toBeGreaterThanOrEqual(2);
+      `recycleItem must scope its lookup, its max-position read and its update by ` +
+        `.eq("list_id", listId); found ${occurrences} occurrence(s). The route passes the ` +
+        `client's recycleId straight in, so a lost guard lets a cross-list itemId reach the write.`
+    ).toBe(3);
   });
 
-  it("every recycleItem( call site across app/ and src/ passes listId as a third argument", () => {
-    // A future caller cannot silently omit listId — this asserts on argument
-    // count, not just presence of the word "listId", so a call site that
-    // passes some other 3rd value still passes (that's caught by the two
-    // tests above); this test's job is to keep a 2-argument call from ever
-    // being reintroduced.
+  it("every recycleItem( call site across app/ and src/ passes listId and the expected text", () => {
+    // A future caller cannot silently omit listId or the text — this asserts on
+    // argument count, not on the names passed (the route's names are checked
+    // above); its job is to keep a call that drops either from ever being
+    // reintroduced, here or in a new caller.
     const files = [...walk(resolve(root, "app")), ...walk(resolve(root, "src"))];
     const callSites: { file: string; args: string }[] = [];
 
@@ -119,8 +109,8 @@ describe("recycleItem scoping", () => {
       expect(
         argCount,
         `recycleItem( call in ${file} passes ${argCount} argument(s) (${args.trim()}); ` +
-          `it must pass exactly 3 (itemId, userId, listId) so listId can never be silently omitted`
-      ).toBe(3);
+          `it must pass exactly 4 (itemId, userId, listId, text) so neither listId nor the text check can be silently omitted`
+      ).toBe(4);
     }
   });
 });

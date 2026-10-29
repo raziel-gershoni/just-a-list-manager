@@ -3,12 +3,11 @@ import { z } from "zod";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
-import { findRecyclableItems, recycleItem, type RecyclableItem } from "@/src/services/item-recycler";
+import { recycleItem, type RecyclableItem } from "@/src/services/item-recycler";
 import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { dbError } from "@/src/lib/api-errors";
-import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
-import { pickRecyclable } from "@/src/utils/pick-recyclable";
+import { normalizeForStorage } from "@/src/utils/text-normalize";
 import { categorizeList } from "@/src/services/categorize-list";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
@@ -262,31 +261,27 @@ export async function POST(
       continue;
     }
 
-    // Check for recyclable items. The recycler logs and throws on a DB error. Skip the
-    // item then, the loop's rule for an insert error, so a failed check never adds a duplicate.
-    let recycled: RecyclableItem | null = null;
-    try {
-      const recyclable = await findRecyclableItems(listId, text);
-      const exactMatch = recyclable.find(
-        (r) => normalizeForCompare(r.text) === normalizeForCompare(text)
-      );
-
-      // Explicit recycle request from UI autocomplete. The client-supplied recycleId is
-      // never trusted directly — it must resolve against `recyclable`, the set the server
-      // itself just looked up for this list (list-scoped, completed-only). Otherwise a
-      // client could pass any uuid and recycleItem would resurrect/re-attribute an
-      // arbitrary row in someone else's list.
-      const toRecycle = exactMatch && pickRecyclable(recyclable, parsedCreate.data.recycleId);
-      if (toRecycle) recycled = await recycleItem(toRecycle.id, auth.userId, listId);
-    } catch (err) {
-      console.error("[items/POST] Recycle check failed, skipping item (batch):", { listId }, err);
-      failures++;
-      lastError = err;
-      continue;
-    }
-    if (recycled) {
-      results.push({ ...recycled, recycled: true });
-      continue;
+    // A suggestion tap names the item to recycle. recycleItem checks the client-supplied id
+    // itself (this list, not deleted, same text): a completed item comes back to the top, one
+    // that is already active (a replay, or another device was first) comes back unchanged, and
+    // anything else answers null so the text is added as a new item. It logs and throws on a
+    // DB error: skip the item then, the loop's rule for an insert error, so a failed check
+    // never adds a duplicate.
+    const recycleId = parsedCreate.data.recycleId;
+    if (recycleId) {
+      let recycled: RecyclableItem | null;
+      try {
+        recycled = await recycleItem(recycleId, auth.userId, listId, text);
+      } catch (err) {
+        console.error("[items/POST] Recycle check failed, skipping item (batch):", { listId }, err);
+        failures++;
+        lastError = err;
+        continue;
+      }
+      if (recycled) {
+        results.push({ ...recycled, recycled: true });
+        continue;
+      }
     }
 
     // Atomic count check + insert to prevent race condition on 500-item limit

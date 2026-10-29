@@ -29,7 +29,7 @@ function use(w: World) {
     if (c.op === "rpc") return pick(w.fuzzy, []);
     if (c.op === "update") return pick(w.update, null);
     if (c.filters.some((f) => f.startsWith("ilike:"))) return pick(w.search, []);
-    if (c.cols === "list_id") return pick(w.lookup, null);
+    if (c.filters.some((f) => f.startsWith("eq:id="))) return pick(w.lookup, null);
     if (c.cols === "position") return pick(w.maxPos, []);
     return { data: null, error: null };
   }) as typeof h.fake;
@@ -62,47 +62,75 @@ describe("findFuzzyMatch", () => {
 });
 
 describe("recycleItem", () => {
-  it("moves the item to the top and returns it", async () => {
+  const lookups = () => h.fake.calls.filter((c) => c.op === "select" && c.filters.some((f) => f.startsWith("eq:id=")));
+
+  it("moves a completed item to the top and returns it", async () => {
     use({
-      lookup: ok({ list_id: "L" }),
+      lookup: ok(milk),
       maxPos: ok([{ position: 7 }]),
       update: ok({ ...milk, completed: false, completed_at: null, position: 8 }),
     });
-    expect(await recycleItem("i1", "u1", "L")).toMatchObject({ id: "i1", position: 8 });
+    expect(await recycleItem("i1", "u1", "L", "milk")).toMatchObject({ id: "i1", position: 8 });
     expect(updates()[0].values).toMatchObject({ completed: false, position: 8, created_by: "u1" });
     expect(updates()[0].filters).toEqual(expect.arrayContaining(["eq:id=i1", "eq:list_id=L"]));
   });
 
+  it("looks the id up among this list's live rows only (another list's id, or a deleted item, is never written)", async () => {
+    use({ lookup: ok(null) });
+    expect(await recycleItem("i1", "u1", "L", "milk")).toBeNull();
+    expect(lookups()[0].filters).toEqual(expect.arrayContaining(["eq:id=i1", "eq:list_id=L", "is:deleted_at=null"]));
+    expect(updates()).toEqual([]);
+  });
+
+  it("returns an item that is already active unchanged and writes nothing (a replay lands once)", async () => {
+    const active = { ...milk, completed: false, completed_at: null, position: 9 };
+    use({ lookup: ok(active), maxPos: ok([{ position: 9 }]), update: ok(active) });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await recycleItem("i1", "u1", "L", "Milk")).toEqual(active);
+    expect(updates()).toEqual([]);
+    expect(h.fake.calls.filter((c) => c.cols === "position")).toEqual([]);
+    expect(console.warn).toHaveBeenCalledWith("[ItemRecycler] Item already active, returning it unchanged:", { listId: "L", itemId: "i1" });
+  });
+
+  it.each([
+    ["a completed", milk],
+    ["an already active", { ...milk, completed: false, completed_at: null }],
+  ])("returns null and writes nothing for %s item whose text is not the expected one", async (_label, row) => {
+    use({ lookup: ok({ ...row, text: "oat milk" }), maxPos: ok([{ position: 7 }]), update: ok(row) });
+    expect(await recycleItem("i1", "u1", "L", "milk")).toBeNull();
+    expect(updates()).toEqual([]);
+  });
+
   it("returns null, without logging, for an item that is not in this list", async () => {
     use({ lookup: ok(null) });
-    expect(await recycleItem("i1", "u1", "L")).toBeNull();
+    expect(await recycleItem("i1", "u1", "L", "milk")).toBeNull();
     expect(updates()).toEqual([]);
     expect(console.error).not.toHaveBeenCalled();
   });
 
   it("rejects and logs when the lookup fails, and writes nothing", async () => {
     use({ lookup: err() });
-    await expect(recycleItem("i1", "u1", "L")).rejects.toThrow("Recycle item lookup failed");
+    await expect(recycleItem("i1", "u1", "L", "milk")).rejects.toThrow("Recycle item lookup failed");
     expect(console.error).toHaveBeenCalledWith("[ItemRecycler] Item lookup failed:", { listId: "L", itemId: "i1" }, dbErr);
     expect(updates()).toEqual([]);
   });
 
   it("rejects when the max-position read fails, instead of recycling to position 1", async () => {
-    use({ lookup: ok({ list_id: "L" }), maxPos: err() });
-    await expect(recycleItem("i1", "u1", "L")).rejects.toThrow("Max position read failed");
+    use({ lookup: ok(milk), maxPos: err() });
+    await expect(recycleItem("i1", "u1", "L", "milk")).rejects.toThrow("Max position read failed");
     expect(console.error).toHaveBeenCalledWith("[ItemRecycler] Max position read failed:", { listId: "L" }, dbErr);
     expect(updates()).toEqual([]);
   });
 
   it("rejects and logs when the update fails", async () => {
-    use({ lookup: ok({ list_id: "L" }), maxPos: ok([{ position: 7 }]), update: err() });
-    await expect(recycleItem("i1", "u1", "L")).rejects.toThrow("Recycle update failed");
+    use({ lookup: ok(milk), maxPos: ok([{ position: 7 }]), update: err() });
+    await expect(recycleItem("i1", "u1", "L", "milk")).rejects.toThrow("Recycle update failed");
     expect(console.error).toHaveBeenCalledWith("[ItemRecycler] Recycle update failed:", { listId: "L", itemId: "i1" }, dbErr);
   });
 
   it("returns null, without logging, when the row is gone by the time of the update", async () => {
-    use({ lookup: ok({ list_id: "L" }), maxPos: ok([{ position: 7 }]), update: ok(null) });
-    expect(await recycleItem("i1", "u1", "L")).toBeNull();
+    use({ lookup: ok(milk), maxPos: ok([{ position: 7 }]), update: ok(null) });
+    expect(await recycleItem("i1", "u1", "L", "milk")).toBeNull();
     expect(console.error).not.toHaveBeenCalled();
   });
 });

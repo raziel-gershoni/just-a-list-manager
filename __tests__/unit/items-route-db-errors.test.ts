@@ -6,7 +6,7 @@ import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-su
 const h = vi.hoisted(() => ({
   fake: null as unknown as { client: unknown; calls: { table: string; op: string; values?: unknown; filters: string[] }[] },
   after: [] as (() => unknown)[],
-  findRecyclable: vi.fn(async () => [] as { id: string; text: string }[]),
+  recycle: vi.fn(async () => null),
 }));
 vi.mock("@/src/lib/rate-limit", () => ({ apiRateLimiter: {} }));
 vi.mock("@/src/lib/api-auth", () => ({
@@ -15,7 +15,7 @@ vi.mock("@/src/lib/api-auth", () => ({
 }));
 vi.mock("@/src/lib/supabase", () => ({ createServerClient: () => h.fake.client }));
 vi.mock("@/src/services/categorize-list", () => ({ categorizeList: async () => {} }));
-vi.mock("@/src/services/item-recycler", () => ({ findRecyclableItems: h.findRecyclable, recycleItem: async () => null }));
+vi.mock("@/src/services/item-recycler", () => ({ recycleItem: h.recycle }));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
   after: (fn: () => unknown) => { h.after.push(fn); },
@@ -53,7 +53,7 @@ const inserts = () => h.fake.calls.filter((c) => c.op === "rpc" && c.table === "
 
 beforeEach(() => {
   h.after = [];
-  h.findRecyclable.mockClear();
+  h.recycle.mockClear();
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.mocked(console.error).mockClear();
@@ -112,10 +112,10 @@ describe("POST /items", () => {
 
   it("batch: answers a logged 500 and neither recycles nor inserts when the max position cannot be read", async () => {
     use((c) => isMaxPos(c) ? { data: null, error: boom } : c.op === "rpc" ? inserted : { data: null, error: null });
-    const res = await POST(req("POST", { text: "milk, eggs" }), params);
+    const res = await POST(req("POST", { text: "milk, eggs", recycleId: MILK }), params);
     expect(res.status).toBe(500);
     expect(inserts()).toEqual([]);
-    expect(h.findRecyclable).not.toHaveBeenCalled();
+    expect(h.recycle).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith("[items/POST] Max position read failed:", { listId: "L" }, boom);
   });
 });

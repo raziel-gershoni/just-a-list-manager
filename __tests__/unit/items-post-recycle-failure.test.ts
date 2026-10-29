@@ -4,7 +4,6 @@ import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-su
 
 const h = vi.hoisted(() => ({
   fake: null as unknown as { client: unknown; calls: { table: string; op: string; values?: unknown; filters: string[] }[] },
-  find: vi.fn(),
   recycle: vi.fn(),
 }));
 vi.mock("@/src/lib/rate-limit", () => ({ apiRateLimiter: {} }));
@@ -14,7 +13,7 @@ vi.mock("@/src/lib/api-auth", () => ({
 }));
 vi.mock("@/src/lib/supabase", () => ({ createServerClient: () => h.fake.client }));
 vi.mock("@/src/services/categorize-list", () => ({ categorizeList: async () => {} }));
-vi.mock("@/src/services/item-recycler", () => ({ findRecyclableItems: h.find, recycleItem: h.recycle }));
+vi.mock("@/src/services/item-recycler", () => ({ recycleItem: h.recycle }));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
   after: () => {},
@@ -28,13 +27,12 @@ const req = (body: unknown) =>
   new NextRequest("https://app.test/api/lists/L/items", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
-const completedMilk = { id: OLD, text: "milk", completed: true, completed_at: "2026-10-01T00:00:00Z", deleted_at: null, position: 2 };
+const recycledMilk = { id: OLD, text: "milk", completed: false, completed_at: null, deleted_at: null, position: 9 };
 const inserted = () => h.fake.calls.filter((c) => c.op === "rpc").map((c) => (c.values as { p_text: string }).p_text);
 
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
-  h.find.mockReset().mockResolvedValue([]);
   h.recycle.mockReset().mockResolvedValue(null);
   // The max-position read finds an empty list; the insert RPC echoes the row it was asked for.
   h.fake = fakeSupabase((c: FakeCall): FakeResult => {
@@ -47,13 +45,13 @@ beforeEach(() => {
 });
 
 describe("POST items (batch): a failed recycle check skips the item and never inserts a duplicate", () => {
-  it("skips an item whose recyclable lookup fails, logs it, and still adds the rest", async () => {
-    const boom = new Error("Recyclable items read failed");
-    h.find.mockImplementation(async (_listId: string, text: string) => {
+  it("skips an item whose recycle check fails, logs it, and still adds the rest", async () => {
+    const boom = new Error("Recycle item lookup failed");
+    h.recycle.mockImplementation(async (_id: string, _userId: string, _listId: string, text: string) => {
       if (text === "milk") throw boom;
-      return [];
+      return null;
     });
-    const res = await POST(req({ text: "milk, eggs" }), params);
+    const res = await POST(req({ text: "milk, eggs", recycleId: OLD }), params);
     expect(res.status).toBe(201);
     expect(inserted()).toEqual(["eggs"]);
     expect((await res.json()).items.map((i: { text: string }) => i.text)).toEqual(["eggs"]);
@@ -62,14 +60,20 @@ describe("POST items (batch): a failed recycle check skips the item and never in
 
   it("skips the item when the recycle itself fails, instead of inserting a new copy", async () => {
     const boom = new Error("Recycle update failed");
-    h.find.mockResolvedValue([completedMilk]);
     h.recycle.mockRejectedValue(boom);
     const res = await POST(req({ text: "milk", recycleId: OLD }), params);
     // Nothing was written and the only item failed: a 500 the queue retries (safe, no duplicate).
     expect(res.status).toBe(500);
-    expect(h.recycle).toHaveBeenCalledWith(OLD, "u1", "L");
+    expect(h.recycle).toHaveBeenCalledWith(OLD, "u1", "L", "milk");
     expect(inserted()).toEqual([]);
     expect(console.error).toHaveBeenCalledWith("[items/POST] Recycle check failed, skipping item (batch):", { listId: "L" }, boom);
+  });
+
+  it("never runs the recycler for a typed add without a recycleId", async () => {
+    const res = await POST(req({ text: "milk, eggs" }), params);
+    expect(res.status).toBe(201);
+    expect(h.recycle).not.toHaveBeenCalled();
+    expect(inserted()).toEqual(["milk", "eggs"]);
   });
 
   it("answers 500 when the only item's insert fails with a non-limit error (nothing written, queue retries)", async () => {
@@ -109,15 +113,14 @@ describe("POST items (batch): a failed recycle check skips the item and never in
   });
 
   it("returns the recycled row when the recycle succeeds", async () => {
-    h.find.mockResolvedValue([completedMilk]);
-    h.recycle.mockResolvedValue({ ...completedMilk, completed: false, completed_at: null, position: 9 });
+    h.recycle.mockResolvedValue(recycledMilk);
     const res = await POST(req({ text: "milk", recycleId: OLD }), params);
+    expect(res.status).toBe(201);
     expect(inserted()).toEqual([]);
     expect((await res.json()).items).toEqual([expect.objectContaining({ id: OLD, recycled: true })]);
   });
 
-  it("inserts a new item when the item to recycle is genuinely gone (recycleItem answers null)", async () => {
-    h.find.mockResolvedValue([completedMilk]);
+  it("inserts a new item when there is nothing to recycle (recycleItem answers null)", async () => {
     h.recycle.mockResolvedValue(null);
     const res = await POST(req({ text: "milk", recycleId: OLD }), params);
     expect(res.status).toBe(201);

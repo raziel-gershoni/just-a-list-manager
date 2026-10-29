@@ -445,7 +445,7 @@ async function processAddItem(
 
     if (similarity > 0.6) {
       // High confidence — auto-recycle
-      await recycleOrThrow(match.id, userId, listId);
+      await recycleOrThrow(match.id, match.text, userId, listId);
       receipt.added.push(`${match.text} ${getMsg(lang, "voice.recycledLabel")}`);
       return match.id;
     }
@@ -458,7 +458,7 @@ async function processAddItem(
       voiceItem.text.toLowerCase()
     );
     if (similarity > 0.6) {
-      await recycleOrThrow(bestMatch.id, userId, listId);
+      await recycleOrThrow(bestMatch.id, bestMatch.text, userId, listId);
       receipt.added.push(`${bestMatch.text} ${getMsg(lang, "voice.recycledLabel")}`);
       return bestMatch.id;
     }
@@ -595,11 +595,12 @@ async function softDeleteItem(supabase: SupabaseClient, itemId: string): Promise
 }
 
 /**
- * recycleItem throws on a database error and returns null when the row is gone. Either way
- * the item was not recycled, so this throws and the receipt never claims it.
+ * recycleItem throws on a database error and returns null when the row is gone (or its text
+ * changed since the match). Either way the item was not recycled, so this throws and the
+ * receipt never claims it. `text` is the matched row's own text, so a fuzzy match still recycles.
  */
-async function recycleOrThrow(itemId: string, userId: string, listId: string): Promise<void> {
-  const recycled = await recycleItem(itemId, userId, listId);
+async function recycleOrThrow(itemId: string, text: string, userId: string, listId: string): Promise<void> {
+  const recycled = await recycleItem(itemId, userId, listId, text);
   if (!recycled) throw new Error(`[VoiceHandler] Recycle found no item ${itemId} in list ${listId}`);
 }
 
