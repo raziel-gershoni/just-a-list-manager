@@ -141,6 +141,33 @@ describe("a channel that replaces one that was lost", () => {
     expect(onRejoined).toHaveBeenCalledTimes(1);
   });
 
+  it("does not reconnect when the provider replaced the client, and the new client's channel catches up", async () => {
+    const old = fakeClient();
+    const next = fakeClient();
+    const onRejoined = vi.fn();
+    const requestReconnect = vi.fn();
+    R.i = 0;
+    R.effects = [];
+    ref.current = client = old.sb;
+    const { resubscribe } = useRealtimeList(old.sb, ref, "L", () => {}, requestReconnect, onRejoined);
+    subscribe();
+    old.channels[0].cb!("SUBSCRIBED");
+
+    // The provider swapped the client, then closed the old client's channels.
+    ref.current = client = next.sb;
+    old.channels[0].cb!("CLOSED");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(requestReconnect).not.toHaveBeenCalled();
+    expect(old.sb.removeChannel).not.toHaveBeenCalled();
+    expect(onRejoined).not.toHaveBeenCalled();
+
+    const done = resubscribe();
+    expect(next.channels).toHaveLength(1);
+    next.channels[0].cb!("SUBSCRIBED");
+    await done;
+    expect(onRejoined).toHaveBeenCalledTimes(1);
+  });
+
   it("catches up when it joins after a reconnect's join failed", async () => {
     const { channels, sb } = fakeClient();
     const onRejoined = vi.fn();
