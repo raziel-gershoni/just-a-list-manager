@@ -13,6 +13,21 @@ import { categorizeList } from "@/src/services/categorize-list";
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
 
+// How far back a tap time is honoured: the offline queue's own 24-hour limit.
+const TAP_TIME_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// The time for completed_at / skipped_at / ordered_at: when the user tapped (`at`), so a
+// change replayed from the offline queue, or delivered twice, keeps the time it was made
+// rather than the time it synced. Clamped to the last 24 hours and never in the future, so
+// a wrong device clock can't push an item far out of order. A missing or unparseable `at`
+// falls back to now.
+function tapTime(at: string | undefined): string {
+  const now = Date.now();
+  const tapped = at ? Date.parse(at) : NaN;
+  if (Number.isNaN(tapped)) return new Date(now).toISOString();
+  return new Date(Math.min(now, Math.max(now - TAP_TIME_WINDOW_MS, tapped))).toISOString();
+}
+
 // Sort new or changed grocery items after the response (categorizeList skips other
 // list types and never throws).
 function scheduleCategorize(supabase: ReturnType<typeof createServerClient>, listId: string) {
@@ -367,12 +382,11 @@ export async function PATCH(
   }
 
   const patchData: Record<string, unknown> = {};
+  const stamp = tapTime(updates.at);
 
   if (typeof updates.completed === "boolean") {
     patchData.completed = updates.completed;
-    patchData.completed_at = updates.completed
-      ? new Date().toISOString()
-      : null;
+    patchData.completed_at = updates.completed ? stamp : null;
   }
 
   if (typeof updates.text === "string") {
@@ -388,12 +402,12 @@ export async function PATCH(
   }
 
   if (typeof updates.skipped === "boolean") {
-    patchData.skipped_at = updates.skipped ? new Date().toISOString() : null;
+    patchData.skipped_at = updates.skipped ? stamp : null;
     if (updates.skipped) patchData.ordered_at = null; // mutually exclusive states
   }
 
   if (typeof updates.ordered === "boolean") {
-    patchData.ordered_at = updates.ordered ? new Date().toISOString() : null;
+    patchData.ordered_at = updates.ordered ? stamp : null;
     if (updates.ordered) patchData.skipped_at = null; // mutually exclusive states
   }
 

@@ -28,6 +28,11 @@ export const updateItemSchema = z.object({
   restoreRecurring: z.boolean().optional(),
   deleted_at: z.null().optional(),
   categoryId: z.string().uuid().optional(),
+  // When the user tapped (ISO date-time), for completed_at / skipped_at / ordered_at. Optional:
+  // entries queued before the client sent it carry none, and the server uses its own time. A
+  // value that does not parse is ignored the same way (see tapTime), never a 400, because the
+  // queue would drop the user's change on a 4xx.
+  at: z.string().optional(),
 });
 
 // POST /api/lists/[id]/items/reorder
