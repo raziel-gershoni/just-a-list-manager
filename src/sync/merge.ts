@@ -50,7 +50,9 @@ export function mergeRefresh(
  * any change made to the new item that is still on its way (a tick right after adding). When
  * the realtime INSERT got there first, the saved row is already on screen, so the temp row
  * just goes (the same id never shows twice) and the saved row gets those changes too: a
- * delete on its way takes it off, any other change keeps the temp row's value.
+ * delete on its way takes it off, any other change keeps the temp row's value. With neither
+ * on screen (the list was loaded again while the create waited), the saved row is added
+ * unless the new item's delete is on its way.
  */
 export function applyCreateResult(
   prev: ItemData[],
@@ -69,11 +71,9 @@ export function applyCreateResult(
       return fields.has("deleted") ? [] : [overlayPending(i, temp ?? i, fields)];
     });
   }
-  return prev.map((i) =>
-    i.id === tempId
-      ? overlayPending({ ...created, creator_name: null, editor_name: null, _pending: false }, i, fields)
-      : i
-  );
+  const saved: ItemData = { ...created, creator_name: null, editor_name: null, _pending: false };
+  if (!prev.some((i) => i.id === tempId)) return fields.has("deleted") ? prev : [...prev, saved];
+  return prev.map((i) => (i.id === tempId ? overlayPending(saved, i, fields) : i));
 }
 
 /**

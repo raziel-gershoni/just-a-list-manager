@@ -67,20 +67,28 @@ export function useListRealtime({
               editor_name: lookupUserName(prev, newRec.edited_by),
               _pending: false,
             } as ItemData;
+            // The saved row in place of the temp row: keeps the on-screen value of a change made
+            // to it after the add and still on its way (an edit of its text included), the exit
+            // animation, and the temp id, so an update applied later under that id finds it
+            // before the engine knows the saved id.
+            const replacing = (temp: ItemData, fields: Set<string>): ItemData => ({
+              ...overlayPending(serverItem, temp, fields),
+              _exiting: temp._exiting,
+              _tempId: temp.id,
+            });
             // The echo of the user's own add, before its create answered: the create still on
             // its way with this text (the server stores the text the client sent). Its temp row
-            // becomes the saved row, keeping the on-screen value of a change made to it after
-            // the add and still on its way, an edit of its text included. With the temp row off
-            // the screen, or its delete on the way, the user deleted the new item: the create's
-            // answer and the queued delete settle it.
+            // becomes the saved row. With the new item's delete on its way, the user deleted it:
+            // the create's answer and the queued delete settle it. With no temp row on screen
+            // and no delete (the list was loaded again while the create waited), the item shows.
             const tempId = engine.pendingCreateFor(newRec.text);
             if (tempId) {
-              const tempIndex = prev.findIndex((i) => i.id === tempId);
-              if (tempIndex === -1) return prev;
               const fields = withoutCreated(engine.pendingFields(tempId));
               if (fields.has("deleted")) return prev;
+              const tempIndex = prev.findIndex((i) => i.id === tempId);
+              if (tempIndex === -1) return [...prev, { ...serverItem, _tempId: tempId }];
               const updated = [...prev];
-              updated[tempIndex] = overlayPending(serverItem, prev[tempIndex], fields);
+              updated[tempIndex] = replacing(prev[tempIndex], fields);
               return updated;
             }
             // Otherwise an unsaved row with the same text is taken to be this item.
@@ -89,9 +97,8 @@ export function useListRealtime({
             );
             if (pendingIndex !== -1) {
               const temp = prev[pendingIndex];
-              const fields = withoutCreated(engine.pendingFields(temp.id));
               const updated = [...prev];
-              updated[pendingIndex] = overlayPending(serverItem, temp, fields);
+              updated[pendingIndex] = replacing(temp, withoutCreated(engine.pendingFields(temp.id)));
               return updated;
             }
             // A new item the user deleted after its create answered: its delete is on its way.

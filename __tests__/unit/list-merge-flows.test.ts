@@ -520,6 +520,36 @@ describe("an added item shows once", () => {
     expect(p.items()).toEqual([expect.objectContaining({ id: "r1", text: "brown eggs" })]);
   });
 
+  it("an INSERT for a new item whose temp row a reload of the list dropped shows it once, through the answer", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    // Loaded again while the create is still on its way: the GET doesn't have it yet.
+    await p.load();
+    expect(p.items()).toEqual([]);
+
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "bread" }) });
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", _pending: false })]);
+
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    expect(p.items().map((i) => i.id)).toEqual(["r1"]);
+  });
+
+  it("a create answered after a reload of the list dropped its temp row shows the item once, through the INSERT", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    await p.load();
+
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", _pending: false })]);
+
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "bread" }) });
+    expect(p.items().map((i) => i.id)).toEqual(["r1"]);
+  });
+
   it("an item that is only invisible characters is not added", async () => {
     const p = await open([]);
     await p.render().handleAddItem("‎‏");
@@ -622,6 +652,66 @@ describe("a change made to a new item while its create is on its way shows on th
 
     expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _exiting: false })]);
     expect(p.sent.find((s) => s.key === "PATCH r1")?.body).toMatchObject({ completed: true });
+  });
+
+  it("a tick whose animation the INSERT lands in, before the create's answer, leaves the saved row ticked", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(100);
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "bread" }) });
+    // The saved row takes over the animation.
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", _exiting: true })]);
+    await vi.advanceTimersByTimeAsync(100);
+    await ticking;
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _exiting: false })]);
+
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _exiting: false })]);
+    expect(p.sent.find((s) => s.key === "PATCH r1")?.body).toMatchObject({ completed: true });
+  });
+
+  it("an Undo of Unmark all after the INSERT, before the create's answer, re-checks the saved row", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    await p.render().handleUnmarkAllDone();
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "bread" }) });
+    p.undo();
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true })]);
+
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true })]);
+  });
+
+  it("an Undo of Clear completed after the INSERT, before the create's answer, brings back the saved row once", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    // Not saved yet, so cleared on screen only; its INSERT then shows the saved row.
+    await p.render().handleClearCompleted();
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "bread" }) });
+    p.undo();
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _pending: false })]);
+
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _pending: false })]);
   });
 
   it("a delete whose animation the create's answer lands in takes the saved row off", async () => {
@@ -778,6 +868,45 @@ describe("a change made to a new item while its create is on its way shows on th
     await settle();
     p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
     await settle();
+    p.release("POST 2", 500);
+    await unmarking;
+
+    expect(p.item("r1")).toMatchObject({ completed: true });
+    expect(p.item("a")).toMatchObject({ completed: true, completed_at: DONE });
+  });
+
+  it("a Clear completed that fails after the INSERT, before the create's answer, puts the saved row back once", async () => {
+    const p = await open([row({ id: "a", completed: true, completed_at: DONE })]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items().find((i) => i.text === "bread")!.id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    p.hold("POST 2");
+    const clearing = p.render().handleClearCompleted();
+    await settle();
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "bread" }) });
+    p.release("POST 2", 500);
+    await clearing;
+
+    expect(p.items().map((i) => [i.id, i._pending ?? false]).sort()).toEqual([["a", false], ["r1", false]]);
+  });
+
+  it("an Unmark all that fails after the INSERT, before the create's answer, re-checks the saved row", async () => {
+    const p = await open([row({ id: "a", completed: true, completed_at: DONE })]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items().find((i) => i.text === "bread")!.id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    p.hold("POST 2");
+    const unmarking = p.render().handleUnmarkAllDone();
+    await settle();
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "bread" }) });
     p.release("POST 2", 500);
     await unmarking;
 

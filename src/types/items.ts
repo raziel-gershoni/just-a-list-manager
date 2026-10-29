@@ -17,6 +17,8 @@ export interface ItemData {
   _pending?: boolean;
   _justAdded?: boolean;
   _exiting?: boolean;
+  /** On a saved row that a realtime INSERT put in place of a temp row: that temp id. */
+  _tempId?: string;
 }
 
 export type CompletedGroup = { label: string; items: ItemData[] };

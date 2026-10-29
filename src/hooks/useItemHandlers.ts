@@ -85,23 +85,26 @@ export function useItemHandlers({
     [setItems]
   );
 
-  // An id captured at a tap may be a new item's temp id whose create has landed since: its
-  // row is now on screen under the saved id. Updates applied later match either one.
+  // An id captured at a tap may be a new item's temp id whose create has landed since, or
+  // whose realtime INSERT came first: its row is now on screen under the saved id (the
+  // INSERT's row also carries the temp id). Updates applied later match any of them.
   const sameItem = useCallback(
     (capturedId: string) => {
       const savedId = getSyncEngine(listId).resolveId(capturedId);
-      return (i: ItemData) => i.id === capturedId || i.id === savedId;
+      return (i: ItemData) => i.id === capturedId || i.id === savedId || i._tempId === capturedId;
     },
     [listId]
   );
 
-  // A copy taken before a delete, put back by its Undo: under the saved id, and saved, when
-  // its create landed in between (the queued restore keeps the captured id; the engine
-  // resolves it).
+  // A copy taken before a delete or a clear, put back by its Undo onto the rows on screen:
+  // under the saved id, and saved, when its create landed in between or its INSERT showed
+  // the saved row (the queued restore keeps the captured id; the engine resolves it).
   const undoCopy = useCallback(
-    (item: ItemData): ItemData => {
-      const savedId = getSyncEngine(listId).resolveId(item.id);
-      return savedId === item.id ? item : { ...item, id: savedId, _pending: false };
+    (item: ItemData, onScreen: ItemData[]): ItemData => {
+      const resolved = getSyncEngine(listId).resolveId(item.id);
+      const savedId =
+        resolved !== item.id ? resolved : onScreen.find((i) => i._tempId === item.id)?.id ?? item.id;
+      return savedId === item.id ? item : { ...item, id: savedId, _pending: false, _tempId: item.id };
     },
     [listId]
   );
@@ -270,7 +273,7 @@ export function useItemHandlers({
           if (deletedItem) {
             // Replaces the exiting copy when the Undo comes inside the animation.
             const isItem = sameItem(itemId);
-            setItems((prev) => [...prev.filter((i) => !isItem(i)), undoCopy(deletedItem)]);
+            setItems((prev) => [...prev.filter((i) => !isItem(i)), undoCopy(deletedItem, prev)]);
             // Queued on the item's chain, so it lands after the delete (in flight or kept
             // for retry) and replays offline like any other change.
             addMutation({ id: genMutId(), type: "restore", payload: { listId, itemId } });
@@ -463,9 +466,11 @@ export function useItemHandlers({
         undo: () => {
           clearTimeout(timeout);
           setUndoAction(null);
-          const copies = duplicatesToRemove.map(undoCopy);
-          const backIds = new Set([...removeIds, ...copies.map((i) => i.id)]);
-          setItems((prev) => [...prev.filter((i) => !backIds.has(i.id)), ...copies]);
+          setItems((prev) => {
+            const copies = duplicatesToRemove.map((i) => undoCopy(i, prev));
+            const backIds = new Set([...removeIds, ...copies.map((i) => i.id)]);
+            return [...prev.filter((i) => !backIds.has(i.id)), ...copies];
+          });
           // One restore per duplicate, each queued behind that duplicate's delete.
           for (const item of duplicatesToRemove) {
             addMutation({ id: genMutId(), type: "restore", payload: { listId, itemId: item.id } });
@@ -507,9 +512,11 @@ export function useItemHandlers({
       undo: () => {
         clearTimeout(timeout);
         setUndoAction(null);
-        const copies = completedItems.map(undoCopy);
-        const backIds = new Set(copies.map((i) => i.id));
-        setItems((prev) => [...prev.filter((i) => !backIds.has(i.id)), ...copies]);
+        setItems((prev) => {
+          const copies = completedItems.map((i) => undoCopy(i, prev));
+          const backIds = new Set(copies.map((i) => i.id));
+          return [...prev.filter((i) => !backIds.has(i.id)), ...copies];
+        });
         // Items whose restore fails leave the screen again. After a failed clear the server
         // changed nothing, so there is nothing to restore.
         void cleared.then((ids) => {
@@ -536,8 +543,8 @@ export function useItemHandlers({
         clearTimeout(timeout);
         setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
         // Skip items already back on screen (an Undo tapped before this failed).
-        const copies = completedItems.map(undoCopy);
         setItems((prev) => {
+          const copies = completedItems.map((i) => undoCopy(i, prev));
           const present = new Set(prev.map((i) => i.id));
           return [...prev, ...copies.filter((i) => !present.has(i.id))];
         });
@@ -568,11 +575,13 @@ export function useItemHandlers({
     setItems((prev) => computeUnmarkCompleted(prev).next);
 
     // Ids matched when the Undo or a failure applies: with the saved id of a new item whose
-    // create landed since.
+    // create landed since. A row its INSERT put on screen first is matched by its temp id.
     const shownIds = () => {
       const engine = getSyncEngine(listId);
       return new Set(affectedIds.flatMap((id) => [id, engine.resolveId(id)]));
     };
+    const shownKey = (i: ItemData, ids: { has: (id: string) => boolean }) =>
+      ids.has(i.id) ? i.id : i._tempId && ids.has(i._tempId) ? i._tempId : undefined;
     // The ids the server unmarked, or null when the unmark failed; never rejects. The Undo
     // re-checks on the server only once the unmark has landed (a re-check that got there
     // first would be unticked by it), and only what it unmarked.
@@ -587,7 +596,7 @@ export function useItemHandlers({
         const idSet = shownIds();
         setItems((prev) =>
           prev.map((i) =>
-            idSet.has(i.id)
+            shownKey(i, idSet)
               ? { ...i, completed: true, completed_at: new Date().toISOString() }
               : i
           )
@@ -628,11 +637,10 @@ export function useItemHandlers({
           [...completedAtById].flatMap(([id, at]) => [[id, at], [engine.resolveId(id), at]] as const)
         );
         setItems((prev) =>
-          prev.map((i) =>
-            completedAt.has(i.id)
-              ? { ...i, completed: true, completed_at: completedAt.get(i.id) ?? null }
-              : i
-          )
+          prev.map((i) => {
+            const key = shownKey(i, completedAt);
+            return key ? { ...i, completed: true, completed_at: completedAt.get(key) ?? null } : i;
+          })
         );
         showSyncError();
         return null;

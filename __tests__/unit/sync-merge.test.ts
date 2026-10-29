@@ -140,6 +140,17 @@ describe("applyCreateResult", () => {
     const out = applyCreateResult([temp], "temp-1", saved, pending({ r1: ["completed", "completed_at"] }));
     expect(out[0]).toMatchObject({ id: "r1", completed: true, completed_at: DONE, _pending: false });
   });
+
+  it("adds the saved row when its temp row left the screen without a delete (a reload of the list)", () => {
+    const out = applyCreateResult([item({ id: "b" })], "temp-1", saved, pending());
+    expect(out.map((i) => i.id).sort()).toEqual(["b", "r1"]);
+    expect(byId(out, "r1")).toMatchObject({ _pending: false });
+  });
+
+  it("does not add the saved row when the new item's delete is on its way", () => {
+    const out = applyCreateResult([item({ id: "b" })], "temp-1", saved, pending({ r1: ["deleted"] }));
+    expect(out.map((i) => i.id)).toEqual(["b"]);
+  });
 });
 
 describe("applyRecycleResult", () => {
