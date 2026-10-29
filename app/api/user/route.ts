@@ -6,6 +6,7 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { checkRateLimit, getRateLimitHeaders } from "@/src/lib/rate-limit";
 import { updateUserSchema } from "@/src/schemas/user";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { dbError } from "@/src/lib/api-errors";
 
 export async function GET(request: NextRequest) {
   const auth = await verifyUserAuth(request, apiRateLimiter, "user-get");
@@ -16,9 +17,10 @@ export async function GET(request: NextRequest) {
     .from("users")
     .select("*")
     .eq("id", auth.userId)
-    .single();
+    .maybeSingle();
 
-  if (error || !user) {
+  if (error) return dbError("user/GET", "User read", error, { userId: auth.userId });
+  if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
@@ -50,12 +52,14 @@ export async function POST(request: NextRequest) {
     .filter(Boolean)
     .join(" ");
 
-  // Check if user already exists
-  const { data: existing } = await supabase
+  // Check if user already exists. maybeSingle: no row is the normal new-user answer, so
+  // `error` is a real failure and must not fall through to an INSERT.
+  const { data: existing, error: lookupError } = await supabase
     .from("users")
     .select()
     .eq("telegram_id", telegramUser.id)
-    .single();
+    .maybeSingle();
+  if (lookupError) return dbError("user/POST", "User lookup", lookupError, { telegramId: telegramUser.id });
 
   if (existing) {
     // Existing user: update name/username but preserve their stored language
@@ -125,9 +129,7 @@ export async function PATCH(request: NextRequest) {
     .select()
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: "Update failed" }, { status: 500 });
-  }
+  if (error) return dbError("user/PATCH", "Update", error, { userId: auth.userId });
 
   return NextResponse.json(user);
 }

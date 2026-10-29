@@ -4,6 +4,7 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { serverEnv } from "@/src/lib/env";
+import { dbError } from "@/src/lib/api-errors";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { createInviteSchema } from "@/src/schemas/share";
 
@@ -29,14 +30,15 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServerClient();
 
-  // Get collaborators
-  const { data: collaborators } = await supabase
+  // Get collaborators. An empty list here would hide a pending request from the owner.
+  const { data: collaborators, error: collabError } = await supabase
     .from("collaborators")
     .select("id, user_id, permission, status, users(name, username)")
     .eq("list_id", listId);
+  if (collabError) return dbError("share/GET", "Collaborators read", collabError, { listId });
 
   // Get active invite link
-  const { data: activeLinks } = await supabase
+  const { data: activeLinks, error: linkError } = await supabase
     .from("invite_links")
     .select("token, permission, expires_at")
     .eq("list_id", listId)
@@ -44,6 +46,7 @@ export async function GET(request: NextRequest) {
     .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: false })
     .limit(1);
+  if (linkError) return dbError("share/GET", "Active link read", linkError, { listId });
 
   const activeLink = activeLinks?.[0]
     ? `https://t.me/${serverEnv().NEXT_PUBLIC_BOT_USERNAME}?start=invite_${activeLinks[0].token}`

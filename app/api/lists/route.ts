@@ -4,6 +4,7 @@ import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { createListSchema, updateListSchema } from "@/src/schemas/lists";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { dbError } from "@/src/lib/api-errors";
 import { sortListsByUserOrder } from "@/src/utils/list-order";
 import { filterListsByView, type ListView } from "@/src/utils/list-archive";
 import { categorizeList } from "@/src/services/categorize-list";
@@ -18,30 +19,34 @@ export async function GET(request: NextRequest) {
   const supabase = createServerClient();
 
   // Lists where user is owner
-  const { data: ownedLists } = await supabase
+  const { data: ownedLists, error: ownedError } = await supabase
     .from("lists")
     .select("id, name, owner_id, created_at, updated_at, type, icon, color")
     .eq("owner_id", auth.userId)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
+  // A partial home screen hides lists or shows wrong counts; the client's Retry screen is honest.
+  if (ownedError) return dbError("lists/GET", "Owned lists read", ownedError, { userId: auth.userId });
 
   // Lists where user is approved collaborator
-  const { data: collabRecords } = await supabase
+  const { data: collabRecords, error: collabError } = await supabase
     .from("collaborators")
     .select("list_id, permission")
     .eq("user_id", auth.userId)
     .eq("status", "approved");
+  if (collabError) return dbError("lists/GET", "Collaborator rows read", collabError, { userId: auth.userId });
 
   const collabListIds = (collabRecords || []).map((c) => c.list_id);
   let collabLists: { id: string; name: string; owner_id: string; created_at: string; updated_at: string; type: string; icon: string | null; color: string | null }[] = [];
 
   if (collabListIds.length > 0) {
-    const { data } = await supabase
+    const { data, error: sharedListsError } = await supabase
       .from("lists")
       .select("id, name, owner_id, created_at, updated_at, type, icon, color")
       .in("id", collabListIds)
       .is("deleted_at", null)
       .order("updated_at", { ascending: false });
+    if (sharedListsError) return dbError("lists/GET", "Shared lists read", sharedListsError, { userId: auth.userId });
     collabLists = data || [];
   }
 
@@ -56,9 +61,10 @@ export async function GET(request: NextRequest) {
   const countsMap = new Map<string, { active_count: number; completed_count: number }>();
 
   if (listIds.length > 0) {
-    const { data: counts } = await supabase.rpc("get_list_item_counts", {
+    const { data: counts, error: countsError } = await supabase.rpc("get_list_item_counts", {
       p_list_ids: listIds,
     });
+    if (countsError) return dbError("lists/GET", "Item counts read", countsError, { userId: auth.userId });
     if (counts) {
       for (const row of counts) {
         countsMap.set(row.list_id, {
@@ -72,11 +78,13 @@ export async function GET(request: NextRequest) {
   // Determine which lists are shared (have approved collaborators)
   const sharedSet = new Set<string>();
   if (listIds.length > 0) {
-    const { data: sharedRows } = await supabase
+    const { data: sharedRows, error: sharedError } = await supabase
       .from("collaborators")
       .select("list_id")
       .in("list_id", listIds)
       .eq("status", "approved");
+    // Only the badge depends on this read: show none for this load rather than fail it.
+    if (sharedError) console.warn("[lists/GET] Shared badges read failed, showing none:", { userId: auth.userId }, sharedError);
     for (const row of sharedRows || []) {
       sharedSet.add(row.list_id);
     }
@@ -87,11 +95,12 @@ export async function GET(request: NextRequest) {
   const positions = new Map<string, number>();
   const archivedIds = new Set<string>();
   if (listIds.length > 0) {
-    const { data: stateRows } = await supabase
+    const { data: stateRows, error: stateError } = await supabase
       .from("user_list_state")
       .select("list_id, position, archived_at")
       .eq("user_id", auth.userId)
       .in("list_id", listIds);
+    if (stateError) return dbError("lists/GET", "List state read", stateError, { userId: auth.userId });
     for (const row of stateRows || []) {
       // position is nullable: a list archived without ever being dragged has
       // a row with no position. BIGINT arrives from PostgREST as a string.
@@ -144,12 +153,13 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServerClient();
 
-  // Enforce max 50 lists per user
-  const { count } = await supabase
+  // Enforce max 50 lists per user. A cap that cannot be read fails closed.
+  const { count, error: countError } = await supabase
     .from("lists")
     .select("id", { count: "exact", head: true })
     .eq("owner_id", auth.userId)
     .is("deleted_at", null);
+  if (countError) return dbError("lists/POST", "List count read", countError, { userId: auth.userId });
 
   if ((count || 0) >= 50) {
     return NextResponse.json(
@@ -198,12 +208,13 @@ export async function PATCH(request: NextRequest) {
 
   // Restore (undelete) flow
   if (restore) {
-    const { data: list } = await supabase
+    const { data: list, error: ownerError } = await supabase
       .from("lists")
       .select("owner_id")
       .eq("id", id)
       .not("deleted_at", "is", null)
-      .single();
+      .maybeSingle();
+    if (ownerError) return dbError("lists/PATCH", "Owner check", ownerError, { listId: id, userId: auth.userId });
 
     if (!list || list.owner_id !== auth.userId) {
       return NextResponse.json(
@@ -219,9 +230,7 @@ export async function PATCH(request: NextRequest) {
       .select()
       .single();
 
-    if (error) {
-      return NextResponse.json({ error: "Restore failed" }, { status: 500 });
-    }
+    if (error) return dbError("lists/PATCH", "Restore", error, { listId: id });
 
     return NextResponse.json(restored);
   }
@@ -237,12 +246,13 @@ export async function PATCH(request: NextRequest) {
   }
 
   // Only owner can update list settings
-  const { data: list } = await supabase
+  const { data: list, error: ownerError } = await supabase
     .from("lists")
     .select("owner_id")
     .eq("id", id)
     .is("deleted_at", null)
-    .single();
+    .maybeSingle();
+  if (ownerError) return dbError("lists/PATCH", "Owner check", ownerError, { listId: id, userId: auth.userId });
 
   if (!list || list.owner_id !== auth.userId) {
     return NextResponse.json(
@@ -268,9 +278,7 @@ export async function PATCH(request: NextRequest) {
     .select()
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: "Update failed" }, { status: 500 });
-  }
+  if (error) return dbError("lists/PATCH", "Update", error, { listId: id });
 
   // A list that becomes a grocery list is sorted right away, not on its next open.
   if (type === "grocery") after(() => categorizeList({ supabase }, id, "pending"));
@@ -295,12 +303,13 @@ export async function DELETE(request: NextRequest) {
   const supabase = createServerClient();
 
   // Only owner can delete
-  const { data: list } = await supabase
+  const { data: list, error: ownerError } = await supabase
     .from("lists")
     .select("owner_id")
     .eq("id", id)
     .is("deleted_at", null)
-    .single();
+    .maybeSingle();
+  if (ownerError) return dbError("lists/DELETE", "Owner check", ownerError, { listId: id, userId: auth.userId });
 
   if (!list || list.owner_id !== auth.userId) {
     return NextResponse.json(
@@ -315,9 +324,7 @@ export async function DELETE(request: NextRequest) {
     .update({ deleted_at: new Date().toISOString() })
     .eq("id", id);
 
-  if (error) {
-    return NextResponse.json({ error: "Delete failed" }, { status: 500 });
-  }
+  if (error) return dbError("lists/DELETE", "Delete", error, { listId: id });
 
   return NextResponse.json({ success: true });
 }
