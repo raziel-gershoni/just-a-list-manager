@@ -71,6 +71,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         type?: string;
         icon?: string | null;
         color?: string | null;
+        role?: "owner" | "edit" | "view";
       };
 
       const findList = async (url: string): Promise<ListSummary | undefined> => {
@@ -110,6 +111,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         const { items: fetchedItems } = await res.json();
         const FOUR_HOURS = 4 * 60 * 60 * 1000;
         const now = Date.now();
+        const canSave = currentList?.role !== "view";
         const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string; skipped_at?: string | null; recurring?: boolean; completed?: boolean; completed_at?: string | null; deleted_at?: string | null }) => {
           const base = {
             ...item,
@@ -121,9 +123,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           };
           // Auto-unskip and auto-respawn are saved as changes through the list's sync
           // engine, like the user's own, so they stay in order with them and are retried.
+          // A view-only collaborator can't save them (the server refuses with 403, which the
+          // engine reports as a sync error), so their list only shows the result.
           // Auto-unskip items older than 4 hours
           if (base.skipped_at && now - new Date(base.skipped_at).getTime() > FOUR_HOURS) {
-            getSyncEngine(listId).add({
+            if (canSave) getSyncEngine(listId).add({
               id: genMutId(),
               type: "skip",
               payload: { listId, itemId: base.id, skipped: false, at: new Date(now).toISOString() },
@@ -133,7 +137,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           // Auto-respawn recurring items past the same 4-hour threshold.
           // Deleting is final — shouldRespawn refuses any row carrying deleted_at.
           if (shouldRespawn(base, now)) {
-            getSyncEngine(listId).add({
+            if (canSave) getSyncEngine(listId).add({
               id: genMutId(),
               type: "restore-recurring",
               payload: { listId, itemId: base.id },

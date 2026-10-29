@@ -395,6 +395,46 @@ describe("useListData failed reads", () => {
     expect(queued()).toEqual([]);
   });
 
+  // A viewer can't save either change (the server answers 403, which the engine drops and
+  // reports as a sync error): the list still shows the item unskipped or respawned, and
+  // nothing is queued or sent.
+  it("a view-only collaborator's list queues and sends no auto-unskip or auto-respawn", async () => {
+    attachEngine();
+    const f = stubRoutes({
+      lists: [{ ...groceries, role: "view" }],
+      items: { items: [
+        { ...milk, skipped_at: fiveHoursAgo() },
+        { ...milk, id: "b", recurring: true, completed: true, completed_at: fiveHoursAgo() },
+      ] },
+      patch: 403,
+    });
+    await render().fetchItems();
+    await settle();
+    const items = render().items;
+    expect(items.find((i) => i.id === "a")?.skipped_at).toBeNull();
+    expect(items.find((i) => i.id === "b")?.completed).toBe(false);
+    expect(patches(f)).toEqual([]);
+    expect(queued()).toEqual([]);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("an editor's list still sends both", async () => {
+    attachEngine();
+    const f = stubRoutes({
+      lists: [{ ...groceries, role: "edit" }],
+      items: { items: [
+        { ...milk, skipped_at: fiveHoursAgo() },
+        { ...milk, id: "b", recurring: true, completed: true, completed_at: fiveHoursAgo() },
+      ] },
+    });
+    await render().fetchItems();
+    await settle();
+    expect(patches(f)).toEqual([
+      { itemId: "a", skipped: false, at: expect.any(String) },
+      { itemId: "b", restoreRecurring: true },
+    ]);
+  });
+
   it("logs nothing when every read succeeds", async () => {
     stubRoutes({ items: { items: [{ ...milk, skipped_at: fiveHoursAgo() }] } });
     await render().fetchItems();
