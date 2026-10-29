@@ -38,23 +38,36 @@ export function buildRecipientList(
   return out;
 }
 
-/** Fetch owner + approved collaborators for a list and build the recipient list (sender excluded). */
+/**
+ * Fetch owner + approved collaborators for a list and build the recipient list (sender excluded).
+ * A failed read is logged and thrown: an empty answer would tell the sender "no one to notify"
+ * while the members were never told.
+ */
 export async function resolveListRecipients(
   supabase: SupabaseClient,
   listId: string,
   senderUserId: string
 ): Promise<Recipient[]> {
-  const { data: listWithOwner } = await supabase
+  // maybeSingle: a list row that is gone only means there is no owner to notify.
+  const { data: listWithOwner, error: ownerError } = await supabase
     .from("lists")
     .select("owner_id, users!lists_owner_id_fkey(id, telegram_id, language)")
     .eq("id", listId)
-    .single();
+    .maybeSingle();
+  if (ownerError) {
+    console.error("[ListNotify] Owner read failed:", { listId }, ownerError);
+    throw new Error("Recipient lookup failed", { cause: ownerError });
+  }
 
-  const { data: collaborators } = await supabase
+  const { data: collaborators, error: collabError } = await supabase
     .from("collaborators")
     .select("user_id, users!collaborators_user_id_fkey(id, telegram_id, language)")
     .eq("list_id", listId)
     .eq("status", "approved");
+  if (collabError) {
+    console.error("[ListNotify] Collaborators read failed:", { listId }, collabError);
+    throw new Error("Recipient lookup failed", { cause: collabError });
+  }
 
   const candidates = candidatesFromRows(
     listWithOwner as unknown as OwnerRow,

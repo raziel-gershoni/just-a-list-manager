@@ -6,10 +6,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { jwtVerify } from "jose";
+import { z } from "zod";
 import { validateInitData } from "./telegram-auth";
 import { checkRateLimit, getRateLimitHeaders } from "./rate-limit";
 import { createServerClient } from "./supabase";
 import { getJwtSecret } from "./jwt";
+import { dbError } from "./api-errors";
 
 export interface DbUser {
   id: string; // UUID
@@ -119,15 +121,23 @@ export async function verifyUserAuth(
     };
   }
 
-  // Look up user in DB
+  // Look up user in DB. maybeSingle: no row is a user who never opened the app (404);
+  // an error is a failed read, answered 500 so it is never mistaken for a missing user.
   const supabase = createServerClient();
   const { data: user, error } = await supabase
     .from("users")
     .select("id, telegram_id, name, username, language")
     .eq("telegram_id", telegramUser.id)
-    .single();
+    .maybeSingle();
 
-  if (error || !user) {
+  if (error) {
+    return {
+      success: false,
+      response: dbError(endpointName, "User lookup", error, { telegramUserId: telegramUser.id }),
+    };
+  }
+
+  if (!user) {
     console.warn(`[${endpointName}] User not found: ${telegramUser.id}`);
     return {
       success: false,
@@ -146,23 +156,38 @@ export async function verifyUserAuth(
   };
 }
 
+const listIdSchema = z.string().uuid();
+
 /**
  * Check if a user has the required permission level on a list.
+ * A failed read is logged and thrown, so the route answers 500 (which the offline queue
+ * retries) instead of a false 403 (which it drops). A missing row is a plain "not allowed".
+ * A list id that is not a uuid (a stale deep link) is denied without a database call: the
+ * database would reject it as a malformed uuid, which is not a failure worth retrying.
  */
 export async function verifyListPermission(
   userId: string,
   listId: string,
   requiredPermission: "view" | "edit"
 ): Promise<{ allowed: boolean; role: "owner" | "editor" | "viewer" | null }> {
+  if (!listIdSchema.safeParse(listId).success) {
+    return { allowed: false, role: null };
+  }
+
   const supabase = createServerClient();
 
   // Check if user is owner
-  const { data: list } = await supabase
+  const { data: list, error: listError } = await supabase
     .from("lists")
     .select("owner_id")
     .eq("id", listId)
     .is("deleted_at", null)
-    .single();
+    .maybeSingle();
+
+  if (listError) {
+    console.error("[Permission] List read failed:", { userId, listId }, listError);
+    throw new Error("Permission check failed", { cause: listError });
+  }
 
   if (!list) {
     return { allowed: false, role: null };
@@ -173,13 +198,18 @@ export async function verifyListPermission(
   }
 
   // Check collaborator status
-  const { data: collab } = await supabase
+  const { data: collab, error: collabError } = await supabase
     .from("collaborators")
     .select("permission, status")
     .eq("list_id", listId)
     .eq("user_id", userId)
     .eq("status", "approved")
-    .single();
+    .maybeSingle();
+
+  if (collabError) {
+    console.error("[Permission] Collaborator read failed:", { userId, listId }, collabError);
+    throw new Error("Permission check failed", { cause: collabError });
+  }
 
   if (!collab) {
     return { allowed: false, role: null };
