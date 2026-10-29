@@ -5,6 +5,7 @@ import { createServerClient } from "@/src/lib/supabase";
 import { unskipAllSchema } from "@/src/schemas/items";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { dbError } from "@/src/lib/api-errors";
+import { updateInBatches } from "@/src/lib/bulk-update";
 
 export async function POST(
   request: NextRequest,
@@ -32,13 +33,15 @@ export async function POST(
   // ids means a late or replayed request can't restore anything skipped after the tap.
   // Only skipped_at is written, so no completed/deleted filter is needed: an item ticked
   // off or deleted meanwhile just loses a stale skip. Positions are kept.
-  const { data: restored, error } = await supabase
-    .from("items")
-    .update({ skipped_at: null })
-    .in("id", parsed.data.itemIds)
-    .eq("list_id", listId)
-    .not("skipped_at", "is", null)
-    .select("id");
+  const { data: restored, error } = await updateInBatches(parsed.data.itemIds, (batch) =>
+    supabase
+      .from("items")
+      .update({ skipped_at: null })
+      .in("id", batch)
+      .eq("list_id", listId)
+      .not("skipped_at", "is", null)
+      .select("id")
+  );
 
   if (error) return dbError("items/unskip-all/POST", "Unskip", error, { listId });
 

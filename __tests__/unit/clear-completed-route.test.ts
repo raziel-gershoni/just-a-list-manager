@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { fakeItemsTable, itemRow, type ItemRow } from "../helpers/fake-items-table";
+import { fakeSupabase } from "../helpers/fake-supabase";
 
 // Runs the real route over an in-memory items table; auth and the rate limiter are faked.
 // H11: Clear completed acts only on the completed items the user's screen showed.
 const h = vi.hoisted(() => ({
-  db: null as unknown as { client: unknown; calls: { op: string }[]; rows: ItemRow[] },
+  db: null as unknown as { client: unknown; calls: { op: string; filters: string[] }[]; rows: ItemRow[] },
 }));
 vi.mock("@/src/lib/rate-limit", () => ({ apiRateLimiter: {} }));
 vi.mock("@/src/lib/api-auth", () => ({
@@ -86,5 +87,44 @@ describe("POST /api/lists/[id]/items/clear-completed", () => {
     expect(res.status).toBe(400);
     expect(h.db.calls).toEqual([]);
     expect(deleted()).toEqual([]);
+  });
+
+  // C14: PostgREST puts every id of an .in() filter in the URL, so 500 ids (about 19.7 KB)
+  // can pass a gateway's request-line limit. The ids go out in batches instead.
+  describe("a big list", () => {
+    const ids = Array.from({ length: 250 }, (_, i) => `0b8f6c1e-2f4a-4c3b-9d1e-${String(i).padStart(12, "0")}`);
+    const idsPerCall = () =>
+      h.db.calls.filter((c) => c.op === "update").map((c) => c.filters.find((f) => f.startsWith("in:id="))!.slice("in:id=".length).split(","));
+
+    it("clears 250 ids in batches of at most 100, every id once, and merges the cleared ids", async () => {
+      h.db = fakeItemsTable(ids.map((id, i) => itemRow({ id, text: `item ${i}`, ...done })));
+
+      const res = await clear({ itemIds: ids });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cleared).toBe(250);
+      expect([...body.clearedIds].sort()).toEqual([...ids].sort());
+      const calls = idsPerCall();
+      expect(calls.length).toBeGreaterThan(1);
+      expect(Math.max(...calls.map((c) => c.length))).toBeLessThanOrEqual(100);
+      expect(calls.flat().sort()).toEqual([...ids].sort());
+      expect(deleted()).toHaveLength(250);
+    });
+
+    it("answers 500 when a later batch fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      let updates = 0;
+      const failing = fakeSupabase((call) => {
+        if (call.op === "update" && ++updates === 2) return { data: null, error: { message: "boom" } };
+        return { data: [], error: null };
+      });
+      h.db = { client: failing.client, calls: failing.calls, rows: [] };
+
+      const res = await clear({ itemIds: ids });
+
+      expect(res.status).toBe(500);
+      expect(updates).toBe(2);
+    });
   });
 });

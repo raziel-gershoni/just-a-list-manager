@@ -5,6 +5,7 @@ import { createServerClient } from "@/src/lib/supabase";
 import { dbError } from "@/src/lib/api-errors";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { unmarkCompletedSchema } from "@/src/schemas/items";
+import { updateInBatches } from "@/src/lib/bulk-update";
 
 export async function POST(
   request: NextRequest,
@@ -29,15 +30,20 @@ export async function POST(
   const supabase = createServerClient();
 
   // Flip the completed items the user saw back to active (non-destructive). Scoping to their
-  // ids means an item ticked by a collaborator a moment ago is never unmarked.
-  const { data: unmarked, error } = await supabase
-    .from("items")
-    .update({ completed: false, completed_at: null })
-    .in("id", parsed.data.itemIds)
-    .eq("list_id", listId)
-    .eq("completed", true)
-    .is("deleted_at", null)
-    .select("id");
+  // ids means an item ticked by a collaborator a moment ago is never unmarked. Recurring
+  // staples are excluded, as in clear-completed: a parked one lives in the Recurring drawer,
+  // not on the Completed screen this action acts on, and respawns on its own clock.
+  const { data: unmarked, error } = await updateInBatches(parsed.data.itemIds, (batch) =>
+    supabase
+      .from("items")
+      .update({ completed: false, completed_at: null })
+      .in("id", batch)
+      .eq("list_id", listId)
+      .eq("completed", true)
+      .eq("recurring", false)
+      .is("deleted_at", null)
+      .select("id")
+  );
 
   if (error) return dbError("items/unmark-completed/POST", "Unmark completed", error, { listId });
 
