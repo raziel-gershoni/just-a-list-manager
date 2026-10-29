@@ -12,6 +12,22 @@ import { findCompletedExactMatch } from "@/src/utils/search-completed-items";
 import { throwIfNotOk } from "@/src/utils/http";
 import { restoreItemsOnServer, type RestoreBody } from "@/src/utils/item-restore";
 
+/**
+ * The ids a bulk route (Clear completed, Unmark all) says it changed, from its `field`. An
+ * answer without them is taken as every id sent, which is what the route acts on when no
+ * one else touched those rows.
+ */
+async function changedIds(res: Response, field: string, sent: string[]): Promise<Set<string>> {
+  try {
+    const ids = ((await res.json()) as Record<string, unknown> | null)?.[field];
+    if (Array.isArray(ids)) return new Set(ids.filter((id): id is string => typeof id === "string"));
+    console.warn("[List] Bulk answer has no changed ids, taking every id sent:", { field });
+  } catch (err) {
+    console.warn("[List] Bulk answer unreadable, taking every id sent:", { field }, err);
+  }
+  return new Set(sent);
+}
+
 interface UseItemHandlersParams {
   listId: string;
   jwtRef: React.RefObject<string | null>;
@@ -452,9 +468,10 @@ export function useItemHandlers({
     // src/utils/clear-completed.ts)
     setItems((prev) => computeClearCompleted(prev).remaining);
 
-    // Set when the bulk POST itself failed: the server never cleared these items, so an
-    // Undo tapped while it was in flight must not take them off again if its restore fails.
-    let bulkFailed = false;
+    // The ids the server cleared, or null when the clear failed; never rejects. The Undo
+    // restores on the server only once the clear has landed (a restore that got there first
+    // would be cleared by it), and only what it cleared, never a row a collaborator deleted.
+    let cleared: Promise<Set<string> | null> = Promise.resolve(new Set<string>());
     const timeout = setTimeout(() => setUndoAction(null), 4000);
     setUndoAction({
       message: t('items.clearedCount', { count: completedItems.length }),
@@ -462,39 +479,40 @@ export function useItemHandlers({
         clearTimeout(timeout);
         setUndoAction(null);
         setItems((prev) => [...prev, ...completedItems]);
-        // Restore on server what the clear sent; items whose restore fails leave the screen again.
-        restoreOrRevert(
-          itemIds.map((itemId) => ({ itemId, deleted_at: null })),
-          (failed) => {
-            if (bulkFailed) return;
-            removeAgain(failed);
-          }
-        );
+        // Items whose restore fails leave the screen again. After a failed clear the server
+        // changed nothing, so there is nothing to restore.
+        void cleared.then((ids) => {
+          if (!ids) return;
+          restoreOrRevert([...ids].map((itemId) => ({ itemId, deleted_at: null })), removeAgain);
+        });
       },
       timeout,
     });
 
     if (itemIds.length === 0) return;
-    try {
-      const res = await fetch(`/api/lists/${listId}/items/clear-completed`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ itemIds }),
+    cleared = fetch(`/api/lists/${listId}/items/clear-completed`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ itemIds }),
+    })
+      .then((res) => {
+        throwIfNotOk(res, "Clear completed");
+        return changedIds(res, "clearedIds", itemIds);
+      })
+      .catch((err) => {
+        // Not in the offline queue: put the items back so the screen matches the server.
+        console.error("[List] Clear completed failed:", { listId }, err);
+        clearTimeout(timeout);
+        setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
+        // Skip items already back on screen (an Undo tapped before this failed).
+        setItems((prev) => {
+          const present = new Set(prev.map((i) => i.id));
+          return [...prev, ...completedItems.filter((i) => !present.has(i.id))];
+        });
+        showSyncError();
+        return null;
       });
-      throwIfNotOk(res, "Clear completed");
-    } catch (err) {
-      // Not in the offline queue: put the items back so the screen matches the server.
-      bulkFailed = true;
-      console.error("[List] Clear completed failed:", { listId }, err);
-      clearTimeout(timeout);
-      setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
-      // Skip items already back on screen (an Undo tapped before this failed).
-      setItems((prev) => {
-        const present = new Set(prev.map((i) => i.id));
-        return [...prev, ...completedItems.filter((i) => !present.has(i.id))];
-      });
-      showSyncError();
-    }
+    await cleared;
   }, [jwtRef, listId, items, t, setItems, setUndoAction, restoreOrRevert, removeAgain, showSyncError]);
 
   const handleUnmarkAllDone = useCallback(async () => {
@@ -518,9 +536,10 @@ export function useItemHandlers({
     setItems((prev) => computeUnmarkCompleted(prev).next);
 
     const idSet = new Set(affectedIds);
-    // Set when the bulk POST itself failed: the server never unmarked these items, so an
-    // Undo tapped while it was in flight must not uncheck them if its restore fails.
-    let bulkFailed = false;
+    // The ids the server unmarked, or null when the unmark failed; never rejects. The Undo
+    // re-checks on the server only once the unmark has landed (a re-check that got there
+    // first would be unticked by it), and only what it unmarked.
+    let unmarked: Promise<Set<string> | null> = Promise.resolve(new Set<string>());
     const timeout = setTimeout(() => setUndoAction(null), 4000);
     setUndoAction({
       message: t('items.unmarkedCount', { count: affectedIds.length }),
@@ -535,43 +554,48 @@ export function useItemHandlers({
               : i
           )
         );
-        // Restore on server; items whose restore fails are unchecked again.
-        restoreOrRevert(
-          itemIds.map((id) => ({ itemId: id, completed: true })),
-          (failed) => {
-            if (bulkFailed) return;
-            setItems((prev) =>
-              prev.map((i) => (failed.has(i.id) ? { ...i, completed: false, completed_at: null } : i))
-            );
-          }
-        );
+        // Items whose restore fails are unchecked again. After a failed unmark the server
+        // changed nothing, so there is nothing to restore.
+        void unmarked.then((ids) => {
+          if (!ids) return;
+          restoreOrRevert(
+            [...ids].map((id) => ({ itemId: id, completed: true })),
+            (failed) =>
+              setItems((prev) =>
+                prev.map((i) => (failed.has(i.id) ? { ...i, completed: false, completed_at: null } : i))
+              )
+          );
+        });
       },
       timeout,
     });
 
     if (itemIds.length === 0) return;
-    try {
-      const res = await fetch(`/api/lists/${listId}/items/unmark-completed`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ itemIds }),
+    unmarked = fetch(`/api/lists/${listId}/items/unmark-completed`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ itemIds }),
+    })
+      .then((res) => {
+        throwIfNotOk(res, "Unmark all");
+        return changedIds(res, "unmarkedIds", itemIds);
+      })
+      .catch((err) => {
+        // Not in the offline queue: re-check the items so the screen matches the server.
+        console.error("[List] Unmark all failed:", { listId }, err);
+        clearTimeout(timeout);
+        setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
+        setItems((prev) =>
+          prev.map((i) =>
+            completedAtById.has(i.id)
+              ? { ...i, completed: true, completed_at: completedAtById.get(i.id) ?? null }
+              : i
+          )
+        );
+        showSyncError();
+        return null;
       });
-      throwIfNotOk(res, "Unmark all");
-    } catch (err) {
-      // Not in the offline queue: re-check the items so the screen matches the server.
-      bulkFailed = true;
-      console.error("[List] Unmark all failed:", { listId }, err);
-      clearTimeout(timeout);
-      setUndoAction((prev) => (prev?.timeout === timeout ? null : prev));
-      setItems((prev) =>
-        prev.map((i) =>
-          completedAtById.has(i.id)
-            ? { ...i, completed: true, completed_at: completedAtById.get(i.id) ?? null }
-            : i
-        )
-      );
-      showSyncError();
-    }
+    await unmarked;
   }, [jwtRef, listId, items, t, setItems, setUndoAction, restoreOrRevert, showSyncError]);
 
   const sendSignal = useCallback(

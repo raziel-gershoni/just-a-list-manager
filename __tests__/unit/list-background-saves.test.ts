@@ -48,7 +48,7 @@ function world(initial: ItemData[]) {
   const sent: { key: string; body: unknown }[] = [];
   // What a bulk route answers: by default it changed every id it was sent, as the real
   // routes do when nothing else touched those rows.
-  const changed = new Map<string, string[]>();
+  const changed = new Map<string, string[] | null>();
   // The count the last Undo toast showed.
   let undoCount: unknown;
   // What the handlers queued, in order: "<type> <itemId | recycleId | text>".
@@ -62,9 +62,11 @@ function world(initial: ItemData[]) {
     const reply = replies.get(key)?.shift() ?? 200;
     if (reply === "neterr") throw new TypeError("Failed to fetch");
     const status = reply === "hold" ? await new Promise<number>((resolve) => held.set(key, resolve)) : reply;
+    const ids = changed.has(key) ? changed.get(key) : body?.itemIds;
     const answer =
-      key === "POST clear-completed" ? { clearedIds: changed.get(key) ?? body.itemIds }
-      : key === "POST unmark-completed" ? { unmarkedIds: changed.get(key) ?? body.itemIds }
+      ids === null ? {}
+      : key === "POST clear-completed" ? { clearedIds: ids }
+      : key === "POST unmark-completed" ? { unmarkedIds: ids }
       : {};
     return { ok: status >= 200 && status < 300, status, json: async () => answer };
   }));
@@ -118,8 +120,8 @@ function world(initial: ItemData[]) {
     h,
     realtime,
     when: (key: string, ...r: Reply[]) => replies.set(key, r),
-    // The ids a bulk route says it changed (its clearedIds / unmarkedIds).
-    changes: (key: string, ids: string[]) => changed.set(key, ids),
+    // The ids a bulk route says it changed (its clearedIds / unmarkedIds); null leaves them out.
+    changes: (key: string, ids: string[] | null) => changed.set(key, ids),
     undoCount: () => undoCount,
     release: (key: string, status: number) => held.get(key)!(status),
     ids: () => items.map((i) => i.id).sort(),
@@ -200,11 +202,9 @@ describe("Clear completed fails", () => {
     expect(w.errorToast()).toBe("items.syncError");
   });
 
-  it("an Undo tapped while the clear is in flight does not revert when the clear then fails and its restore fails too", async () => {
+  it("an Undo tapped while the clear is in flight sends nothing when the clear then fails", async () => {
     const w = world(listItems());
     w.when("POST clear-completed", "hold");
-    w.when("PATCH b", "hold");
-    w.when("PATCH c", "hold");
 
     const clearing = w.h().handleClearCompleted();
     await settle();
@@ -212,14 +212,35 @@ describe("Clear completed fails", () => {
     await settle();
     w.release("POST clear-completed", 500);
     await clearing;
-    w.release("PATCH b", 503);
-    w.release("PATCH c", 503);
     await settle();
 
-    // The server never cleared anything, so the failed restores must not take the items off.
+    // The server never cleared anything, so there is nothing to restore.
+    expect(w.sent.map((s) => s.key)).toEqual(["POST clear-completed"]);
     expect(w.ids()).toEqual(["a", "b", "c"]);
     expect(w.item("b")).toMatchObject({ completed: true, completed_at: DONE_A, deleted_at: null });
     expect(w.item("c")).toMatchObject({ completed: true, completed_at: DONE_B, deleted_at: null });
+    expect(w.errorToast()).toBe("items.syncError");
+  });
+
+  it("an Undo tapped while the clear is in flight restores only once the clear has landed", async () => {
+    const w = world(listItems());
+    w.when("POST clear-completed", "hold");
+
+    const clearing = w.h().handleClearCompleted();
+    await settle();
+    w.undoAction()!.undo();
+    await settle();
+    // A restore sent now could land first and be cleared by the late clear.
+    expect(w.sent.map((s) => s.key)).toEqual(["POST clear-completed"]);
+    expect(w.ids()).toEqual(["a", "b", "c"]);
+
+    w.release("POST clear-completed", 200);
+    await clearing;
+    await settle();
+
+    expect(w.sent.map((s) => s.key)).toEqual(["POST clear-completed", "PATCH b", "PATCH c"]);
+    expect(w.ids()).toEqual(["a", "b", "c"]);
+    expect(w.errorToast()).toBeNull();
   });
 
   it("a realtime INSERT for a cleared item that lands before the failure is merged back once", async () => {
@@ -293,11 +314,9 @@ describe("Unmark all done fails", () => {
     expect(w.errorToast()).toBe("items.syncError");
   });
 
-  it("an Undo tapped while the unmark is in flight does not revert when the unmark then fails and its restore fails too", async () => {
+  it("an Undo tapped while the unmark is in flight sends nothing when the unmark then fails", async () => {
     const w = world(listItems());
     w.when("POST unmark-completed", "hold");
-    w.when("PATCH a", "hold");
-    w.when("PATCH b", "hold");
 
     const unmarking = w.h().handleUnmarkAllDone();
     await settle();
@@ -305,14 +324,36 @@ describe("Unmark all done fails", () => {
     await settle();
     w.release("POST unmark-completed", 500);
     await unmarking;
-    w.release("PATCH a", 503);
-    w.release("PATCH b", 503);
     await settle();
 
-    // The server never unmarked anything, so the failed restores must not uncheck the items.
+    // The server never unmarked anything, so there is nothing to restore.
+    expect(w.sent.map((s) => s.key)).toEqual(["POST unmark-completed"]);
     expect(w.item("a")).toMatchObject({ completed: true, completed_at: DONE_A });
     expect(w.item("b")).toMatchObject({ completed: true, completed_at: DONE_B });
     expect(w.item("c")).toMatchObject({ completed: false, completed_at: null });
+    expect(w.errorToast()).toBe("items.syncError");
+  });
+
+  it("an Undo tapped while the unmark is in flight re-checks on the server only once the unmark has landed", async () => {
+    const w = world(listItems());
+    w.when("POST unmark-completed", "hold");
+
+    const unmarking = w.h().handleUnmarkAllDone();
+    await settle();
+    w.undoAction()!.undo();
+    await settle();
+    // A re-check sent now could land first and be unticked by the late unmark.
+    expect(w.sent.map((s) => s.key)).toEqual(["POST unmark-completed"]);
+    expect(w.item("a")?.completed).toBe(true);
+
+    w.release("POST unmark-completed", 200);
+    await unmarking;
+    await settle();
+
+    expect(w.sent.map((s) => s.key)).toEqual(["POST unmark-completed", "PATCH a", "PATCH b"]);
+    expect(w.item("a")?.completed).toBe(true);
+    expect(w.item("b")?.completed).toBe(true);
+    expect(w.errorToast()).toBeNull();
   });
 
   it("an unmark the server accepted stays unmarked, with no error", async () => {
@@ -385,6 +426,52 @@ describe("Undo restores on the list page", () => {
     expect(w.sent.map((s) => s.key)).toEqual(["POST clear-completed", "PATCH b"]);
     expect(w.ids()).toEqual(["b", "temp-x"]);
     expect(w.errorToast()).toBeNull();
+  });
+
+  it("Undo of a clear restores only what the server cleared, never a row a collaborator had deleted", async () => {
+    const w = world([
+      item({ id: "b", completed: true, completed_at: DONE_A }),
+      item({ id: "c", completed: true, completed_at: DONE_B }),
+    ]);
+    // c was deleted by a collaborator just before; the clear skipped it.
+    w.changes("POST clear-completed", ["b"]);
+
+    await w.h().handleClearCompleted();
+    w.undoAction()!.undo();
+    await settle();
+
+    expect(w.sent.map((s) => s.key)).toEqual(["POST clear-completed", "PATCH b"]);
+  });
+
+  it("Undo of unmark all re-checks only what the server unmarked, with no false error", async () => {
+    const w = world([
+      item({ id: "a", completed: true, completed_at: DONE_A }),
+      item({ id: "b", completed: true, completed_at: DONE_B }),
+    ]);
+    w.changes("POST unmark-completed", ["a"]);
+
+    await w.h().handleUnmarkAllDone();
+    w.undoAction()!.undo();
+    await settle();
+
+    expect(w.sent.map((s) => s.key)).toEqual(["POST unmark-completed", "PATCH a"]);
+    expect(w.errorToast()).toBeNull();
+  });
+
+  it("Undo of a clear whose answer names no ids restores every id it sent, and says why in the log", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const w = world([
+      item({ id: "b", completed: true, completed_at: DONE_A }),
+      item({ id: "c", completed: true, completed_at: DONE_B }),
+    ]);
+    w.changes("POST clear-completed", null);
+
+    await w.h().handleClearCompleted();
+    w.undoAction()!.undo();
+    await settle();
+
+    expect(w.sent.map((s) => s.key)).toEqual(["POST clear-completed", "PATCH b", "PATCH c"]);
+    expect(warn).toHaveBeenCalledWith("[List] Bulk answer has no changed ids, taking every id sent:", { field: "clearedIds" });
   });
 
   it("Undo of a clear takes off again only the items whose restore failed", async () => {
