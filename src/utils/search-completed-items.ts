@@ -15,7 +15,8 @@ function ts(s: string | null): number | null {
 /**
  * Local equivalent of findRecyclableItems: completed, non-deleted items whose text
  * contains the query (case-insensitive), most recently completed first, top `limit`.
- * Must mirror the server, which re-validates every recycle against its own result.
+ * The top-10 limit applies to the suggestion list only; a recycle is validated by id and
+ * normalized text (recycleItem), not against this list.
  */
 export function searchCompletedItems(items: ItemData[], query: string, limit = 10): Suggestion[] {
   const canonical = normalizeForStorage(query);

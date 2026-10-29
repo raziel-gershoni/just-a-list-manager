@@ -397,7 +397,7 @@ export function useItemHandlers({
 
       // Find all non-deleted items matching text (normalized)
       const normalized = normalizeForCompare(text);
-      // The active copy (the row whose badge was tapped) is kept, then the highest position.
+      // An active copy is kept (the highest-position one if several), else the highest-position copy.
       // Completed and skipped copies are history: a drag renumbers active rows 1..N while
       // done rows keep their large creation-time positions, so position alone would keep them.
       const matches = items
