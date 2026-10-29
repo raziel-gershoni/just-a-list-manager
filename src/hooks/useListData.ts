@@ -26,6 +26,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [error, setError] = useState(false);
   // The list is gone for this user (deleted, or access removed): a 403/404 that Retry can't fix.
   const [notFound, setNotFound] = useState(false);
+  // The same, readable at once: a caller that awaited a failed load can tell a gone list
+  // (nothing to retry) from one that may still load, before the state reaches a render.
+  const unavailableRef = useRef(false);
   const [isShared, setIsShared] = useState(false);
   const [listType, setListType] = useState<ListType>("regular");
   const [listIcon, setListIcon] = useState<ListIconName | null>(null);
@@ -67,6 +70,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       // The session gave up signing in: leave the placeholders for the error screen, where
       // the connection banner says why. A later token loads the list (the page reruns this).
       console.warn("[List] Load skipped, no session:", { listId });
+      unavailableRef.current = false;
       setNotFound(false);
       setError(true);
       setLoading(false);
@@ -77,6 +81,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       // request is out, never an empty list that accepts input.
       setLoading(true);
       setError(false);
+      unavailableRef.current = false;
       setNotFound(false);
       // Fetch list info
       let currentListType: ListType = "regular";
@@ -167,7 +172,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         return true;
       }
       console.warn("[List] Load items failed:", { listId, status: res.status });
-      setNotFound(res.status === 403 || res.status === 404);
+      unavailableRef.current = res.status === 403 || res.status === 404;
+      setNotFound(unavailableRef.current);
       setError(true);
       return false;
     } catch (e) {
@@ -196,6 +202,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       // not-found view, as the first load does. Resolve, because retrying can never clear it.
       if (res.status === 403 || res.status === 404) {
         console.warn("[List] Background refresh: list unavailable:", { listId, status: res.status });
+        unavailableRef.current = true;
         setNotFound(true);
         setError(true);
         return;
@@ -260,5 +267,5 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     if (listType === "grocery") await loadCategories();
   }, [jwtRef, listId, listType, loadCategories]);
 
-  return { listName, setListName, items, setItems, loading, error, notFound, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting };
+  return { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting };
 }

@@ -54,7 +54,7 @@ export default function ListPage() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, notFound, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting } =
+  const { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -202,10 +202,13 @@ export default function ListPage() {
   }, [fetchItems]);
   const refreshForReconnect = useCallback(async () => {
     if (loadedOkRef.current) return refreshItems();
-    // A failed load rejects, so the orchestrator retries and the banner never claims success
-    // over the error screen.
-    if (!(await loadList())) throw new Error("List load failed");
-  }, [refreshItems, loadList]);
+    if (await loadList()) return;
+    // A list that is gone for this user (403/404) keeps its not-found view: resolve, because
+    // retrying can never clear it. Any other failed load rejects, so the orchestrator retries
+    // and the banner never claims success over the error screen.
+    if (unavailableRef.current) return;
+    throw new Error("List load failed");
+  }, [refreshItems, loadList, unavailableRef]);
 
   // Register orchestrator callbacks
   useEffect(() => {

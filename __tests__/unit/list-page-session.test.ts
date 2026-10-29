@@ -235,6 +235,21 @@ describe("a list whose first load failed, once the connection is back (C27)", ()
     expect(hasText(await settle(), "lists.loadError")).toBe(true);
   });
 
+  it("a first load that finds the list gone: the registered refresh resolves and the not-found view stays", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      const json = (ok: boolean, status: number, body: unknown) => ({ ok, status, json: async () => body });
+      if (url.startsWith("/api/lists/L/items")) return json(false, 403, { error: "Forbidden" });
+      if (url.startsWith("/api/lists")) return json(true, 200, []);
+      throw new Error(`unexpected ${url}`);
+    });
+    expect(hasText(await settle(), "errors.notFound")).toBe(true);
+    // Retrying can never clear it, so the reconnect must not spin its retry loop over it.
+    await expect(refresh()).resolves.toBeUndefined();
+    const tree = await settle();
+    expect(hasText(tree, "errors.notFound")).toBe(true);
+    expect(header(tree)).toBeUndefined();
+  });
+
   it("after one good load the registered refresh only merges items", async () => {
     listsOk = true;
     await settle();
