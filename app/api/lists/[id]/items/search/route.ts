@@ -24,6 +24,12 @@ export async function GET(
     return NextResponse.json({ items: [] });
   }
 
-  const items = await findRecyclableItems(listId, query.trim());
-  return NextResponse.json({ items });
+  try {
+    const items = await findRecyclableItems(listId, query.trim());
+    return NextResponse.json({ items });
+  } catch (err) {
+    // The recycler logs the database error too; this adds the list and answers a retryable 500 instead of an uncaught one.
+    console.error("[items/search] Recyclable items search failed:", { listId }, err);
+    return NextResponse.json({ error: "Search failed" }, { status: 500 });
+  }
 }
