@@ -34,6 +34,8 @@ import { POST as listsReorderPOST } from "@/app/api/lists/reorder/route";
 import { POST as itemsReorderPOST } from "@/app/api/lists/[id]/items/reorder/route";
 import { POST as itemsPOST, PATCH as itemsPATCH } from "@/app/api/lists/[id]/items/route";
 import { POST as unskipAllPOST } from "@/app/api/lists/[id]/items/unskip-all/route";
+import { POST as clearCompletedPOST } from "@/app/api/lists/[id]/items/clear-completed/route";
+import { POST as unmarkCompletedPOST } from "@/app/api/lists/[id]/items/unmark-completed/route";
 import { POST as categoriesPOST } from "@/app/api/lists/[id]/categories/route";
 import { PATCH as categoryPATCH } from "@/app/api/lists/[id]/categories/[categoryId]/route";
 import { PUT as categoryOrderPUT } from "@/app/api/lists/[id]/categories/order/route";
@@ -60,6 +62,8 @@ const ROUTES: [string, string, string, (r: NextRequest) => Promise<Response>, un
   ["POST items", "POST", "items/POST", (r) => itemsPOST(r, listCtx), { text: "milk" }],
   ["PATCH items", "PATCH", "items/PATCH", (r) => itemsPATCH(r, listCtx), { itemId: ITEM, completed: true }],
   ["POST items/unskip-all", "POST", "items/unskip-all/POST", (r) => unskipAllPOST(r, listCtx), { itemIds: [ITEM] }],
+  ["POST items/clear-completed", "POST", "items/clear-completed/POST", (r) => clearCompletedPOST(r, listCtx), { itemIds: [ITEM] }],
+  ["POST items/unmark-completed", "POST", "items/unmark-completed/POST", (r) => unmarkCompletedPOST(r, listCtx), { itemIds: [ITEM] }],
   ["POST categories", "POST", "categories/POST", (r) => categoriesPOST(r, listCtx), { name: "Pets", locale: "en" }],
   ["PATCH categories/[categoryId]", "PATCH", "categories/PATCH", (r) => categoryPATCH(r, catCtx), { name: "Pets", locale: "en" }],
   ["PUT categories/order", "PUT", "categories/order/PUT", (r) => categoryOrderPUT(r, listCtx), { orderedIds: [CAT] }],

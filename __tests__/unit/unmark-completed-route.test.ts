@@ -1,51 +1,79 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-supabase";
+import { fakeItemsTable, itemRow, type ItemRow } from "../helpers/fake-items-table";
 
+// Runs the real route over an in-memory items table; auth and the rate limiter are faked.
+// H11: Unmark all acts only on the completed items the user's screen showed.
 const h = vi.hoisted(() => ({
-  fake: null as unknown as { client: unknown; calls: { table: string; op: string; values?: unknown; filters: string[] }[] },
+  db: null as unknown as { client: unknown; calls: { table: string; op: string }[]; rows: ItemRow[] },
 }));
 vi.mock("@/src/lib/rate-limit", () => ({ apiRateLimiter: {} }));
 vi.mock("@/src/lib/api-auth", () => ({
   verifyUserAuth: async () => ({ success: true, userId: "u1" }),
   verifyListPermission: async () => ({ allowed: true, role: "owner" }),
 }));
-vi.mock("@/src/lib/supabase", () => ({ createServerClient: () => h.fake.client }));
+vi.mock("@/src/lib/supabase", () => ({ createServerClient: () => h.db.client }));
 
 import { POST } from "@/app/api/lists/[id]/items/unmark-completed/route";
 
+const MILK = "0b8f6c1e-2f4a-4c3b-9d1e-5a6b7c8d9e02";
+const EGGS = "0b8f6c1e-2f4a-4c3b-9d1e-5a6b7c8d9e03";
+const BREAD = "0b8f6c1e-2f4a-4c3b-9d1e-5a6b7c8d9e05";
 const params = { params: Promise.resolve({ id: "L" }) };
-const req = () => new NextRequest("https://app.test/api/lists/L/items/unmark-completed", { method: "POST" });
-function use(resolve: (c: FakeCall) => FakeResult) {
-  h.fake = fakeSupabase(resolve) as typeof h.fake;
-}
+const unmark = (body: unknown) =>
+  POST(
+    new NextRequest("https://app.test/api/lists/L/items/unmark-completed", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }),
+    params
+  );
+const done = { completed: true, completed_at: "2026-10-29T09:00:00.000Z" };
+const row = (id: string) => h.db.rows.find((r) => r.id === id)!;
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  h.db = fakeItemsTable([
+    itemRow({ id: MILK, text: "milk", ...done }),
+    itemRow({ id: BREAD, text: "bread", ...done }),
+    // A collaborator ticked eggs a moment ago; this screen never showed it as done.
+    itemRow({ id: EGGS, text: "eggs", ...done }),
+  ]);
+});
 
 describe("POST /api/lists/[id]/items/unmark-completed", () => {
-  it("flips completed items back with a single update and does not read the lists table", async () => {
-    use((c) => c.table === "items" && c.op === "update"
-      ? { data: [{ id: "a" }, { id: "b" }], error: null }
-      : { data: { type: "regular" }, error: null });
-
-    const res = await POST(req(), params);
+  it("flips only the shown completed items back with a single update and does not read the lists table", async () => {
+    const res = await unmark({ itemIds: [MILK, BREAD] });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ unmarked: 2, unmarkedIds: ["a", "b"] });
-    expect(h.fake.calls.map((c) => `${c.table}:${c.op}`)).toEqual(["items:update"]);
-    const [update] = h.fake.calls;
-    expect(update.values).toEqual({ completed: false, completed_at: null });
-    expect([...update.filters].sort()).toEqual(
-      ["eq:completed=true", "eq:list_id=L", "is:deleted_at=null", "select:id"].sort()
-    );
+    expect(await res.json()).toEqual({ unmarked: 2, unmarkedIds: [MILK, BREAD] });
+    expect(h.db.calls.map((c) => `${c.table}:${c.op}`)).toEqual(["items:update"]);
+    expect(row(MILK)).toMatchObject({ completed: false, completed_at: null });
+    expect(row(BREAD)).toMatchObject({ completed: false, completed_at: null });
+    expect(row(EGGS)).toMatchObject(done);
   });
 
-  it("no longer special-cases a list whose stored type is still 'reminders' (no 400)", async () => {
-    use((c) => c.table === "items" && c.op === "update"
-      ? { data: [{ id: "a" }], error: null }
-      : { data: { type: "reminders" }, error: null });
+  it("skips a shown id that is no longer completed, or deleted, or in another list", async () => {
+    row(BREAD).deleted_at = "2026-10-29T08:00:00.000Z";
+    row(EGGS).list_id = "OTHER";
 
-    const res = await POST(req(), params);
+    const res = await unmark({ itemIds: [MILK, BREAD, EGGS] });
 
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ unmarked: 1, unmarkedIds: ["a"] });
+    expect(await res.json()).toEqual({ unmarked: 1, unmarkedIds: [MILK] });
+    expect(row(BREAD)).toMatchObject(done);
+    expect(row(EGGS)).toMatchObject(done);
+  });
+
+  it.each([
+    ["no itemIds field", {}],
+    ["an empty list", { itemIds: [] }],
+    ["an unsynced temp id", { itemIds: [MILK, "temp-1-0.5"] }],
+    ["more than 500 ids", { itemIds: Array.from({ length: 501 }, () => MILK) }],
+  ])("answers 400 and writes nothing for %s", async (_label, body) => {
+    const res = await unmark(body);
+
+    expect(res.status).toBe(400);
+    expect(h.db.calls).toEqual([]);
+    expect(row(MILK)).toMatchObject(done);
   });
 });

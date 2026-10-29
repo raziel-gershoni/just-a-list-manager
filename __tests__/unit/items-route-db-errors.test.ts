@@ -138,8 +138,8 @@ describe("PATCH and DELETE /items", () => {
 
 describe("bulk item routes", () => {
   it.each([
-    ["clear completed", () => CLEAR(req("POST", undefined, "items/clear-completed"), params), "[items/clear-completed/POST] Clear completed failed:"],
-    ["unmark all", () => UNMARK(req("POST", undefined, "items/unmark-completed"), params), "[items/unmark-completed/POST] Unmark completed failed:"],
+    ["clear completed", () => CLEAR(req("POST", { itemIds: [MILK] }, "items/clear-completed"), params), "[items/clear-completed/POST] Clear completed failed:"],
+    ["unmark all", () => UNMARK(req("POST", { itemIds: [MILK] }, "items/unmark-completed"), params), "[items/unmark-completed/POST] Unmark completed failed:"],
     ["restore Not available", () => UNSKIP(req("POST", { itemIds: [MILK] }, "items/unskip-all"), params), "[items/unskip-all/POST] Unskip failed:"],
   ] as const)("%s answers 500 and logs the failed update with its list id", async (_label, call, line) => {
     use(() => ({ data: null, error: boom }));

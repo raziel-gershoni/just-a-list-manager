@@ -35,12 +35,23 @@ export const reorderItemsSchema = z.object({
   orderedIds: z.array(z.string().min(1)).min(1).max(500),
 });
 
-// POST /api/lists/[id]/items/unskip-all
-// .uuid(): the client sends only synced ids; items still on a temp- id are
-// restored through their own queued skip mutation.
-export const unskipAllSchema = z.object({
+// A bulk action's body: the ids of the items the user's screen showed, so the route never
+// touches a row the user did not see (a collaborator's tick a moment ago, or an item whose
+// own change is still queued). .uuid(): the client sends only synced ids; an item still on
+// a temp- id is not on the server yet.
+const shownItemIdsSchema = z.object({
   itemIds: z.array(z.string().uuid()).min(1).max(500),
 });
+
+// POST /api/lists/[id]/items/unskip-all (items on a temp- id are restored through their
+// own queued skip mutation)
+export const unskipAllSchema = shownItemIdsSchema;
+
+// POST /api/lists/[id]/items/clear-completed
+export const clearCompletedSchema = shownItemIdsSchema;
+
+// POST /api/lists/[id]/items/unmark-completed
+export const unmarkCompletedSchema = shownItemIdsSchema;
 
 // GET /api/lists/[id]/items — query params
 export const getItemsQuerySchema = z.object({

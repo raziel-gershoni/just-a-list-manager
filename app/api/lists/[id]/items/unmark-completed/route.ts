@@ -3,6 +3,8 @@ import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
 import { dbError } from "@/src/lib/api-errors";
+import { parseBody, readJsonBody } from "@/src/lib/api-validation";
+import { unmarkCompletedSchema } from "@/src/schemas/items";
 
 export async function POST(
   request: NextRequest,
@@ -20,12 +22,18 @@ export async function POST(
     );
   }
 
+  const body = await readJsonBody(request, "items/unmark-completed/POST");
+  const parsed = parseBody(unmarkCompletedSchema, body);
+  if (!parsed.success) return parsed.response;
+
   const supabase = createServerClient();
 
-  // Flip all completed items back to active (non-destructive)
+  // Flip the completed items the user saw back to active (non-destructive). Scoping to their
+  // ids means an item ticked by a collaborator a moment ago is never unmarked.
   const { data: unmarked, error } = await supabase
     .from("items")
     .update({ completed: false, completed_at: null })
+    .in("id", parsed.data.itemIds)
     .eq("list_id", listId)
     .eq("completed", true)
     .is("deleted_at", null)
