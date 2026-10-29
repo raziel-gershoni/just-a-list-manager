@@ -18,7 +18,7 @@ import CompletedItemsSection from "@/components/list/CompletedItemsSection";
 import ToastContainer from "@/components/list/ToastContainer";
 import { useMutationQueue, type MutationErrorInfo, type QueuedMutation } from "@/src/hooks/useMutationQueue";
 import { getSyncEngine } from "@/src/sync/engine";
-import { applyCreateResult } from "@/src/sync/merge";
+import { applyMutationResult } from "@/src/sync/merge";
 import { coalesce } from "@/src/utils/coalesce";
 import { useListData } from "@/src/hooks/useListData";
 import { useItemHandlers } from "@/src/hooks/useItemHandlers";
@@ -30,7 +30,6 @@ import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { SORTING_GROUP, countByCategory } from "@/src/utils/list-helpers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
 import { throwIfNotOk } from "@/src/utils/http";
-import type { ItemData } from "@/src/types";
 import { DragDropProvider } from "@dnd-kit/react";
 
 const executorFactory = createExecutorFactory();
@@ -108,15 +107,13 @@ export default function ListPage() {
     }
   }, [t, setItems, refreshAfterDrop]);
 
-  // A landed create swaps its temp row for the server's row, keeping the local value of
-  // every field a later change (a tick, an edit, a drag) has not landed yet.
+  // A landed create swaps its temp row for the server's row, and a landed recycle shows the
+  // server's row (back at the top), keeping the local value of every field a later change
+  // (a tick, an edit, a drag) has not landed yet.
   const onMutationSuccess = useCallback((m: QueuedMutation, result: unknown) => {
-    if (m.type !== "create" || typeof m.payload.tempId !== "string") return;
-    const tempId = m.payload.tempId;
-    const row = result as ItemData;
+    if (m.type !== "create" && m.type !== "recycle") return;
     const engine = getSyncEngine(listId);
-    // The realtime INSERT may have put the saved row on screen first: then the temp row just goes.
-    setItems((prev) => applyCreateResult(prev, tempId, row, (id) => engine.pendingFields(id)));
+    setItems((prev) => applyMutationResult(prev, m, result, (id) => engine.pendingFields(id)));
   }, [listId, setItems]);
 
   const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError, onMutationSuccess, requestTokenRefresh);

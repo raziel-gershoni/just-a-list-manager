@@ -230,6 +230,18 @@ describe("the list page and its sync engine", () => {
     ]);
   });
 
+  it("a landed recycle shows the server's row, back at the top", () => {
+    S.items = [item({ id: "a", text: "milk", position: 1 }), item({ id: "b", text: "bread", position: 5 })];
+    render();
+
+    onSuccess()(
+      { id: "m1", type: "recycle", payload: { listId: "L", recycleId: "a", text: "milk" }, timestamp: 0 },
+      item({ id: "a", text: "milk", position: 6 })
+    );
+
+    expect(S.items.find((i) => i.id === "a")).toMatchObject({ position: 6, completed: false });
+  });
+
   it("asks for a fresh token when the engine reports a 401", () => {
     S.requestTokenRefresh = vi.fn();
     render();

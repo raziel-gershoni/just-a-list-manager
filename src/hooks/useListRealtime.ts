@@ -8,7 +8,7 @@ import { useRealtimeList } from "@/src/hooks/useRealtimeList";
 import { lookupUserName } from "@/src/utils/list-helpers";
 import { applyCategoryChange } from "@/src/utils/category-state";
 import { getSyncEngine } from "@/src/sync/engine";
-import { overlayPending } from "@/src/sync/overlay";
+import { overlayPending, withoutCreated } from "@/src/sync/overlay";
 
 interface UseListRealtimeParams {
   supabaseClient: SupabaseClient | null;
@@ -51,13 +51,17 @@ export function useListRealtime({
               editor_name: lookupUserName(prev, newRec.edited_by),
               _pending: false,
             } as ItemData;
-            // Replace pending optimistic item if it matches this server item
+            // Replace pending optimistic item if it matches this server item. A change made to
+            // it after the add and still on its way (queued under the temp id) keeps its
+            // on-screen value.
             const pendingIndex = prev.findIndex(
               (i) => i._pending && i.text === newRec.text
             );
             if (pendingIndex !== -1) {
+              const temp = prev[pendingIndex];
+              const fields = withoutCreated(getSyncEngine(listId).pendingFields(temp.id));
               const updated = [...prev];
-              updated[pendingIndex] = serverItem;
+              updated[pendingIndex] = overlayPending(serverItem, temp, fields);
               return updated;
             }
             return [...prev, serverItem];

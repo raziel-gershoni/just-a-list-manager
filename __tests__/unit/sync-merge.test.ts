@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { overlayPending } from "@/src/sync/overlay";
-import { mergeRefresh, applyCreateResult } from "@/src/sync/merge";
+import { mergeRefresh, applyCreateResult, applyRecycleResult } from "@/src/sync/merge";
 import type { ItemData } from "@/src/types";
 
 const DONE = "2026-10-29T08:00:00.000Z";
@@ -127,5 +127,28 @@ describe("applyCreateResult", () => {
     const temp = item({ id: "temp-1", text: "Kid's cereal", _pending: true, completed: true, completed_at: DONE });
     const out = applyCreateResult([temp], "temp-1", saved, pending({ r1: ["completed", "completed_at"] }));
     expect(out[0]).toMatchObject({ id: "r1", completed: true, completed_at: DONE, _pending: false });
+  });
+});
+
+describe("applyRecycleResult", () => {
+  const recycled = item({ id: "a", text: "milk", position: 6 });
+
+  it("shows the server's row, at the position the server gave it", () => {
+    const shown = item({ id: "a", text: "milk", position: 1 });
+    const out = applyRecycleResult([shown, item({ id: "b" })], "a", recycled, pending());
+    expect(out[0]).toMatchObject({ id: "a", position: 6 });
+    expect(out[1].id).toBe("b");
+  });
+
+  it("keeps a tick made after the recycle that is still on its way", () => {
+    const shown = item({ id: "a", text: "milk", position: 1, completed: true, completed_at: DONE });
+    const out = applyRecycleResult([shown], "a", recycled, pending({ a: ["created", "completed", "completed_at"] }));
+    expect(out[0]).toMatchObject({ position: 6, completed: true, completed_at: DONE });
+  });
+
+  it("changes nothing when the server answered with another item or nothing", () => {
+    const shown = [item({ id: "a", position: 1 })];
+    expect(applyRecycleResult(shown, "a", item({ id: "new" }), pending())).toBe(shown);
+    expect(applyRecycleResult(shown, "a", null, pending())).toBe(shown);
   });
 });

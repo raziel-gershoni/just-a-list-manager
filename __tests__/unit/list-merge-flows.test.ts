@@ -59,7 +59,7 @@ import { useListData } from "@/src/hooks/useListData";
 import { useListRealtime } from "@/src/hooks/useListRealtime";
 import { useItemHandlers } from "@/src/hooks/useItemHandlers";
 import { getSyncEngine } from "@/src/sync/engine";
-import { applyCreateResult } from "@/src/sync/merge";
+import { applyMutationResult } from "@/src/sync/merge";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
 import type { ItemData } from "@/src/types";
 
@@ -152,15 +152,12 @@ function page(serverItems: ItemData[]) {
       t: (key: string) => key,
     });
   };
-  // The page's create success handler: the saved row replaces the temp row.
+  // The page's success handler: a create's or a recycle's saved row goes on screen.
   const detach = engine.attach({
     getJwt: () => jwtRef.current,
     executorFactory: createExecutorFactory(),
     onSuccess: (m, result) => {
-      if (m.type === "create" && typeof m.payload.tempId === "string") {
-        const tempId = m.payload.tempId;
-        data.setItems((prev) => applyCreateResult(prev, tempId, result as ItemData, (id) => engine.pendingFields(id)));
-      }
+      data.setItems((prev) => applyMutationResult(prev, m, result, (id) => engine.pendingFields(id)));
     },
   });
 
@@ -388,6 +385,20 @@ describe("an added item shows once", () => {
     expect(p.items().map((i) => i.id).sort()).toEqual(["r1", "r2"]);
   });
 
+  it("a tick on a new item still being saved survives the INSERT that replaces its temp row", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("milk");
+    const tempId = p.items()[0].id;
+    const ticking = p.render().handleToggle(tempId, true);
+    await vi.advanceTimersByTimeAsync(200);
+    await ticking;
+
+    p.realtime({ eventType: "INSERT", new: row({ id: "r1", text: "milk" }) });
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", completed: true, _pending: false })]);
+  });
+
   it("an item that is only invisible characters is not added", async () => {
     const p = await open([]);
     await p.render().handleAddItem("‎‏");
@@ -450,5 +461,25 @@ describe("a pending restore-recurring or on the way keeps the item where the use
     p.realtime({ eventType: "UPDATE", new: row({ id: "a", text: "a2", ordered_at: null }) });
 
     expect(p.item("a")).toMatchObject({ text: "a2", ordered_at: markedAt });
+  });
+});
+
+describe("a recycled item comes back at the top", () => {
+  it("its echo arriving before the recycle's answer still leaves it where the server put it", async () => {
+    const p = await open([
+      row({ id: "a", text: "milk", completed: true, completed_at: DONE, position: 1 }),
+      row({ id: "b", text: "bread", position: 5 }),
+    ]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("milk", "a");
+    await settle();
+
+    // The server moved it to the top; its echo comes in before the HTTP answer.
+    const recycled = row({ id: "a", text: "milk", position: 6, created_by: "u" });
+    p.realtime({ eventType: "UPDATE", new: recycled });
+    p.release("POST 1", 201, { items: [{ ...recycled, recycled: true }] });
+    await settle();
+
+    expect(p.item("a")).toMatchObject({ completed: false, position: 6 });
   });
 });

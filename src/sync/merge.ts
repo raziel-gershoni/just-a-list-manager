@@ -1,5 +1,6 @@
 import type { ItemData } from "@/src/types";
-import { overlayPending } from "@/src/sync/overlay";
+import type { QueuedMutation } from "@/src/utils/mutation-queue";
+import { overlayPending, withoutCreated } from "@/src/sync/overlay";
 
 /** The item fields a queued or in-flight change touches (SyncEngine.pendingFields). */
 export type PendingFieldsOf = (itemId: string) => Set<string>;
@@ -59,11 +60,46 @@ export function applyCreateResult(
   if (prev.some((i) => i.id === created.id)) return prev.filter((i) => i.id !== tempId);
   // The engine maps the temp id to the saved one before it reports success, so the item's
   // pending fields are under the saved id. The create itself is no longer among them.
-  const fields = new Set(pendingFields(created.id));
-  fields.delete("created");
+  const fields = withoutCreated(pendingFields(created.id));
   return prev.map((i) =>
     i.id === tempId
       ? overlayPending({ ...created, creator_name: null, editor_name: null, _pending: false }, i, fields)
       : i
   );
+}
+
+/**
+ * The recycle's answer puts the server's row on screen: the item comes back at the top
+ * (the server gives it the list's highest position), which the optimistic recycle doesn't
+ * do. While the recycle was on its way its realtime echo was held back ("created" keeps the
+ * whole on-screen row), so this is where the server row shows. A change made to the item
+ * after the recycle and still on its way keeps its on-screen value.
+ * An answer for another item (the server added the text as a new item) changes nothing
+ * here: that item's realtime INSERT brings it.
+ */
+export function applyRecycleResult(
+  prev: ItemData[],
+  recycleId: string,
+  recycled: ItemData | null,
+  pendingFields: PendingFieldsOf
+): ItemData[] {
+  if (!recycled || recycled.id !== recycleId) return prev;
+  const fields = withoutCreated(pendingFields(recycleId));
+  return prev.map((i) => (i.id === recycleId ? overlayPending({ ...i, ...recycled }, i, fields) : i));
+}
+
+/** A landed change's answer applied to the screen: a create's or a recycle's saved row. */
+export function applyMutationResult(
+  prev: ItemData[],
+  m: QueuedMutation,
+  result: unknown,
+  pendingFields: PendingFieldsOf
+): ItemData[] {
+  if (m.type === "create" && typeof m.payload.tempId === "string" && result) {
+    return applyCreateResult(prev, m.payload.tempId, result as ItemData, pendingFields);
+  }
+  if (m.type === "recycle" && typeof m.payload.recycleId === "string") {
+    return applyRecycleResult(prev, m.payload.recycleId, (result as ItemData | null) ?? null, pendingFields);
+  }
+  return prev;
 }

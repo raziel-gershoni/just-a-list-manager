@@ -19,3 +19,15 @@ export function overlayPending(server: ItemData, local: ItemData, pending: Set<s
   }
   return merged as unknown as ItemData;
 }
+
+/**
+ * The pending fields with the "created" marker dropped: for a row whose create or recycle
+ * has been answered (or echoed), so the server row shows with only the later changes
+ * overlaid, rather than the whole on-screen row being kept.
+ */
+export function withoutCreated(pending: Set<string>): Set<string> {
+  if (!pending.has("created")) return pending;
+  const fields = new Set(pending);
+  fields.delete("created");
+  return fields;
+}
