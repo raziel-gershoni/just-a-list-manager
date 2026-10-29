@@ -192,17 +192,32 @@ export default function ListPage() {
     onRejoined: refreshAfterRejoin,
   });
 
+  // Until one load has worked, the screen has no list name, type or items to merge into, so
+  // the reconnect's refresh does the full load; after that a refresh only merges rows.
+  const loadedOkRef = useRef(false);
+  const loadList = useCallback(async () => {
+    const ok = await fetchItems();
+    if (ok) loadedOkRef.current = true;
+    return ok;
+  }, [fetchItems]);
+  const refreshForReconnect = useCallback(async () => {
+    if (loadedOkRef.current) return refreshItems();
+    // A failed load rejects, so the orchestrator retries and the banner never claims success
+    // over the error screen.
+    if (!(await loadList())) throw new Error("List load failed");
+  }, [refreshItems, loadList]);
+
   // Register orchestrator callbacks
   useEffect(() => {
     onFlushNeededRef.current = flushQueue;
     onResubscribeNeededRef.current = resubscribe;
-    onRefreshNeededRef.current = refreshItems;
+    onRefreshNeededRef.current = refreshForReconnect;
     return () => {
       onFlushNeededRef.current = null;
       onResubscribeNeededRef.current = null;
       onRefreshNeededRef.current = null;
     };
-  }, [flushQueue, resubscribe, refreshItems, onFlushNeededRef, onResubscribeNeededRef, onRefreshNeededRef]);
+  }, [flushQueue, resubscribe, refreshForReconnect, onFlushNeededRef, onResubscribeNeededRef, onRefreshNeededRef]);
 
   // isReady turns true once the session settled: with a JWT the list loads; without one
   // (the sign-in gave up) fetchItems shows the error screen, and a later token reloads it.
@@ -229,9 +244,9 @@ export default function ListPage() {
           console.error("[List] Replaying saved changes failed, loading anyway:", { listId }, err);
         }
       }
-      if (load) await fetchItems();
+      if (load) await loadList();
     })();
-  }, [isReady, jwt, listId, flushQueue, fetchItems]);
+  }, [isReady, jwt, listId, flushQueue, loadList]);
 
   if (loading) {
     return (
@@ -259,7 +274,7 @@ export default function ListPage() {
           <div className="flex flex-col items-center gap-3">
             {!notFound && (
               <button
-                onClick={fetchItems}
+                onClick={() => void loadList()}
                 className="flex items-center gap-2 px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
               >
                 <RefreshCw className="w-4 h-4" />

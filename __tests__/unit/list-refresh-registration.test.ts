@@ -48,7 +48,7 @@ vi.mock("@/src/hooks/useListData", () => ({
     setItems: (u: ItemData[] | ((prev: ItemData[]) => ItemData[])) => { S.items = typeof u === "function" ? u(S.items) : u; },
     loading: false, error: false, isShared: false, listType: "regular", setListType: () => {},
     listIcon: null, listColor: null, categories: [], setCategories: () => {},
-    loadCategories: async () => {}, fetchItems: async () => {},
+    loadCategories: async () => {}, fetchItems: async () => true,
     refreshItems: async () => {
       S.refreshCalls++;
       if (S.refreshFails) throw S.refreshFails;
@@ -96,7 +96,7 @@ function row(over: Partial<ItemData> & { id: string }): ItemData {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   Object.assign(S, { items: [row({ id: "a" })], refreshCalls: 0, refreshFails: null, onMutationSuccess: null, realtimeArgs: null, effects: [] });
   Object.assign(S.refs, { onFlushNeededRef: { current: null }, onResubscribeNeededRef: { current: null }, onRefreshNeededRef: { current: null } });
   const storage = new Map<string, string>();
@@ -110,6 +110,8 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   renderToStaticMarkup(createElement(ListPage));
   for (const effect of S.effects) effect();
+  // The page's first load works (fetchItems above), so its registered refresh is the merging one.
+  for (let k = 0; k < 10; k++) await Promise.resolve();
 });
 afterEach(() => {
   vi.unstubAllGlobals();

@@ -59,7 +59,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     }
   }, [jwtRef, listId]);
 
-  const fetchItems = useCallback(async () => {
+  // Loads the list's details and items. Resolves true when the list loaded; false when it
+  // did not (the error screen shows), so a caller can tell a good load from a failed one.
+  const fetchItems = useCallback(async (): Promise<boolean> => {
     const jwt = jwtRef.current;
     if (!jwt) {
       // The session gave up signing in: leave the placeholders for the error screen, where
@@ -68,9 +70,12 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       setNotFound(false);
       setError(true);
       setLoading(false);
-      return;
+      return false;
     }
     try {
+      // Retry and a late token start over the error screen: show the skeleton while the
+      // request is out, never an empty list that accepts input.
+      setLoading(true);
       setError(false);
       setNotFound(false);
       // Fetch list info
@@ -159,14 +164,16 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         });
         setItems(mapped);
         if (currentListType === "grocery") await loadCategories();
-      } else {
-        console.warn("[List] Load items failed:", { listId, status: res.status });
-        setNotFound(res.status === 403 || res.status === 404);
-        setError(true);
+        return true;
       }
+      console.warn("[List] Load items failed:", { listId, status: res.status });
+      setNotFound(res.status === 403 || res.status === 404);
+      setError(true);
+      return false;
     } catch (e) {
       console.error("[List] Fetch error:", e);
       setError(true);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -185,8 +192,16 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      // A failed refresh throws, so the reconnect orchestrator retries instead of reporting a
-      // stale screen as connected.
+      // The list is gone for this user (deleted, or access removed while away): show the
+      // not-found view, as the first load does. Resolve, because retrying can never clear it.
+      if (res.status === 403 || res.status === 404) {
+        console.warn("[List] Background refresh: list unavailable:", { listId, status: res.status });
+        setNotFound(true);
+        setError(true);
+        return;
+      }
+      // Any other failed refresh throws, so the reconnect orchestrator retries instead of
+      // reporting a stale screen as connected.
       throwIfNotOk(res, "Background refresh");
       const { items: fetchedItems } = await res.json();
 

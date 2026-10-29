@@ -104,3 +104,45 @@ describe("a list this user can no longer open", () => {
     }
   });
 });
+
+describe("a background refresh of a list this user can no longer open (C10)", () => {
+  it.each([403, 404])("an items answer of %i shows the not-found view and resolves, so nothing retries it", async (status) => {
+    stubFetch(() => 200);
+    await render().fetchItems();
+    expect(render()).toMatchObject({ error: false, notFound: false });
+    stubFetch(() => status);
+    await expect(render().refreshItems()).resolves.toBeUndefined();
+    expect(render()).toMatchObject({ error: true, notFound: true });
+    expect(console.warn).toHaveBeenCalledWith("[List] Background refresh: list unavailable:", { listId: "L", status });
+  });
+
+  it("an items answer of 500 still rejects, so the reconnect retries", async () => {
+    stubFetch(() => 500);
+    await expect(render().refreshItems()).rejects.toThrow();
+    expect(render()).toMatchObject({ error: false, notFound: false });
+  });
+});
+
+describe("a load that starts over an error screen (C22)", () => {
+  it("shows the loading state, not an editable empty list, while the request is out", async () => {
+    let status = 500;
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => { release = r; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const json = (st: number, body: unknown) => ({ ok: st < 400, status: st, json: async () => body });
+      if (url === "/api/lists" || url === "/api/lists?archived=1") return json(200, []);
+      if (status !== 200) return json(status, {});
+      await held;
+      return json(200, { items: [] });
+    }));
+    await render().fetchItems();
+    expect(render()).toMatchObject({ error: true, loading: false });
+
+    status = 200;
+    const pending = render().fetchItems();
+    expect(render()).toMatchObject({ loading: true, error: false });
+    release();
+    await pending;
+    expect(render()).toMatchObject({ loading: false, error: false });
+  });
+});

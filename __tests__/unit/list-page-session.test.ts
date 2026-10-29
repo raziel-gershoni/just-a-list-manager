@@ -101,6 +101,7 @@ vi.mock("@/components/list/ToastContainer", () => ({ default: () => null }));
 import ListPage from "@/app/(app)/list/[id]/page";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import ListHeader from "@/components/list/ListHeader";
+import AddItemInput from "@/components/AddItemInput";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 
@@ -186,5 +187,59 @@ describe("the list page while the session signs in (H10)", () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/lists", "/api/lists/L/items?limit=500"]);
     expect(has(tree, ListHeader)).toBe(true);
     expect(hasText(tree, "lists.loadError")).toBe(false);
+  });
+});
+
+describe("a list whose first load failed, once the connection is back (C27)", () => {
+  // The lists answer 500 until `lists` is flipped; the items answer follows `itemsOk`.
+  let listsOk = false;
+  const stubServer = () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      const json = (ok: boolean, body: unknown) => ({ ok, status: ok ? 200 : 500, json: async () => body });
+      if (url === "/api/lists") return json(listsOk, [{ id: "L", name: "Groceries", type: "regular" }]);
+      if (url.startsWith("/api/lists/L/items")) return json(true, { items: [{ id: "i1", text: "Milk", completed: false, recurring: false, position: 1 }] });
+      throw new Error(`unexpected ${url}`);
+    });
+  };
+  const refresh = () => (T.refs.refresh.current as unknown as () => Promise<void>)();
+  const header = (tree: El) => find(tree, (el) => el.type === ListHeader);
+  const shownItems = (tree: El) => find(tree, (el) => el.type === AddItemInput)?.props.items as unknown[] | undefined;
+
+  beforeEach(() => {
+    listsOk = false;
+    stubServer();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    T.jwtRef.current = "jwt";
+    T.isReady = true;
+  });
+
+  it("the load fails with a token: the error screen shows", async () => {
+    const tree = await settle();
+    expect(hasText(tree, "lists.loadError")).toBe(true);
+    expect(header(tree)).toBeUndefined();
+  });
+
+  it("the refresh the page registers loads the list, so the error screen goes", async () => {
+    await settle();
+    listsOk = true;
+    await refresh();
+    const tree = await settle();
+    expect(hasText(tree, "lists.loadError")).toBe(false);
+    expect(header(tree)?.props.listName).toBe("Groceries");
+    expect(shownItems(tree)).toHaveLength(1);
+  });
+
+  it("the refresh the page registers rejects while the load still fails, so the reconnect retries", async () => {
+    await settle();
+    await expect(refresh()).rejects.toThrow();
+    expect(hasText(await settle(), "lists.loadError")).toBe(true);
+  });
+
+  it("after one good load the registered refresh only merges items", async () => {
+    listsOk = true;
+    await settle();
+    fetchMock.mockClear();
+    await refresh();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/lists/L/items?limit=500"]);
   });
 });
