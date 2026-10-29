@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
+import { requestToJoin, cancelJoinRequest } from "@/src/utils/invite-requests";
 
 function InviteContent() {
   const { initData, isReady, jwtRef } = useTelegram();
@@ -14,55 +15,43 @@ function InviteContent() {
   const token = params.token as string;
 
   const [status, setStatus] = useState<
-    "loading" | "waiting" | "approved" | "declined" | "error" | "already"
+    "loading" | "waiting" | "approved" | "declined" | "error" | "already" | "retry"
   >("loading");
   const [listName, setListName] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- setListId is used, value consumed by future navigation
   const [listId, setListId] = useState("");
   const [collaboratorId, setCollaboratorId] = useState("");
+  const [cancelFailed, setCancelFailed] = useState(false);
 
   const acceptInvite = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/share/${token}`, {
-        method: "POST",
-        headers: {
-          "x-telegram-init-data": initData!,
-          "Content-Type": "application/json",
-        },
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data.status === "already_approved") {
-          setListId(data.listId);
-          setStatus("already");
-          router.push(`/list/${data.listId}`);
-          return;
-        }
-        if (data.status === "already_pending") {
-          setListName(data.listName || "");
-          setListId(data.listId || "");
-          setCollaboratorId(data.collaboratorId || "");
-          setStatus("waiting");
-          return;
-        }
-        setErrorMessage(data.error || "This invite is no longer valid.");
+    const outcome = await requestToJoin(token, initData!);
+    switch (outcome.kind) {
+      case "member":
+        setListId(outcome.listId);
+        setStatus("already");
+        router.push(`/list/${outcome.listId}`);
+        return;
+      case "pending":
+        setListName(outcome.listName);
+        setListId(outcome.listId);
+        setCollaboratorId(outcome.collaboratorId);
+        setStatus("waiting");
+        return;
+      case "invalid":
+        setErrorMessage(outcome.message);
         setStatus("error");
         return;
-      }
-
-      setListName(data.listName || "");
-      setListId(data.listId || "");
-      setCollaboratorId(data.collaboratorId || "");
-      setStatus("waiting");
-    } catch (err) {
-      console.error("[Invite] Failed to accept invite:", err);
-      setErrorMessage("Something went wrong. Please try again.");
-      setStatus("error");
+      case "retry":
+        setStatus("retry");
+        return;
     }
   }, [token, initData, router]);
+
+  const retryInvite = () => {
+    setStatus("loading");
+    void acceptInvite();
+  };
 
   useEffect(() => {
     if (!isReady || !initData) return;
@@ -72,6 +61,7 @@ function InviteContent() {
 
   const cancelRequest = async () => {
     if (!collaboratorId) return;
+    setCancelFailed(false);
     const jwt = jwtRef.current;
     // Use JWT if available, fall back to initData for early cancellation
     const headers: Record<string, string> = jwt
@@ -79,14 +69,16 @@ function InviteContent() {
       : initData
         ? { "x-telegram-init-data": initData }
         : {};
-    if (Object.keys(headers).length === 0) return;
-    try {
-      await fetch(`/api/share/${token}?collaboratorId=${collaboratorId}`, {
-        method: "DELETE",
-        headers,
-      });
-    } catch (err) {
-      console.warn("[Invite] Failed to cancel join request, collaboratorId:", collaboratorId, err);
+    if (Object.keys(headers).length === 0) {
+      console.warn("[Invite] No credentials to cancel the join request, collaboratorId:", collaboratorId);
+      setCancelFailed(true);
+      return;
+    }
+    // Go home only once the server confirmed; otherwise the request would stay pending
+    // while the invitee believes it is withdrawn.
+    if (!(await cancelJoinRequest(token, collaboratorId, headers))) {
+      setCancelFailed(true);
+      return;
     }
     router.push("/");
   };
@@ -120,6 +112,29 @@ function InviteContent() {
     );
   }
 
+  if (status === "retry") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
+        <p className="text-tg-hint mb-6">{t('errors.generic')}</p>
+        <div className="flex flex-col items-center gap-3">
+          <button
+            onClick={retryInvite}
+            className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-tg-button text-tg-button-text font-medium active:scale-[0.98]"
+          >
+            <RefreshCw className="w-4 h-4" />
+            {t('common.retry')}
+          </button>
+          <button
+            onClick={() => router.push("/")}
+            className="px-6 py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
+          >
+            {t('common.goHome')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (status === "waiting") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
@@ -139,6 +154,11 @@ function InviteContent() {
         >
           {t('share.cancelRequest')}
         </button>
+        {cancelFailed && (
+          <p role="alert" className="mt-3 text-sm text-tg-destructive text-center">
+            {t('errors.generic')}
+          </p>
+        )}
       </div>
     );
   }
