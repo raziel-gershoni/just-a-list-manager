@@ -279,7 +279,9 @@ describe("one item's changes land in the order they were made (H4)", () => {
   it("a flush resolves once what it sent has landed", async () => {
     const w = world();
     w.when("toggle i1 true", "hold");
+    w.jwt.current = null;
     w.add("toggle", { itemId: "i1", value: true });
+    w.jwt.current = "jwt";
     let done = false;
     void w.engine().flush().then(() => (done = true));
     await settle();
@@ -294,13 +296,16 @@ describe("one item's changes land in the order they were made (H4)", () => {
     const w = world();
     w.when("toggle i1 true", "hold");
     w.when("toggle i2 true", "hold");
+    w.jwt.current = null;
     w.add("toggle", { itemId: "i1", value: true });
+    w.jwt.current = "jwt";
     let done = false;
     void w.engine().flush().then(() => (done = true));
     await settle();
 
     w.add("toggle", { itemId: "i2", value: true }); // the user keeps tapping
     await settle();
+    expect(done).toBe(false);
     w.release("toggle i1 true");
     await settle();
 
@@ -308,6 +313,29 @@ describe("one item's changes land in the order they were made (H4)", () => {
     expect(done).toBe(true);
     w.release("toggle i2 true");
     await settle();
+  });
+
+  it("a flush started while an earlier request hangs still resolves, and the reconnect can go on", async () => {
+    const w = world();
+    w.when("toggle i1 true", "hold"); // sent before the network dropped; never answers
+    w.when("toggle i2 true", 500);
+    w.add("toggle", { itemId: "i1", value: true });
+    w.add("toggle", { itemId: "i2", value: true });
+    await settle();
+    expect(w.sent).toEqual(["toggle i1 true", "toggle i2 true"]);
+
+    // The reconnect awaits the flush before it rejoins realtime and refreshes.
+    let reconnected = false;
+    void w.engine().flush().then(() => (reconnected = true));
+    await settle();
+
+    expect(w.sent).toEqual(["toggle i1 true", "toggle i2 true", "toggle i2 true"]);
+    expect(reconnected).toBe(true);
+    expect(w.engine().pendingFields("i1")).toEqual(new Set(["completed", "completed_at"]));
+
+    w.release("toggle i1 true");
+    await settle();
+    expect(w.stored()).toEqual([]);
   });
 
   it("a flush resolves when a change it sent fails again, without waiting for the change held behind it", async () => {
@@ -411,6 +439,7 @@ describe("changes on a just-added item wait for its create (H5)", () => {
 
     expect(w.sent).toEqual(["create temp-1", "toggle r-temp-1 true"]);
     expect(w.engine().resolveId("temp-1")).toBe("r-temp-1");
+    expect(w.successes.map((m) => m.payload.itemId)).toEqual([undefined, "r-temp-1"]);
     expect(w.errors).toEqual([]);
   });
 
@@ -661,6 +690,84 @@ describe("a full queue or an old change is reported, never silent (H15)", () => 
     expect(w.sent).toEqual(["toggle i1 true", "toggle i1 true"]);
     expect(w.stored()).toEqual([]);
     expect(w.successes).toEqual([]);
+  });
+});
+
+describe("storage that can't be written or read back cleanly", () => {
+  it("a change is still sent online when the device can't save it, and leaves pendingFields once it lands", async () => {
+    const w = world();
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    w.add("toggle", { itemId: "i1", value: true });
+    await settle();
+    expect(w.sent).toEqual(["toggle i1 true"]);
+    expect(w.engine().pendingFields("i1")).toEqual(new Set());
+    expect(w.errors).toEqual([]);
+  });
+
+  it("a change the device couldn't save is still retried after a server error", async () => {
+    const w = world();
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    w.when("toggle i1 true", 500);
+    w.add("toggle", { itemId: "i1", value: true });
+    await settle();
+
+    await w.engine().flush();
+
+    expect(w.sent).toEqual(["toggle i1 true", "toggle i1 true"]);
+    expect(w.engine().pendingFields("i1")).toEqual(new Set());
+  });
+
+  it("a change the device couldn't save still expires after 24 hours, with a report", async () => {
+    const w = world();
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    w.jwt.current = null;
+    w.add("toggle", { itemId: "i1", value: true });
+    vi.setSystemTime(Date.now() + DAY + 1);
+    w.jwt.current = "jwt";
+
+    await w.engine().flush();
+
+    expect(w.sent).toEqual([]);
+    expect(w.errors).toMatchObject([{ type: "toggle", dropped: true, message: "Expired after 24 hours" }]);
+    expect(w.engine().pendingFields("i1")).toEqual(new Set());
+  });
+
+  it("a saved entry it can't read is dropped and reported, and the valid one next to it is still sent", async () => {
+    const w = world();
+    w.seed("L", [
+      { id: "bad", type: "toggle", payload: null, timestamp: Date.now() } as unknown as QueuedMutation,
+      "junk" as unknown as QueuedMutation,
+      entry("a", "toggle", { itemId: "i1", value: true }),
+    ]);
+    w.reload();
+
+    w.add("edit", { itemId: "i2", value: "x" }); // a tap after the page opens must not throw
+    await w.engine().flush();
+
+    expect(w.sent).toEqual(["toggle i1 true", "edit i2 x"]);
+    expect(w.stored()).toEqual([]);
+    expect(w.errors).toMatchObject([
+      { mutationId: "bad", type: "toggle", dropped: true, payload: {} },
+      { mutationId: "unknown", type: "unknown", dropped: true, payload: {} },
+    ]);
+  });
+
+  it("a saved queue that isn't a list is dropped and reported, and new changes still go out", async () => {
+    const w = world();
+    localStorage.setItem("mutation_queue:L", JSON.stringify({ not: "a list" }));
+    w.reload();
+
+    w.add("toggle", { itemId: "i1", value: true });
+    await settle();
+
+    expect(w.sent).toEqual(["toggle i1 true"]);
+    expect(w.errors).toMatchObject([{ mutationId: "unknown", dropped: true }]);
   });
 });
 

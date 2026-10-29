@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MutationQueue } from "@/src/utils/mutation-queue";
 
 const storage = new Map<string, string>();
@@ -25,6 +25,44 @@ describe("MutationQueue", () => {
   it("getQueue returns empty array when no items", () => {
     const queue = new MutationQueue("list-1");
     expect(queue.getQueue()).toEqual([]);
+  });
+
+  it("getQueue skips stored entries it can't use, and logs each one", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const valid = { id: "a", type: "toggle", payload: { itemId: "i1" }, timestamp: 1 };
+    storage.set(
+      "mutation_queue:list-1",
+      JSON.stringify([{ id: "b", type: "toggle", payload: null, timestamp: 1 }, valid, 7, { id: "c", payload: {}, timestamp: 1 }])
+    );
+    const queue = new MutationQueue("list-1");
+
+    expect(queue.getQueue()).toEqual([valid]);
+    expect(errors).toHaveBeenCalledTimes(3);
+    errors.mockRestore();
+  });
+
+  it("getQueue treats a stored value that isn't a list as empty, and logs it", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    storage.set("mutation_queue:list-1", JSON.stringify({ id: "a" }));
+    const queue = new MutationQueue("list-1");
+
+    expect(queue.getQueue()).toEqual([]);
+    expect(errors).toHaveBeenCalledTimes(1);
+    errors.mockRestore();
+  });
+
+  it("load hands back what it skipped and saves the queue without it", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const valid = { id: "a", type: "toggle", payload: { itemId: "i1" }, timestamp: 1 };
+    storage.set("mutation_queue:list-1", JSON.stringify([{ id: "b", type: "toggle", payload: null }, valid]));
+    const queue = new MutationQueue("list-1");
+
+    const { entries, skipped } = queue.load();
+
+    expect(entries).toEqual([valid]);
+    expect(skipped).toEqual([{ id: "b", type: "toggle", payload: null }]);
+    expect(JSON.parse(storage.get("mutation_queue:list-1")!)).toEqual([valid]);
+    vi.restoreAllMocks();
   });
 
   it("enqueue adds items to queue", () => {

@@ -12,6 +12,19 @@ export interface QueuedMutation {
 
 export const MAX_QUEUE_SIZE = 500;
 
+function isQueuedMutation(v: unknown): v is QueuedMutation {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const m = v as Record<string, unknown>;
+  return (
+    typeof m.id === "string" &&
+    typeof m.type === "string" &&
+    typeof m.timestamp === "number" &&
+    !!m.payload &&
+    typeof m.payload === "object" &&
+    !Array.isArray(m.payload)
+  );
+}
+
 export class MutationQueue {
   private storageKey: string;
   // Ephemeral, per-session, never persisted: which queued mutations have a request
@@ -24,14 +37,48 @@ export class MutationQueue {
     this.storageKey = `mutation_queue:${listId}`;
   }
 
+  /** The stored entries in order. A stored value it can't use (written by an older or broken version) is logged and left out. */
   getQueue(): QueuedMutation[] {
+    return this.read().entries;
+  }
+
+  /** Reads the queue once (at startup): returns what it left out too, and saves the queue without it. */
+  load(): { entries: QueuedMutation[]; skipped: unknown[] } {
+    const result = this.read();
+    if (result.skipped.length > 0) this.saveQueue(result.entries);
+    return result;
+  }
+
+  private read(): { entries: QueuedMutation[]; skipped: unknown[] } {
+    let parsed: unknown;
     try {
       const raw = localStorage.getItem(this.storageKey);
-      return raw ? JSON.parse(raw) : [];
+      parsed = raw ? JSON.parse(raw) : [];
     } catch (err) {
       console.error(`[MutationQueue] Could not read the offline queue (${this.storageKey}):`, err);
-      return [];
+      return { entries: [], skipped: [] };
     }
+    if (!Array.isArray(parsed)) {
+      console.error(`[MutationQueue] The offline queue (${this.storageKey}) is not a list, ignoring it:`, typeof parsed);
+      return { entries: [], skipped: [parsed] };
+    }
+    const entries: QueuedMutation[] = [];
+    const skipped: unknown[] = [];
+    parsed.forEach((m, index) => {
+      if (isQueuedMutation(m)) {
+        entries.push(m);
+        return;
+      }
+      skipped.push(m);
+      // Shape only: a payload carries item text.
+      const r = m && typeof m === "object" ? (m as Record<string, unknown>) : {};
+      console.error(`[MutationQueue] Skipping an unreadable entry in the offline queue (${this.storageKey}):`, {
+        index,
+        id: typeof r.id === "string" ? r.id : undefined,
+        type: typeof r.type === "string" ? r.type : undefined,
+      });
+    });
+    return { entries, skipped };
   }
 
   private saveQueue(queue: QueuedMutation[]) {

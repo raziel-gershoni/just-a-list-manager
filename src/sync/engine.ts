@@ -14,7 +14,12 @@
  *   backoff; any other 4xx drops it. Every drop (refused, unknown type, orphaned temp id,
  *   queue cap, 24 h expiry) is reported through onError with `dropped: true`; one made
  *   while no page is open is reported to the next page that attaches.
- * - flush() resolves once every change queued when it started has settled once.
+ * - What to send comes from memory, so a change still goes out online when the device can't
+ *   save it (storage full or disabled); storage is the copy that survives a reload.
+ * - A saved entry it can't read is dropped and reported, never thrown at a tap.
+ * - flush() resolves once every change it could send when it started has settled once. A
+ *   request already in flight then (perhaps hanging on a dead socket) doesn't hold it, nor
+ *   do changes added while it runs, so a reconnect that awaits it always goes on.
  */
 import { MutationQueue, type QueuedMutation } from "@/src/utils/mutation-queue";
 
@@ -47,7 +52,7 @@ export interface SyncEngine {
   attach(handlers: EngineHandlers): () => void;
   /** Persists, then runs in its chain. */
   add(m: { id: string; type: string; payload: Record<string, unknown> }): void;
-  /** Runs every queued entry not in flight, in chain order. No-op while getJwt() is null. */
+  /** Runs every queued entry not in flight, in chain order; resolves once those have settled once. No-op while getJwt() is null. */
   flush(): Promise<void>;
   /** Fields touched by queued or in-flight entries for that item (after temp → real aliasing). */
   pendingFields(itemId: string): Set<string>;
@@ -119,11 +124,13 @@ class ListSyncEngine implements SyncEngine {
   private authHold = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryAttempt = 0;
-  // Each running flush() and the entries queued when it started; it resolves once none of
-  // them is in flight any more (sent and settled, or unable to run until the next flush).
+  // Each running flush() and the entries queued and not in flight when it started; it
+  // resolves once none of them is in flight any more (sent and settled, or unable to run
+  // until the next flush).
   private flushWaiters: { ids: Set<string>; resolve: () => void }[] = [];
-  // The same entries as storage (queued and in flight; temp ids resolve on read), so
-  // pendingFields never reads or parses localStorage (refresh and realtime ask it per row).
+  // Every queued and in-flight entry, in queue order: the source of what to send, so a
+  // change the device couldn't save is still sent, and pendingFields never reads or parses
+  // localStorage (refresh and realtime ask it per row). Storage mirrors it for reloads.
   private readonly index = new Map<string, QueuedMutation>();
   // Drops reported while no page was open to show them; handed to the next page that attaches.
   private unreported: MutationErrorInfo[] = [];
@@ -132,7 +139,19 @@ class ListSyncEngine implements SyncEngine {
     this.queue = new MutationQueue(listId);
     this.tempIdsKey = `${TEMP_IDS_PREFIX}${listId}`;
     this.loadTempIds();
-    for (const m of this.queue.getQueue()) this.index.set(m.id, m);
+    const { entries, skipped } = this.queue.load();
+    for (const m of entries) this.index.set(m.id, m);
+    // Logged by the queue; reported to the first page that opens the list.
+    for (const raw of skipped) {
+      const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const m: QueuedMutation = {
+        id: str(r.id) ?? "unknown",
+        type: str(r.type) ?? "unknown",
+        payload: {},
+        timestamp: Date.now(),
+      };
+      this.report(m, null, "A saved change could not be read", true);
+    }
   }
 
   private get handlers(): EngineHandlers | null {
@@ -185,9 +204,11 @@ class ListSyncEngine implements SyncEngine {
     this.parked.clear();
     this.authHold = false;
     this.expire();
-    // Changes added after this point don't extend this flush, so a stream of taps can't
-    // hold a reconnect that awaits it.
-    const done = new Promise<void>((resolve) => this.flushWaiters.push({ ids: new Set(this.index.keys()), resolve }));
+    // Only what this flush can send: a request already in flight may hang (a dead socket,
+    // a suspended WebView) and changes added after this point don't extend it, so neither
+    // can hold a reconnect that awaits it.
+    const ids = new Set([...this.index.keys()].filter((id) => !this.inFlight.has(id)));
+    const done = new Promise<void>((resolve) => this.flushWaiters.push({ ids, resolve }));
     this.pump();
     this.settleFlushes();
     await done;
@@ -232,7 +253,8 @@ class ListSyncEngine implements SyncEngine {
     const jwt = handlers.getJwt();
     if (!jwt) return;
 
-    const queue = this.queue.getQueue();
+    // A copy: a drop or a synchronous failure below changes the index.
+    const queue = [...this.index.values()];
     const pendingCreates = new Set(
       queue.filter((m) => m.type === "create").map((m) => str(m.payload.tempId))
     );
@@ -342,7 +364,7 @@ class ListSyncEngine implements SyncEngine {
 
   private expire() {
     const now = Date.now();
-    for (const m of this.queue.getQueue()) {
+    for (const m of [...this.index.values()]) {
       if (this.inFlight.has(m.id) || now - m.timestamp <= MAX_AGE_MS) continue;
       console.warn("[SyncEngine] Dropping a change older than 24 hours:", this.ctx(m));
       this.remove(m);
@@ -403,6 +425,10 @@ class ListSyncEngine implements SyncEngine {
       console.error("[SyncEngine] Could not save a created item's id:", { listId: this.listId }, err);
     }
     this.queue.rewritePayloads((p) => this.rewrite(p));
+    for (const [id, m] of this.index) {
+      const payload = this.rewrite(m.payload);
+      if (payload !== m.payload) this.index.set(id, { ...m, payload });
+    }
   }
 
   private loadTempIds() {
