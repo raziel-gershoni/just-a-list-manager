@@ -19,6 +19,7 @@ export function fakeSupabase(resolve: (call: FakeCall) => FakeResult) {
     c.neq = (k: string, v: unknown) => add(`neq:${k}=${v}`);
     c.is = (k: string, v: unknown) => add(`is:${k}=${v}`);
     c.in = (k: string, v: unknown[]) => add(`in:${k}=${v.join(",")}`);
+    c.ilike = (k: string, v: unknown) => add(`ilike:${k}=${v}`);
     c.not = (k: string, o: string, v: unknown) => add(`not:${k}:${o}:${v}`);
     c.lt = (k: string, v: unknown) => add(`lt:${k}=${v}`);
     c.gt = (k: string, v: unknown) => add(`gt:${k}=${v}`);

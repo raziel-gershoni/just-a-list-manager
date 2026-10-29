@@ -242,12 +242,17 @@ export async function categorizeList(
       settleMs: deps.settleMs ?? SETTLE_MS,
     };
     const started = full.now();
-    const { data: list } = await full.supabase
+    const { data: list, error } = await full.supabase
       .from("lists")
       .select("type")
       .eq("id", listId)
       .is("deleted_at", null)
       .maybeSingle();
+    // A failed read is not "not a grocery list": log it. The next trigger or GET sweep retries.
+    if (error) {
+      console.error("[Categorizer] could not read the list type", { listId, mode, error });
+      return;
+    }
     if ((list as { type?: string } | null)?.type !== "grocery") return;
 
     // The lock is taken per round, so each round gets a fresh expiry however slow the AI

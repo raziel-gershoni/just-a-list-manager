@@ -33,7 +33,7 @@ export async function findRecyclableItems(
   const canonical = normalizeForStorage(searchText);
 
   // Search completed items (not deleted)
-  const { data: completedItems } = await supabase
+  const { data: completedItems, error } = await supabase
     .from("items")
     .select("id, text, completed, completed_at, deleted_at, position")
     .eq("list_id", listId)
@@ -43,6 +43,12 @@ export async function findRecyclableItems(
     .order("completed_at", { ascending: false, nullsFirst: false })
     .limit(10);
 
+  // Throw rather than answer []: "no match" makes callers create a duplicate.
+  if (error) {
+    console.error("[ItemRecycler] Recyclable items read failed:", { listId }, error);
+    throw new Error("Recyclable items read failed", { cause: error });
+  }
+
   return (completedItems || []) as RecyclableItem[];
 }
 
@@ -50,6 +56,8 @@ export async function findRecyclableItems(
  * Recycle an item — restore it to active state.
  * Sets completed=false, completed_at=null, deleted_at=null,
  * and position to MAX(position)+1 (top of list).
+ * Returns null only when the item is not (or no longer) in this list. A failed read or
+ * write is logged and thrown, so a caller never mistakes it for "nothing to recycle".
  */
 export async function recycleItem(
   itemId: string,
@@ -63,22 +71,31 @@ export async function recycleItem(
   // lookup (see pickRecyclable), but this guard means a cross-list id can never
   // reach the update below even if that validation is skipped or forgotten by a
   // future caller.
-  const { data: item } = await supabase
+  const { data: item, error: lookupError } = await supabase
     .from("items")
     .select("list_id")
     .eq("id", itemId)
     .eq("list_id", listId)
-    .single();
+    .maybeSingle();
 
+  if (lookupError) {
+    console.error("[ItemRecycler] Item lookup failed:", { listId, itemId }, lookupError);
+    throw new Error("Recycle item lookup failed", { cause: lookupError });
+  }
   if (!item) return null;
 
   // Get max position
-  const { data: maxPosResult } = await supabase
+  const { data: maxPosResult, error: maxPosError } = await supabase
     .from("items")
     .select("position")
     .eq("list_id", item.list_id)
     .order("position", { ascending: false })
     .limit(1);
+
+  if (maxPosError) {
+    console.error("[ItemRecycler] Max position read failed:", { listId }, maxPosError);
+    throw new Error("Max position read failed", { cause: maxPosError });
+  }
 
   const nextPosition = (maxPosResult?.[0]?.position || 0) + 1;
 
@@ -96,9 +113,14 @@ export async function recycleItem(
     .eq("id", itemId)
     .eq("list_id", listId)
     .select("id, text, completed, completed_at, deleted_at, position")
-    .single();
+    .maybeSingle();
 
-  if (error || !recycled) return null;
+  if (error) {
+    console.error("[ItemRecycler] Recycle update failed:", { listId, itemId }, error);
+    throw new Error("Recycle update failed", { cause: error });
+  }
+  // The row went away between the lookup and the update.
+  if (!recycled) return null;
   return recycled as RecyclableItem;
 }
 

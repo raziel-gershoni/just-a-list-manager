@@ -33,7 +33,13 @@ export const redisListLock: ListLock = {
     }
   },
   async release(listId, token) {
-    try { await getRedis().eval(RELEASE_SCRIPT, [lockKey(listId)], [token]); } catch (error) {
+    try {
+      // 0: the key no longer holds our token, so the lock expired mid-run and another run may have taken it.
+      const released = await getRedis().eval(RELEASE_SCRIPT, [lockKey(listId)], [token]);
+      if (released === 0) {
+        console.warn("[Categorizer] lock expired before release, another run may have overlapped:", { listId });
+      }
+    } catch (error) {
       console.error("[Categorizer] lock release error, it will expire on its own:", { listId }, error);
     }
   },

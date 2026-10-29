@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
-import { findRecyclableItems, recycleItem } from "@/src/services/item-recycler";
+import { findRecyclableItems, recycleItem, type RecyclableItem } from "@/src/services/item-recycler";
 import { createItemIdempotentSchema, createItemSchema, updateItemSchema } from "@/src/schemas/items";
 import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
@@ -251,24 +251,29 @@ export async function POST(
       continue;
     }
 
-    // Check for recyclable items
-    const recyclable = await findRecyclableItems(listId, text);
-    const exactMatch = recyclable.find(
-      (r) => normalizeForCompare(r.text) === normalizeForCompare(text)
-    );
+    // Check for recyclable items. The recycler logs and throws on a DB error. Skip the
+    // item then, the loop's rule for an insert error, so a failed check never adds a duplicate.
+    let recycled: RecyclableItem | null = null;
+    try {
+      const recyclable = await findRecyclableItems(listId, text);
+      const exactMatch = recyclable.find(
+        (r) => normalizeForCompare(r.text) === normalizeForCompare(text)
+      );
 
-    // Explicit recycle request from UI autocomplete. The client-supplied recycleId is
-    // never trusted directly — it must resolve against `recyclable`, the set the server
-    // itself just looked up for this list (list-scoped, completed-only). Otherwise a
-    // client could pass any uuid and recycleItem would resurrect/re-attribute an
-    // arbitrary row in someone else's list.
-    const toRecycle = exactMatch && pickRecyclable(recyclable, parsedCreate.data.recycleId);
-    if (toRecycle) {
-      const recycled = await recycleItem(toRecycle.id, auth.userId, listId);
-      if (recycled) {
-        results.push({ ...recycled, recycled: true });
-        continue;
-      }
+      // Explicit recycle request from UI autocomplete. The client-supplied recycleId is
+      // never trusted directly — it must resolve against `recyclable`, the set the server
+      // itself just looked up for this list (list-scoped, completed-only). Otherwise a
+      // client could pass any uuid and recycleItem would resurrect/re-attribute an
+      // arbitrary row in someone else's list.
+      const toRecycle = exactMatch && pickRecyclable(recyclable, parsedCreate.data.recycleId);
+      if (toRecycle) recycled = await recycleItem(toRecycle.id, auth.userId, listId);
+    } catch (err) {
+      console.error("[items/POST] Recycle check failed, skipping item (batch):", { listId }, err);
+      continue;
+    }
+    if (recycled) {
+      results.push({ ...recycled, recycled: true });
+      continue;
     }
 
     // Atomic count check + insert to prevent race condition on 500-item limit

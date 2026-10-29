@@ -37,6 +37,7 @@ beforeEach(() => {
   h.store.clear();
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 describe("redisListLock", () => {
@@ -67,5 +68,19 @@ describe("redisListLock", () => {
   it("acquire fails open with a token when Redis is down, like the voice lock", async () => {
     h.redis.set.mockRejectedValueOnce(new Error("redis down"));
     expect(await redisListLock.acquire("L")).toEqual(expect.any(String));
+  });
+
+  it("release warns when the lock expired during the run, so overlapping runs leave a trace", async () => {
+    const first = (await redisListLock.acquire("L"))!;
+    h.store.delete(KEY); // expired during a slow round
+    await redisListLock.acquire("L"); // another run takes it
+    await redisListLock.release("L", first);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("expired before release"), { listId: "L" });
+  });
+
+  it("release of a lock it still holds does not warn", async () => {
+    const token = (await redisListLock.acquire("L"))!;
+    await redisListLock.release("L", token);
+    expect(console.warn).not.toHaveBeenCalled();
   });
 });

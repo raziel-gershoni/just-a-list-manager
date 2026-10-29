@@ -37,6 +37,7 @@ function world(opts: {
   lockFree?: boolean | boolean[]; // a list answers successive acquires (one per round)
   reruns?: (RerunMode | null)[];
   listDeleted?: boolean;
+  failListRead?: boolean; // the list-type read that opens categorizeList
   // PostgREST reports failures as { data: null, error } instead of throwing.
   failCategoriesRead?: boolean;
   failItemsRead?: boolean;
@@ -65,6 +66,7 @@ function world(opts: {
       if (matches) Object.assign(list, call.values);
       return { data: null, error: null };
     }
+    if (call.table === "lists" && call.cols === "type" && opts.failListRead) return { data: null, error: dbError };
     if (call.table === "lists" && opts.listDeleted)
       return { data: call.filters.includes("is:deleted_at=null") ? null : { ...list }, error: null };
     if (call.table === "lists") return { data: list.type ? { ...list } : null, error: null };
@@ -162,6 +164,17 @@ describe("categorizeList", () => {
     await categorizeList(w.deps, "L", "pending");
     expect(w.categorizer.categorize).not.toHaveBeenCalled();
     expect(w.lock.acquire).not.toHaveBeenCalled();
+  });
+
+  it("logs and stops when the list-type read fails", async () => {
+    const w = world({ failListRead: true, items: [row({ id: "a", text: "milk" })] });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.lock.acquire).not.toHaveBeenCalled();
+    expect(w.categorizer.categorize).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "[Categorizer] could not read the list type",
+      expect.objectContaining({ listId: "L", mode: "pending", error: expect.objectContaining({ message: "fetch failed" }) })
+    );
   });
 
   it("reuses the category of a known text without calling the AI", async () => {
