@@ -24,6 +24,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [items, setItems] = useState<ItemData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // The list is gone for this user (deleted, or access removed): a 403/404 that Retry can't fix.
+  const [notFound, setNotFound] = useState(false);
   const [isShared, setIsShared] = useState(false);
   const [listType, setListType] = useState<ListType>("regular");
   const [listIcon, setListIcon] = useState<ListIconName | null>(null);
@@ -63,12 +65,14 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       // The session gave up signing in: leave the placeholders for the error screen, where
       // the connection banner says why. A later token loads the list (the page reruns this).
       console.warn("[List] Load skipped, no session:", { listId });
+      setNotFound(false);
       setError(true);
       setLoading(false);
       return;
     }
     try {
       setError(false);
+      setNotFound(false);
       // Fetch list info
       let currentListType: ListType = "regular";
       type ListSummary = {
@@ -157,6 +161,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         if (currentListType === "grocery") await loadCategories();
       } else {
         console.warn("[List] Load items failed:", { listId, status: res.status });
+        setNotFound(res.status === 403 || res.status === 404);
         setError(true);
       }
     } catch (e) {
@@ -233,5 +238,5 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     if (listType === "grocery") await loadCategories();
   }, [jwtRef, listId, listType, loadCategories]);
 
-  return { listName, setListName, items, setItems, loading, error, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting };
+  return { listName, setListName, items, setItems, loading, error, notFound, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting };
 }

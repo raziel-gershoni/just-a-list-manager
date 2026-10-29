@@ -7,6 +7,7 @@ import type { RealtimeChange } from "@/src/types";
 import { useRealtimeList } from "@/src/hooks/useRealtimeList";
 import { lookupUserName } from "@/src/utils/list-helpers";
 import { applyCategoryChange } from "@/src/utils/category-state";
+import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 import { getSyncEngine } from "@/src/sync/engine";
 import { overlayPending, withoutCreated } from "@/src/sync/overlay";
 
@@ -16,6 +17,12 @@ interface UseListRealtimeParams {
   listId: string;
   setItems: React.Dispatch<React.SetStateAction<ItemData[]>>;
   setListName: React.Dispatch<React.SetStateAction<string>>;
+  setListType: React.Dispatch<React.SetStateAction<ListType>>;
+  setListIcon: React.Dispatch<React.SetStateAction<ListIconName | null>>;
+  setListColor: React.Dispatch<React.SetStateAction<ListColor | null>>;
+  /** The type on screen now, to load categories only when the list becomes a grocery list. */
+  listType: ListType;
+  loadCategories: () => Promise<void>;
   setCategories: React.Dispatch<React.SetStateAction<ListCategory[]>>;
   isDraggingRef: React.RefObject<boolean>;
   onListDeleted: () => void;
@@ -31,6 +38,11 @@ export function useListRealtime({
   listId,
   setItems,
   setListName,
+  setListType,
+  setListIcon,
+  setListColor,
+  listType,
+  loadCategories,
   setCategories,
   isDraggingRef,
   onListDeleted,
@@ -102,13 +114,24 @@ export function useListRealtime({
         if (change.eventType === "UPDATE") {
           if (newRec.deleted_at) {
             onListDeleted();
-          } else if (newRec.name) {
-            setListName(newRec.name as string);
+            return;
           }
+          // The owner may have renamed the list or changed its type, icon or color, here
+          // or on another device.
+          if (newRec.name) setListName(newRec.name as string);
+          if (typeof newRec.type === "string") {
+            // Same reading as fetchItems: anything but grocery opens as a regular list.
+            const nextType: ListType = newRec.type === "grocery" ? "grocery" : "regular";
+            setListType(nextType);
+            // Nothing loaded categories while the list was another type.
+            if (nextType === "grocery" && listType !== "grocery") void loadCategories();
+          }
+          if ("icon" in newRec) setListIcon((newRec.icon ?? null) as ListIconName | null);
+          if ("color" in newRec) setListColor((newRec.color ?? null) as ListColor | null);
         }
       }
     },
-    [setItems, setListName, setCategories, isDraggingRef, onListDeleted, listId]
+    [setItems, setListName, setListType, setListIcon, setListColor, listType, loadCategories, setCategories, isDraggingRef, onListDeleted, listId]
   );
 
   return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange, onChannelClosed, onRejoined);

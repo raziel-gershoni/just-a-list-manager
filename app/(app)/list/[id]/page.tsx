@@ -54,7 +54,7 @@ export default function ListPage() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, isShared, listType, setListType, listIcon, listColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting } =
+  const { listName, setListName, items, setItems, loading, error, notFound, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -166,6 +166,8 @@ export default function ListPage() {
     });
 
   const onListDeleted = useCallback(() => router.push("/"), [router]);
+  // From the error view. replace: Back must not lead to a list that can't load.
+  const goHome = useCallback(() => router.replace("/"), [router]);
 
   const { resubscribe } = useListRealtime({
     supabaseClient,
@@ -173,6 +175,11 @@ export default function ListPage() {
     listId,
     setItems,
     setListName,
+    setListType,
+    setListIcon,
+    setListColor,
+    listType,
+    loadCategories,
     setCategories,
     isDraggingRef,
     onListDeleted,
@@ -241,14 +248,24 @@ export default function ListPage() {
       <>
         <OfflineIndicator />
         <div className="flex flex-col items-center justify-center min-h-screen p-4">
-          <p className="text-tg-hint mb-4">{t('lists.loadError')}</p>
-          <button
-            onClick={fetchItems}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
-          >
-            <RefreshCw className="w-4 h-4" />
-            {t('common.retry')}
-          </button>
+          <p className="text-tg-hint mb-4">{t(notFound ? 'errors.notFound' : 'lists.loadError')}</p>
+          <div className="flex flex-col items-center gap-3">
+            {!notFound && (
+              <button
+                onClick={fetchItems}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl bg-tg-button text-tg-button-text font-medium"
+              >
+                <RefreshCw className="w-4 h-4" />
+                {t('common.retry')}
+              </button>
+            )}
+            <button
+              onClick={goHome}
+              className={`px-6 py-3 rounded-xl font-medium ${notFound ? "bg-tg-button text-tg-button-text" : "bg-tg-secondary-bg text-tg-text"}`}
+            >
+              {t('common.goHome')}
+            </button>
+          </div>
         </div>
       </>
     );
