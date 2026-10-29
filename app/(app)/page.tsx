@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { Plus, Globe, Check, RefreshCw, X, Smartphone, LogOut } from "lucide-react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useListsDragDrop } from "@/src/hooks/useListsDragDrop";
-import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
+import { useTelegram } from "@/components/TelegramProvider";
 import ListCard from "@/components/ListCard";
 import SortableListCard from "@/components/SortableListCard";
 import EmptyState from "@/components/EmptyState";
@@ -40,7 +40,7 @@ async function readErrorCode(res: Response): Promise<string | null> {
   }
 }
 
-function HomeContent() {
+export default function HomePage() {
   const { isReady, locale, setLanguage, jwtRef, onRefreshNeededRef, homeScreenStatus, addToHomeScreen } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
@@ -910,13 +910,5 @@ function LanguageSheet({
         </button>
       </div>
     </div>
-  );
-}
-
-export default function HomePage() {
-  return (
-    <TelegramProvider>
-      <HomeContent />
-    </TelegramProvider>
   );
 }

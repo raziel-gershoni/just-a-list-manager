@@ -23,7 +23,7 @@ describe("category realtime wiring", () => {
   // list-data-categories.test.ts.
 
   it("the page hands setCategories to useListRealtime", () => {
-    const page = read("app/list/[id]/page.tsx");
+    const page = read("app/(app)/list/[id]/page.tsx");
     const at = page.indexOf("useListRealtime({");
     expect(at).toBeGreaterThan(-1);
     expect(page.slice(at, page.indexOf("})", at))).toContain("setCategories");

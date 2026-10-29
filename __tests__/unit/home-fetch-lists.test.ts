@@ -56,11 +56,11 @@ vi.mock("@/components/EmptyState", () => ({ default: () => null }));
 vi.mock("@/components/OfflineIndicator", () => ({ default: () => null }));
 vi.mock("@/components/IconColorPicker", () => ({ default: () => null }));
 
-import HomePage from "@/app/page";
+import HomePage from "@/app/(app)/page";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
-const HomeContent = (HomePage() as El).props.children as El;
-const Content = HomeContent.type as () => El;
+// The page component itself: the provider lives in app/(app)/layout.tsx.
+const Content = HomePage as () => El;
 
 const render = () => {
   R.i = 0;

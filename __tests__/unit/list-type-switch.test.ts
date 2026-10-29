@@ -69,7 +69,7 @@ vi.mock("@/components/list/RecurringItemsSection", () => ({ default: () => null 
 vi.mock("@/components/list/CompletedItemsSection", () => ({ default: () => null }));
 vi.mock("@/components/list/ToastContainer", () => ({ default: () => null }));
 
-import ListPage from "@/app/list/[id]/page";
+import ListPage from "@/app/(app)/list/[id]/page";
 import ListHeader from "@/components/list/ListHeader";
 import CompletedItemsSection from "@/components/list/CompletedItemsSection";
 import ToastContainer from "@/components/list/ToastContainer";
@@ -77,8 +77,8 @@ import { DragDropProvider } from "@dnd-kit/react";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 
-// The page's own component: ListPage wraps it in the (stubbed) TelegramProvider.
-const ListContent = ((ListPage() as El).props.children as El).type as () => El;
+// The page component itself: the provider lives in app/(app)/layout.tsx.
+const ListContent = ListPage as () => El;
 
 const render = () => {
   R.i = 0;

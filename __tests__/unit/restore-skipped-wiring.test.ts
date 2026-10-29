@@ -7,7 +7,7 @@ import { resolve } from "path";
 // the handler into the section, and the header button calling it without toggling
 // the section open or closed.
 
-const page = readFileSync(resolve(process.cwd(), "app/list/[id]/page.tsx"), "utf8");
+const page = readFileSync(resolve(process.cwd(), "app/(app)/list/[id]/page.tsx"), "utf8");
 const section = readFileSync(resolve(process.cwd(), "components/list/SkippedItemsSection.tsx"), "utf8");
 
 describe("Restore all wiring", () => {

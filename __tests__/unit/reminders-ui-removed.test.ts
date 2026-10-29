@@ -53,7 +53,7 @@ describe("item rows carry no reminder UI", () => {
 
 describe("the list page and pickers have no Reminders type", () => {
   it("the list page has no reminders branch, sheet, state or handlers", () => {
-    const src = read("app/list/[id]/page.tsx");
+    const src = read("app/(app)/list/[id]/page.tsx");
     expect(src).not.toMatch(
       /isReminders|ReminderSheet|ReminderItemsList|groupByDate|reminderItem|pendingReminderText|handleSetReminder|handleUpdateReminder|handleCancelReminder|my_remind|"reminders"|typeReminders/
     );
@@ -62,14 +62,14 @@ describe("the list page and pickers have no Reminders type", () => {
   });
 
   it("the add box is not told the list type", () => {
-    const src = read("app/list/[id]/page.tsx");
+    const src = read("app/(app)/list/[id]/page.tsx");
     const start = src.indexOf("<AddItemInput");
     expect(start).toBeGreaterThan(-1);
     expect(src.slice(start, src.indexOf("/>", start))).not.toContain("listType");
   });
 
   it("the new-list picker offers no Reminders choice", () => {
-    expect(read("app/page.tsx")).not.toMatch(/"reminders"|typeReminders/);
+    expect(read("app/(app)/page.tsx")).not.toMatch(/"reminders"|typeReminders/);
   });
 });
 

@@ -4,10 +4,10 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Loader2, RefreshCw } from "lucide-react";
-import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
+import { useTelegram } from "@/components/TelegramProvider";
 import { requestToJoin, cancelJoinRequest } from "@/src/utils/invite-requests";
 
-function InviteContent() {
+export default function InvitePage() {
   const { initData, isReady, jwtRef } = useTelegram();
   const t = useTranslations();
   const params = useParams();
@@ -164,12 +164,4 @@ function InviteContent() {
   }
 
   return null;
-}
-
-export default function InvitePage() {
-  return (
-    <TelegramProvider>
-      <InviteContent />
-    </TelegramProvider>
-  );
 }

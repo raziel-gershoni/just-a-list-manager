@@ -122,7 +122,7 @@ describe("source wiring", () => {
   });
 
   it("page passes items to AddItemInput", () => {
-    const src = read("app/list/[id]/page.tsx");
+    const src = read("app/(app)/list/[id]/page.tsx");
     const start = src.indexOf("<AddItemInput");
     expect(start).toBeGreaterThan(-1);
     // props precede onAddItem; stay within the opening tag's first lines

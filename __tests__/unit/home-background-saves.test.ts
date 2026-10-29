@@ -78,14 +78,14 @@ vi.mock("@/components/EmptyState", () => ({ default: () => null }));
 vi.mock("@/components/OfflineIndicator", () => ({ default: () => null }));
 vi.mock("@/components/IconColorPicker", () => ({ default: () => null }));
 
-import HomePage from "@/app/page";
+import HomePage from "@/app/(app)/page";
 import SortableListCard from "@/components/SortableListCard";
 import { Globe } from "lucide-react";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 
-// The page's own component: HomePage wraps it in the (stubbed) TelegramProvider.
-const HomeContent = ((HomePage() as El).props.children as El).type as () => El;
+// The page component itself: the provider lives in app/(app)/layout.tsx.
+const HomeContent = HomePage as () => El;
 
 const render = () => {
   R.i = 0;
@@ -122,7 +122,7 @@ function findAll(node: unknown, match: (el: El) => boolean, out: El[] = []): El[
 const listIds = () => findAll(render(), (el) => el.type === SortableListCard).map((el) => el.props.id);
 const card = (id: string) => find(render(), (el) => el.type === SortableListCard && el.props.id === id)!;
 const press = (el: El, handler: string, ...args: unknown[]) => (el.props[handler] as (...a: unknown[]) => unknown)(...args);
-// A sheet defined in app/page.tsx, found by its component name.
+// A sheet defined in app/(app)/page.tsx, found by its component name.
 const sheet = (name: string) =>
   find(render(), (el) => typeof el.type === "function" && (el.type as { name: string }).name === name);
 const toastBox = () => find(render(), (el) => el.type === "div" && String(el.props.className).startsWith("fixed bottom-8 start-5"));

@@ -5,7 +5,7 @@ import { Children, createElement, type ReactElement, type ReactNode } from "reac
 import { renderToStaticMarkup } from "react-dom/server";
 import type { CategoryGroup, ItemData, ListCategory } from "@/src/types";
 
-const page = readFileSync(resolve(process.cwd(), "app/list/[id]/page.tsx"), "utf8");
+const page = readFileSync(resolve(process.cwd(), "app/(app)/list/[id]/page.tsx"), "utf8");
 const sortable = readFileSync(resolve(process.cwd(), "components/SortableItem.tsx"), "utf8");
 
 describe("grouped grocery list wiring", () => {
@@ -120,7 +120,7 @@ vi.mock("@/components/list/RecurringItemsSection", () => ({ default: () => null 
 vi.mock("@/components/list/CompletedItemsSection", () => ({ default: () => null }));
 vi.mock("@/components/list/ToastContainer", () => ({ default: () => null }));
 
-import ListPage from "@/app/list/[id]/page";
+import ListPage from "@/app/(app)/list/[id]/page";
 
 const category = (id: string, position: number, en: string, he: string): ListCategory => ({
   id, list_id: "L", name_en: en, name_he: he, name_ru: en, position, created_by: null,

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { RefreshCw } from "lucide-react";
-import TelegramProvider, { useTelegram } from "@/components/TelegramProvider";
+import { useTelegram } from "@/components/TelegramProvider";
 import AddItemInput from "@/components/AddItemInput";
 import SortableItem from "@/components/SortableItem";
 import OfflineIndicator from "@/components/OfflineIndicator";
@@ -31,7 +31,7 @@ import { DragDropProvider } from "@dnd-kit/react";
 
 const executorFactory = createExecutorFactory();
 
-function ListContent() {
+export default function ListPage() {
   const {
     isReady,
     supabaseClient,
@@ -425,13 +425,5 @@ function ListContent() {
         />
       )}
     </div>
-  );
-}
-
-export default function ListPage() {
-  return (
-    <TelegramProvider>
-      <ListContent />
-    </TelegramProvider>
   );
 }

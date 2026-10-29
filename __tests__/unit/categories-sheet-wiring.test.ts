@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
-const page = readFileSync(resolve(process.cwd(), "app/list/[id]/page.tsx"), "utf8");
+const page = readFileSync(resolve(process.cwd(), "app/(app)/list/[id]/page.tsx"), "utf8");
 const sheet = readFileSync(resolve(process.cwd(), "components/list/CategoriesSheet.tsx"), "utf8");
 
 describe("categories sheet wiring", () => {
