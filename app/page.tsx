@@ -151,8 +151,9 @@ function HomeContent() {
             sessionStorage.removeItem("autoOpenedSingleList");
           }
         }
-      } else if (!silent) {
-        setError(true);
+      } else {
+        console.warn("[Home] Load lists failed:", { view: requestedView, silent, status: res.status });
+        if (!silent) setError(true);
       }
     } catch (e) {
       console.error("[Home] Fetch lists error:", e);

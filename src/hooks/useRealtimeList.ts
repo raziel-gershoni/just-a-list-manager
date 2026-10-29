@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 import type { RealtimeChange } from "@/src/types";
+import { removeChannelLogged } from "@/src/lib/realtime-cleanup";
 
 const RESUBSCRIBE_TIMEOUT_MS = 10000;
 
@@ -120,7 +121,7 @@ export function useRealtimeList(
         if (settled) return;
         settled = true;
         // Clean up the failed channel to prevent orphaned subscriptions
-        client.removeChannel(channel);
+        removeChannelLogged(client, channel, { listId, reason: "resubscribe timed out" });
         reject(new Error("Resubscribe timed out"));
       }, RESUBSCRIBE_TIMEOUT_MS);
 
@@ -138,7 +139,7 @@ export function useRealtimeList(
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           settled = true;
           clearTimeout(timeout);
-          client.removeChannel(channel);
+          removeChannelLogged(client, channel, { listId, reason: `resubscribe ${status}` });
           reject(new Error(`Channel subscribe failed: ${status}`));
         }
       });
@@ -155,9 +156,10 @@ export function useRealtimeList(
       resubscribedRef.current = false;
     } else {
       // Clean up any existing channel
-      if (channelRef.current) {
-        supabaseClient.removeChannel(channelRef.current);
+      const stale = channelRef.current;
+      if (stale) {
         channelRef.current = null;
+        removeChannelLogged(supabaseClient, stale, { listId, reason: "replaced" });
       }
 
       subscribeCountRef.current++;
@@ -177,13 +179,14 @@ export function useRealtimeList(
     const clientRefForCleanup = supabaseClientRef;
 
     return () => {
-      if (channelRef.current) {
+      const channel = channelRef.current;
+      if (channel) {
+        channelRef.current = null;
         // Use the ref client since supabaseClient from closure may be stale
         const client = clientRefForCleanup.current;
         if (client) {
-          client.removeChannel(channelRef.current);
+          removeChannelLogged(client, channel, { listId, reason: "cleanup" });
         }
-        channelRef.current = null;
       }
     };
   }, [supabaseClient, supabaseClientRef, listId, createChannel]);

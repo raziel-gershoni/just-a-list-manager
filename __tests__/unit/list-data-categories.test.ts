@@ -52,6 +52,7 @@ function stubFetch(categories: "fail" | 500 | unknown[], type = "grocery") {
 beforeEach(() => {
   R.slots = [];
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -234,5 +235,133 @@ describe("useListData item loading", () => {
       expect(item.id).toBe("a");
       expect(Object.keys(item).filter((k) => k.startsWith("my_remind"))).toEqual([]);
     }
+  });
+});
+
+// A failed read is logged with its status. Only a failed list lookup changes the screen:
+// without the list's details the header is blank and a grocery list opens as a regular one,
+// so it shows the Retry screen instead.
+describe("useListData failed reads", () => {
+  type Reply = number | unknown;
+  const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+  const fail = (status: number) => ({ ok: false, status, json: async () => ({ error: "Server error" }) });
+  const groceries = { id: "L", name: "Groceries", type: "grocery" };
+  const milk = { id: "a", text: "milk", completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, recurring: false, position: 1, category_id: null };
+
+  // Each route answers with a body (200) or a bare status number (an error response).
+  function stubRoutes(routes: { lists?: Reply; archived?: Reply; items?: Reply; categories?: Reply; patch?: Reply }) {
+    const reply = (r: Reply) => (typeof r === "number" ? fail(r) : ok(r));
+    const f = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH" && url === "/api/lists/L/items") return reply(routes.patch ?? { ok: true });
+      if (url === "/api/lists") return reply(routes.lists ?? [groceries]);
+      if (url === "/api/lists?archived=1") return reply(routes.archived ?? []);
+      if (url.startsWith("/api/lists/L/items")) return reply(routes.items ?? { items: [milk] });
+      if (url === "/api/lists/L/categories") return reply(routes.categories ?? { categories: [] });
+      throw new Error(`unexpected ${url}`);
+    });
+    vi.stubGlobal("fetch", f);
+    return f;
+  }
+  const urls = (f: ReturnType<typeof stubRoutes>) => f.mock.calls.map(([url]) => url);
+
+  it("a failed list lookup shows the Retry screen and never loads the items", async () => {
+    const f = stubRoutes({ lists: 500 });
+    await render().fetchItems();
+    const state = render();
+    expect(state.error).toBe(true);
+    expect(state.loading).toBe(false);
+    expect(state.listName).toBe("");
+    expect(urls(f)).toEqual(["/api/lists"]);
+    expect(console.error).toHaveBeenCalledWith("[List] Fetch error:", expect.objectContaining({ message: "Load lists failed: 500" }));
+  });
+
+  it("a failed archived lookup shows the Retry screen too", async () => {
+    const f = stubRoutes({ lists: [], archived: 503 });
+    await render().fetchItems();
+    expect(render().error).toBe(true);
+    expect(urls(f)).toEqual(["/api/lists", "/api/lists?archived=1"]);
+    expect(console.error).toHaveBeenCalledWith("[List] Fetch error:", expect.objectContaining({ message: "Load lists failed: 503" }));
+  });
+
+  it("a list missing from a good answer is still looked up among the archived lists", async () => {
+    const f = stubRoutes({ lists: [{ id: "other", name: "Other" }], archived: [groceries] });
+    await render().fetchItems();
+    const state = render();
+    expect(state.error).toBe(false);
+    expect(state.listName).toBe("Groceries");
+    expect(state.listType).toBe("grocery");
+    expect(state.items.map((i) => i.id)).toEqual(["a"]);
+    expect(urls(f)).toContain("/api/lists/L/categories");
+  });
+
+  it("a failed items load is logged with its status and shows the Retry screen", async () => {
+    stubRoutes({ items: 500 });
+    await render().fetchItems();
+    expect(render().error).toBe(true);
+    expect(console.warn).toHaveBeenCalledWith("[List] Load items failed:", { listId: "L", status: 500 });
+  });
+
+  it("a failed categories load is logged with its status and changes nothing", async () => {
+    stubRoutes({ categories: { categories: [dairy] } });
+    await render().fetchItems();
+    stubRoutes({ categories: 500 });
+    await render().loadCategories();
+    expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
+    expect(console.warn).toHaveBeenCalledWith("[List] Categories load failed:", { listId: "L", status: 500 });
+  });
+
+  it("a failed background refresh is logged with its status and keeps the items", async () => {
+    stubRoutes({});
+    await render().fetchItems();
+    stubRoutes({ items: 502 });
+    await expect(render().refreshItems()).resolves.toBeUndefined();
+    expect(render().items.map((i) => i.id)).toEqual(["a"]);
+    expect(console.warn).toHaveBeenCalledWith("[List] Background refresh failed:", { listId: "L", status: 502 });
+  });
+
+  it("a failed Sorting retry is logged with its status and asks for nothing else", async () => {
+    stubRoutes({});
+    await render().fetchItems();
+    const f = stubRoutes({ items: 500 });
+    await render().retrySorting();
+    expect(urls(f)).toEqual(["/api/lists/L/items?limit=500"]);
+    expect(console.warn).toHaveBeenCalledWith("[List] Sorting retry failed:", { listId: "L", status: 500 });
+  });
+
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+  const fiveHoursAgo = () => new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+
+  it("an auto-unskip the server refuses is logged with its status", async () => {
+    stubRoutes({ items: { items: [{ ...milk, skipped_at: fiveHoursAgo() }] }, patch: 500 });
+    await render().fetchItems();
+    await settle();
+    expect(render().items[0].skipped_at).toBeNull();
+    expect(console.warn).toHaveBeenCalledWith(
+      "[List] Auto-unskip PATCH failed for item a in list L:",
+      expect.objectContaining({ message: "Auto-unskip failed: 500" })
+    );
+  });
+
+  it("an auto-respawn the server refuses is logged with its status", async () => {
+    stubRoutes({ items: { items: [{ ...milk, recurring: true, completed: true, completed_at: fiveHoursAgo() }] }, patch: 500 });
+    await render().fetchItems();
+    await settle();
+    expect(render().items[0].completed).toBe(false);
+    expect(console.warn).toHaveBeenCalledWith(
+      "[List] Auto-respawn PATCH failed for item a in list L:",
+      expect.objectContaining({ message: "Auto-respawn failed: 500" })
+    );
+  });
+
+  it("logs nothing when every read succeeds", async () => {
+    stubRoutes({ items: { items: [{ ...milk, skipped_at: fiveHoursAgo() }] } });
+    await render().fetchItems();
+    await render().refreshItems();
+    await render().retrySorting();
+    await settle();
+    expect(console.warn).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
   });
 });

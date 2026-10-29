@@ -10,16 +10,23 @@ export function useJWTRefresh() {
     async (initDataStr: string | null): Promise<string | null> => {
       try {
         const headers: Record<string, string> = {};
+        let mode: "bearer" | "initData";
         if (jwtRef.current) {
           headers["Authorization"] = `Bearer ${jwtRef.current}`;
+          mode = "bearer";
         } else if (initDataStr) {
           headers["x-telegram-init-data"] = initDataStr;
+          mode = "initData";
         } else {
           return null;
         }
 
         const res = await fetch("/api/auth/token", { headers });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          // The mode and status only: the token and initData are credentials.
+          console.warn("[TelegramProvider] Token request failed:", { mode, status: res.status });
+          return null;
+        }
         const { token } = await res.json();
         jwtRef.current = token;
         setJwt(token);

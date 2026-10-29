@@ -11,6 +11,7 @@ import React, {
 import { useRouter } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { createBrowserClient } from "@/src/lib/supabase";
+import { removeAllChannelsLogged } from "@/src/lib/realtime-cleanup";
 import { resolveLocale, type SupportedLocale } from "@/src/lib/i18n";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import enMessages from "@/messages/en.json";
@@ -140,7 +141,7 @@ export default function TelegramProvider({
       const oldClient = supabaseClientRef.current;
       if (oldClient) {
         oldClient.realtime.disconnect();
-        oldClient.removeAllChannels();
+        removeAllChannelsLogged(oldClient);
       }
       const newClient = createBrowserClient(token, stableHeartbeatCallback);
       supabaseClientRef.current = newClient;
@@ -233,6 +234,8 @@ export default function TelegramProvider({
                 username: userData.username,
               });
             }
+          } else {
+            console.error("[TelegramProvider] Web user load failed:", { status: userRes.status });
           }
         } catch (e) {
           console.error("[TelegramProvider] Web user registration error:", e);
@@ -332,6 +335,8 @@ export default function TelegramProvider({
             // Language is user-controlled via the language sheet — never overwrite it from
             // Telegram's language_code, since unsupported codes (e.g. "en-US") would be
             // normalized to "en" by resolveLocale and clobber the user's explicit choice.
+          } else {
+            console.error("[TelegramProvider] User registration failed:", { status: userRes.status });
           }
         } catch (e) {
           console.error("[TelegramProvider] User registration error:", e);

@@ -5,6 +5,7 @@ import type { ItemData, ListCategory } from "@/src/types";
 import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 import { shouldRespawn } from "@/src/utils/recurring-respawn";
 import { sortCategories } from "@/src/utils/category-state";
+import { throwIfNotOk } from "@/src/utils/http";
 
 // The list cap is 500 non-deleted items (insert_item_if_under_limit uses the same
 // predicate as GET /items), so limit=500 covers every normal case. It is a cap, not a
@@ -27,7 +28,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [categories, setCategories] = useState<ListCategory[]>([]);
 
   // The list works without categories (items show under "Sorting…"), so a failed request
-  // is only logged: it must never turn into the list's error screen.
+  // (an error status or no answer at all) is only logged: it must never turn into the
+  // list's error screen.
   const loadCategories = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
@@ -38,6 +40,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       if (res.ok) {
         const { categories: fetched } = await res.json();
         setCategories(sortCategories(fetched ?? []));
+      } else {
+        console.warn("[List] Categories load failed:", { listId, status: res.status });
       }
     } catch (e) {
       console.error("[List] Categories fetch error:", e);
@@ -64,7 +68,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         const res = await fetch(url, {
           headers: { Authorization: `Bearer ${jwt}` },
         });
-        if (!res.ok) return undefined;
+        // A failed lookup throws to the Retry screen below: without the list's details the
+        // header is blank and a grocery list would open as a regular one.
+        throwIfNotOk(res, "Load lists");
         const all: ListSummary[] = await res.json();
         return all.find((l) => l.id === listId);
       };
@@ -115,9 +121,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ itemId: base.id, skipped: false }),
-            }).catch((err) => {
-              console.warn(`[List] Auto-unskip PATCH failed for item ${base.id} in list ${listId}:`, err);
-            });
+            })
+              .then((res) => throwIfNotOk(res, "Auto-unskip"))
+              .catch((err) => {
+                console.warn(`[List] Auto-unskip PATCH failed for item ${base.id} in list ${listId}:`, err);
+              });
             return { ...base, skipped_at: null };
           }
           // Auto-respawn recurring items past the same 4-hour threshold.
@@ -131,9 +139,11 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ itemId: base.id, restoreRecurring: true }),
-            }).catch((err) => {
-              console.warn(`[List] Auto-respawn PATCH failed for item ${base.id} in list ${listId}:`, err);
-            });
+            })
+              .then((res) => throwIfNotOk(res, "Auto-respawn"))
+              .catch((err) => {
+                console.warn(`[List] Auto-respawn PATCH failed for item ${base.id} in list ${listId}:`, err);
+              });
             return { ...base, completed: false, completed_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
           }
           return base;
@@ -141,6 +151,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         setItems(mapped);
         if (currentListType === "grocery") await loadCategories();
       } else {
+        console.warn("[List] Load items failed:", { listId, status: res.status });
         setError(true);
       }
     } catch (e) {
@@ -158,7 +169,10 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn("[List] Background refresh failed:", { listId, status: res.status });
+        return;
+      }
       const { items: fetchedItems } = await res.json();
 
       const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string }) => {
@@ -214,7 +228,10 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn("[List] Sorting retry failed:", { listId, status: res.status });
+        return;
+      }
       const { items: fetched } = await res.json();
       const server = new Map<string, { category_id?: string | null; category_locked?: boolean }>(
         (fetched ?? []).map((i: { id: string; category_id?: string | null; category_locked?: boolean }) => [i.id, i])
