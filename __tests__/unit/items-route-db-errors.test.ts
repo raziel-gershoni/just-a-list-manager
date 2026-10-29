@@ -27,6 +27,7 @@ import { POST as UNMARK } from "@/app/api/lists/[id]/items/unmark-completed/rout
 import { POST as UNSKIP } from "@/app/api/lists/[id]/items/unskip-all/route";
 
 const CAT = "0b8f6c1e-2f4a-4c3b-9d1e-5a6b7c8d9e01";
+const ITEM = "11111111-1111-4111-8111-111111111111";
 const MILK = "0b8f6c1e-2f4a-4c3b-9d1e-5a6b7c8d9e03";
 const boom = { code: "57014", message: "canceling statement due to statement timeout" };
 const params = { params: Promise.resolve({ id: "L" }) };
@@ -122,16 +123,16 @@ describe("POST /items", () => {
 describe("PATCH and DELETE /items", () => {
   it("PATCH logs the failed category check", async () => {
     use((c) => c.table === "list_categories" ? { data: null, error: boom } : { data: null, error: null });
-    const res = await PATCH(req("PATCH", { itemId: "a", categoryId: CAT }), params);
+    const res = await PATCH(req("PATCH", { itemId: ITEM, categoryId: CAT }), params);
     expect(res.status).toBe(500);
     expect(console.error).toHaveBeenCalledWith("[items/PATCH] Category check failed:", { listId: "L", categoryId: CAT }, boom);
   });
 
   it("DELETE logs the failed soft delete", async () => {
     use(() => ({ data: null, error: boom }));
-    const res = await DELETE(new NextRequest("https://app.test/api/lists/L/items?itemId=a", { method: "DELETE" }), params);
+    const res = await DELETE(new NextRequest(`https://app.test/api/lists/L/items?itemId=${ITEM}`, { method: "DELETE" }), params);
     expect(res.status).toBe(500);
-    expect(console.error).toHaveBeenCalledWith("[items/DELETE] Delete failed:", { listId: "L", itemId: "a" }, boom);
+    expect(console.error).toHaveBeenCalledWith("[items/DELETE] Delete failed:", { listId: "L", itemId: ITEM }, boom);
   });
 });
 

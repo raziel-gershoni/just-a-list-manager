@@ -25,6 +25,7 @@ vi.mock("next/server", async (orig) => ({
 import { GET, POST, PATCH } from "@/app/api/lists/[id]/items/route";
 
 const CAT = "0b8f6c1e-2f4a-4c3b-9d1e-5a6b7c8d9e01";
+const ITEM = "11111111-1111-4111-8111-111111111111";
 const params = { params: Promise.resolve({ id: "L" }) };
 const req = (method: string, body?: unknown) =>
   new NextRequest("https://app.test/api/lists/L/items?limit=500", {
@@ -128,29 +129,29 @@ describe("items route schedules categorization", () => {
 
   it("PATCH text on an unlocked item clears its category and schedules a run", async () => {
     use((c) => c.table === "items" && c.op === "update" && (c.values as Record<string, unknown>).text
-      ? { data: { id: "a", text: "oat milk", category_locked: false }, error: null }
+      ? { data: { id: ITEM, text: "oat milk", category_locked: false }, error: null }
       : { data: null, error: null });
-    await PATCH(req("PATCH", { itemId: "a", text: "oat milk" }), params);
+    await PATCH(req("PATCH", { itemId: ITEM, text: "oat milk" }), params);
     const clear = h.fake.calls.find((c) => c.op === "update" && (c.values as Record<string, unknown>).category_id === null)!;
-    expect(clear.filters).toEqual(expect.arrayContaining(["eq:id=a", "eq:list_id=L", "eq:category_locked=false", "eq:text=oat milk"]));
+    expect(clear.filters).toEqual(expect.arrayContaining([`eq:id=${ITEM}`, "eq:list_id=L", "eq:category_locked=false", "eq:text=oat milk"]));
     await runAfter();
     expect(h.categorize).toHaveBeenCalledWith(expect.anything(), "L", "pending");
   });
 
   it("PATCH text on a hand-placed item keeps its category", async () => {
     use((c) => c.table === "items" && c.op === "update"
-      ? { data: { id: "a", text: "oat milk", category_locked: true }, error: null }
+      ? { data: { id: ITEM, text: "oat milk", category_locked: true }, error: null }
       : { data: null, error: null });
-    await PATCH(req("PATCH", { itemId: "a", text: "oat milk" }), params);
+    await PATCH(req("PATCH", { itemId: ITEM, text: "oat milk" }), params);
     expect(h.fake.calls.filter((c) => c.op === "update")).toHaveLength(1);
     expect(h.after).toEqual([]);
   });
 
   it("PATCH without a text change keeps the category", async () => {
     use((c) => c.table === "items" && c.op === "update"
-      ? { data: { id: "a", text: "milk", category_locked: false }, error: null }
+      ? { data: { id: ITEM, text: "milk", category_locked: false }, error: null }
       : { data: null, error: null });
-    await PATCH(req("PATCH", { itemId: "a", skipped: true }), params);
+    await PATCH(req("PATCH", { itemId: ITEM, skipped: true }), params);
     expect(h.fake.calls.filter((c) => c.op === "update")).toHaveLength(1);
     expect(h.after).toEqual([]);
   });
@@ -158,10 +159,10 @@ describe("items route schedules categorization", () => {
   it("PATCH categoryId places the item by hand", async () => {
     use((c) => {
       if (c.table === "list_categories") return { data: { id: CAT }, error: null };
-      if (c.table === "items" && c.op === "update") return { data: { id: "a" }, error: null };
+      if (c.table === "items" && c.op === "update") return { data: { id: ITEM }, error: null };
       return { data: null, error: null };
     });
-    const res = await PATCH(req("PATCH", { itemId: "a", categoryId: CAT }), params);
+    const res = await PATCH(req("PATCH", { itemId: ITEM, categoryId: CAT }), params);
     expect(res.status).toBe(200);
     const check = h.fake.calls.find((c) => c.table === "list_categories")!;
     expect(check.filters).toEqual(expect.arrayContaining([`eq:id=${CAT}`, "eq:list_id=L"]));
@@ -171,14 +172,14 @@ describe("items route schedules categorization", () => {
 
   it("PATCH categoryId answers 500 when the category check itself fails, so the queue retries the move", async () => {
     use((c) => c.table === "list_categories" ? { data: null, error: { message: "timeout" } } : { data: null, error: null });
-    const res = await PATCH(req("PATCH", { itemId: "a", categoryId: CAT }), params);
+    const res = await PATCH(req("PATCH", { itemId: ITEM, categoryId: CAT }), params);
     expect(res.status).toBe(500);
     expect(h.fake.calls.filter((c) => c.table === "items" && c.op === "update")).toEqual([]);
   });
 
   it("PATCH categoryId from another list is rejected", async () => {
     use(() => ({ data: null, error: null }));
-    const res = await PATCH(req("PATCH", { itemId: "a", categoryId: CAT }), params);
+    const res = await PATCH(req("PATCH", { itemId: ITEM, categoryId: CAT }), params);
     expect(res.status).toBe(400);
     expect(h.fake.calls.filter((c) => c.table === "items" && c.op === "update")).toEqual([]);
   });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { z } from "zod";
 import { verifyUserAuth, verifyListPermission } from "@/src/lib/api-auth";
 import { apiRateLimiter } from "@/src/lib/rate-limit";
 import { createServerClient } from "@/src/lib/supabase";
@@ -432,25 +433,30 @@ export async function PATCH(
     query = query.is("deleted_at", null);
   }
 
-  const { data: item, error } = await query.select().single();
+  // maybeSingle: zero rows (missing, or already deleted) is { data: null, error: null },
+  // so `error` is always a real DB failure. That must be a 500, which the queue retries;
+  // a 404 would make it drop the change.
+  const { data: item, error } = await query.select().maybeSingle();
 
-  if (error || !item) {
-    return NextResponse.json(
-      { error: "Item not found or update failed" },
-      { status: 404 }
-    );
+  if (error) return dbError("items/PATCH", "Item update", error, { listId, itemId });
+  if (!item) {
+    console.warn("[items/PATCH] Item not found:", { listId, itemId });
+    return NextResponse.json({ error: "Item not found" }, { status: 404 });
   }
 
   // A text change re-sorts the item, unless a person placed it by hand. Guarded on the
   // new text so a later edit's own run is never undone by this one.
   if (typeof patchData.text === "string" && !updates.categoryId && item.category_locked === false) {
-    await supabase
+    const { error: resetError } = await supabase
       .from("items")
       .update({ category_id: null })
       .eq("id", itemId)
       .eq("list_id", listId)
       .eq("category_locked", false)
       .eq("text", patchData.text);
+    // The edit is saved, but a 500 makes the queue replay it, and the replay redoes the
+    // reset. Otherwise the item keeps its old category for good.
+    if (resetError) return dbError("items/PATCH", "Category reset", resetError, { listId, itemId });
     scheduleCategorize(supabase, listId);
   }
 
@@ -481,6 +487,13 @@ export async function DELETE(
       { error: "Missing itemId" },
       { status: 400 }
     );
+  }
+
+  // A still-pending item carries a temp-... id. The uuid column rejects it (22P02), which
+  // would be a 500 the queue retries for 24 hours; a 400 is dropped at once.
+  if (!z.string().uuid().safeParse(itemId).success) {
+    console.warn("[items/DELETE] Invalid item id:", { listId });
+    return NextResponse.json({ error: "Invalid item id" }, { status: 400 });
   }
 
   const supabase = createServerClient();

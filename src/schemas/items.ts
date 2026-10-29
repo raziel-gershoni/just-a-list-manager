@@ -15,8 +15,10 @@ export const createItemSchema = z.object({
 });
 
 // PATCH /api/lists/[id]/items
+// itemId is .uuid(): a still-pending item has a temp-... id, and the uuid column would
+// reject it with a DB error. A 400 here is dropped by the offline queue; a 500 is retried.
 export const updateItemSchema = z.object({
-  itemId: z.string().min(1),
+  itemId: z.string().uuid(),
   completed: z.boolean().optional(),
   text: z.string().min(1).max(500).optional(),
   position: z.number().optional(),

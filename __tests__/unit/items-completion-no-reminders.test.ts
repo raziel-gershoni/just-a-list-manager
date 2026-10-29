@@ -17,6 +17,7 @@ vi.mock("@/src/services/item-recycler", () => ({ findRecyclableItems: async () =
 import { PATCH, DELETE } from "@/app/api/lists/[id]/items/route";
 
 const params = { params: Promise.resolve({ id: "L" }) };
+const ITEM = "11111111-1111-4111-8111-111111111111";
 function patch(body: unknown) {
   return new NextRequest("https://app.test/api/lists/L/items", {
     method: "PATCH",
@@ -37,19 +38,19 @@ beforeEach(() => {
 describe("PATCH /api/lists/[id]/items completion", () => {
   it("a bare completion is a single update on items", async () => {
     use((c) => c.table === "items" && c.op === "update"
-      ? { data: { id: "a", completed: true }, error: null }
+      ? { data: { id: ITEM, completed: true }, error: null }
       : { data: null, error: null });
 
-    const res = await PATCH(patch({ itemId: "a", completed: true }), params);
+    const res = await PATCH(patch({ itemId: ITEM, completed: true }), params);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ id: "a", completed: true });
+    expect(await res.json()).toMatchObject({ id: ITEM, completed: true });
     expect(h.fake.calls).toHaveLength(1);
     const [update] = h.fake.calls;
     expect(update).toMatchObject({ table: "items", op: "update" });
     expect(update.values).toMatchObject({ completed: true });
     expect((update.values as { completed_at: unknown }).completed_at).toEqual(expect.any(String));
-    expect(update.filters).toEqual(expect.arrayContaining(["eq:id=a", "eq:list_id=L", "is:deleted_at=null"]));
+    expect(update.filters).toEqual(expect.arrayContaining([`eq:id=${ITEM}`, "eq:list_id=L", "is:deleted_at=null"]));
   });
 
   it("never reads item_reminders or lists, even if the item still has a live recurring reminder row", async () => {
@@ -59,11 +60,11 @@ describe("PATCH /api/lists/[id]/items completion", () => {
       }
       if (c.table === "lists") return { data: { type: "reminders" }, error: null };
       if (c.table === "items" && c.op === "select") return { data: { text: "call mom" }, error: null };
-      if (c.table === "items" && c.op === "update") return { data: { id: "a", completed: true }, error: null };
+      if (c.table === "items" && c.op === "update") return { data: { id: ITEM, completed: true }, error: null };
       return { data: null, error: null };
     });
 
-    const res = await PATCH(patch({ itemId: "a", completed: true }), params);
+    const res = await PATCH(patch({ itemId: ITEM, completed: true }), params);
 
     expect(res.status).toBe(200);
     expect(h.fake.calls.map((c) => `${c.table}:${c.op}`)).toEqual(["items:update"]);
@@ -77,7 +78,7 @@ describe("DELETE /api/lists/[id]/items", () => {
     use(() => ({ data: null, error: null }));
 
     const res = await DELETE(
-      new NextRequest("https://app.test/api/lists/L/items?itemId=a", { method: "DELETE" }),
+      new NextRequest(`https://app.test/api/lists/L/items?itemId=${ITEM}`, { method: "DELETE" }),
       params
     );
 
@@ -87,6 +88,6 @@ describe("DELETE /api/lists/[id]/items", () => {
     const [update] = h.fake.calls;
     expect(update).toMatchObject({ table: "items", op: "update" });
     expect((update.values as { deleted_at: unknown }).deleted_at).toEqual(expect.any(String));
-    expect(update.filters).toEqual(expect.arrayContaining(["eq:id=a", "eq:list_id=L"]));
+    expect(update.filters).toEqual(expect.arrayContaining([`eq:id=${ITEM}`, "eq:list_id=L"]));
   });
 });
