@@ -146,3 +146,32 @@ describe("a load that starts over an error screen (C22)", () => {
     expect(render()).toMatchObject({ loading: false, error: false });
   });
 });
+
+describe("a quiet re-check over the error screen (reconnect)", () => {
+  it("keeps the error screen until a grocery list's categories are in, then shows the list in one step", async () => {
+    let listsOk = false;
+    let releaseCategories: () => void = () => {};
+    const categoriesHeld = new Promise<void>((r) => { releaseCategories = r; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const json = (status: number, body: unknown) => ({ ok: status < 400, status, json: async () => body });
+      if (url === "/api/lists") return listsOk ? json(200, [{ id: "L", name: "Groceries", type: "grocery" }]) : json(500, {});
+      if (url.startsWith("/api/lists/L/items")) return json(200, { items: [{ id: "i1", text: "Milk" }] });
+      if (url === "/api/lists/L/categories") {
+        await categoriesHeld;
+        return json(200, { categories: [{ id: "c1", list_id: "L", name_en: "Dairy", name_he: "Dairy", name_ru: "Dairy", position: 0 }] });
+      }
+      throw new Error(`unexpected ${url}`);
+    }));
+    await render().fetchItems();
+    expect(render()).toMatchObject({ error: true, loading: false });
+
+    listsOk = true;
+    const recheck = render().fetchItems({ silent: true });
+    for (let k = 0; k < 20; k++) await Promise.resolve();
+    expect(render()).toMatchObject({ error: true, loading: false, categories: [] });
+    releaseCategories();
+    await expect(recheck).resolves.toBe(true);
+    expect(render()).toMatchObject({ error: false, loading: false });
+    expect(render().categories).toHaveLength(1);
+  });
+});

@@ -62,127 +62,166 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     }
   }, [jwtRef, listId]);
 
+  // One load at a time writes the screen. A quiet re-check that starts while a load is out
+  // joins it: the reconnect that a Retry tap's focus starts would otherwise race that Retry.
+  // A load the user asked for (Retry, a late token) starts afresh, and the older one then
+  // writes nothing and resolves with the newer one's outcome.
+  const loadGenRef = useRef(0);
+  const doneGenRef = useRef(0);
+  const latestLoadRef = useRef<Promise<boolean>>(Promise.resolve(false));
+
   // Loads the list's details and items. Resolves true when the list loaded; false when it
   // did not (the error screen shows), so a caller can tell a good load from a failed one.
-  const fetchItems = useCallback(async (): Promise<boolean> => {
-    const jwt = jwtRef.current;
-    if (!jwt) {
-      // The session gave up signing in: leave the placeholders for the error screen, where
-      // the connection banner says why. A later token loads the list (the page reruns this).
-      console.warn("[List] Load skipped, no session:", { listId });
-      unavailableRef.current = false;
-      setNotFound(false);
+  // `silent`: the reconnect's re-check over the error screen, which stays as it is until the
+  // answer is in. A reconnect runs in the same moment as the first tap after a return to the
+  // app; swapping in the skeleton would move the button under the finger, and iOS drops that tap.
+  const fetchItems = useCallback(({ silent = false }: { silent?: boolean } = {}): Promise<boolean> => {
+    if (silent && doneGenRef.current < loadGenRef.current) return latestLoadRef.current;
+    const gen = ++loadGenRef.current;
+    const overtaken = () => gen !== loadGenRef.current;
+    const failed = (gone: boolean): Promise<boolean> | boolean => {
+      if (overtaken()) return latestLoadRef.current;
+      // A quiet re-check that couldn't get an answer leaves a not-found view up; the ref
+      // still says no answer of 403/404 came, so the reconnect retries.
+      unavailableRef.current = gone;
+      if (gone || !silent) setNotFound(gone);
       setError(true);
       setLoading(false);
       return false;
-    }
-    try {
-      // Retry and a late token start over the error screen: show the skeleton while the
-      // request is out, never an empty list that accepts input.
-      setLoading(true);
-      setError(false);
-      unavailableRef.current = false;
-      setNotFound(false);
-      // Fetch list info
-      let currentListType: ListType = "regular";
-      type ListSummary = {
-        id: string;
-        name: string;
-        is_shared?: boolean;
-        type?: string;
-        icon?: string | null;
-        color?: string | null;
-        role?: "owner" | "edit" | "view";
-      };
+    };
+    const run = async (): Promise<boolean> => {
+      const jwt = jwtRef.current;
+      if (!jwt) {
+        // The session gave up signing in: leave the placeholders for the error screen, where
+        // the connection banner says why. A later token loads the list (the page reruns this).
+        console.warn("[List] Load skipped, no session:", { listId });
+        unavailableRef.current = false;
+        setNotFound(false);
+        setError(true);
+        setLoading(false);
+        return false;
+      }
+      try {
+        // Retry and a late token start over the error screen: show the skeleton while the
+        // request is out, never an empty list that accepts input.
+        if (!silent) {
+          setLoading(true);
+          setError(false);
+          unavailableRef.current = false;
+          setNotFound(false);
+        }
+        // Fetch list info
+        let currentListType: ListType = "regular";
+        type ListSummary = {
+          id: string;
+          name: string;
+          is_shared?: boolean;
+          type?: string;
+          icon?: string | null;
+          color?: string | null;
+          role?: "owner" | "edit" | "view";
+        };
 
-      const findList = async (url: string): Promise<ListSummary | undefined> => {
-        const res = await fetch(url, {
+        const findList = async (url: string): Promise<ListSummary | undefined> => {
+          const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${jwt}` },
+          });
+          // A failed lookup throws to the Retry screen below: without the list's details the
+          // header is blank and a grocery list would open as a regular one.
+          throwIfNotOk(res, "Load lists");
+          const all: ListSummary[] = await res.json();
+          return all.find((l) => l.id === listId);
+        };
+
+        // The archived view is excluded from the default response, so a list
+        // opened from the Archived tab or a Telegram deep link needs a second
+        // look. Only on a miss — firing both would double every list open.
+        const currentList =
+          (await findList("/api/lists")) ??
+          (await findList("/api/lists?archived=1"));
+        if (overtaken()) return latestLoadRef.current;
+
+        if (currentList) {
+          setListName(currentList.name);
+          setIsShared(currentList.is_shared ?? false);
+          // A list an old app version created with the retired reminders type during the deploy window reads as a
+          // regular list until migration 029 retires the value.
+          currentListType = currentList.type === "grocery" ? "grocery" : "regular";
+          setListType(currentListType);
+          setListIcon((currentList.icon ?? null) as ListIconName | null);
+          setListColor((currentList.color ?? null) as ListColor | null);
+        }
+
+        // Fetch items
+        const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
           headers: { Authorization: `Bearer ${jwt}` },
         });
-        // A failed lookup throws to the Retry screen below: without the list's details the
-        // header is blank and a grocery list would open as a regular one.
-        throwIfNotOk(res, "Load lists");
-        const all: ListSummary[] = await res.json();
-        return all.find((l) => l.id === listId);
-      };
-
-      // The archived view is excluded from the default response, so a list
-      // opened from the Archived tab or a Telegram deep link needs a second
-      // look. Only on a miss — firing both would double every list open.
-      const currentList =
-        (await findList("/api/lists")) ??
-        (await findList("/api/lists?archived=1"));
-
-      if (currentList) {
-        setListName(currentList.name);
-        setIsShared(currentList.is_shared ?? false);
-        // A list an old app version created with the retired reminders type during the deploy window reads as a
-        // regular list until migration 029 retires the value.
-        currentListType = currentList.type === "grocery" ? "grocery" : "regular";
-        setListType(currentListType);
-        setListIcon((currentList.icon ?? null) as ListIconName | null);
-        setListColor((currentList.color ?? null) as ListColor | null);
+        if (overtaken()) return latestLoadRef.current;
+        if (res.ok) {
+          const { items: fetchedItems } = await res.json();
+          if (overtaken()) return latestLoadRef.current;
+          const FOUR_HOURS = 4 * 60 * 60 * 1000;
+          const now = Date.now();
+          const canSave = currentList?.role !== "view";
+          const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string; skipped_at?: string | null; recurring?: boolean; completed?: boolean; completed_at?: string | null; deleted_at?: string | null }) => {
+            const base = {
+              ...item,
+              creator_name: item.users?.name ?? null,
+              editor_name: item.editor?.name ?? null,
+              _pending: false,
+              users: undefined,
+              editor: undefined,
+            };
+            // Auto-unskip and auto-respawn are saved as changes through the list's sync
+            // engine, like the user's own, so they stay in order with them and are retried.
+            // A view-only collaborator can't save them (the server refuses with 403, which the
+            // engine reports as a sync error), so their list only shows the result.
+            // Auto-unskip items older than 4 hours
+            if (base.skipped_at && now - new Date(base.skipped_at).getTime() > FOUR_HOURS) {
+              if (canSave) getSyncEngine(listId).add({
+                id: genMutId(),
+                type: "skip",
+                payload: { listId, itemId: base.id, skipped: false, at: new Date(now).toISOString() },
+              });
+              return { ...base, skipped_at: null };
+            }
+            // Auto-respawn recurring items past the same 4-hour threshold.
+            // Deleting is final — shouldRespawn refuses any row carrying deleted_at.
+            if (shouldRespawn(base, now)) {
+              if (canSave) getSyncEngine(listId).add({
+                id: genMutId(),
+                type: "restore-recurring",
+                payload: { listId, itemId: base.id },
+              });
+              return { ...base, completed: false, completed_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
+            }
+            return base;
+          });
+          setItems(mapped);
+          if (currentListType === "grocery") await loadCategories();
+          if (overtaken()) return latestLoadRef.current;
+          // The list loaded, categories too: it replaces the skeleton, or in one step the
+          // error screen a quiet re-check left up.
+          unavailableRef.current = false;
+          setNotFound(false);
+          setError(false);
+          setLoading(false);
+          return true;
+        }
+        console.warn("[List] Load items failed:", { listId, status: res.status });
+        return failed(res.status === 403 || res.status === 404);
+      } catch (e) {
+        console.error("[List] Fetch error:", e);
+        return failed(false);
       }
-
-      // Fetch items
-      const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
-      if (res.ok) {
-        const { items: fetchedItems } = await res.json();
-        const FOUR_HOURS = 4 * 60 * 60 * 1000;
-        const now = Date.now();
-        const canSave = currentList?.role !== "view";
-        const mapped = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string; skipped_at?: string | null; recurring?: boolean; completed?: boolean; completed_at?: string | null; deleted_at?: string | null }) => {
-          const base = {
-            ...item,
-            creator_name: item.users?.name ?? null,
-            editor_name: item.editor?.name ?? null,
-            _pending: false,
-            users: undefined,
-            editor: undefined,
-          };
-          // Auto-unskip and auto-respawn are saved as changes through the list's sync
-          // engine, like the user's own, so they stay in order with them and are retried.
-          // A view-only collaborator can't save them (the server refuses with 403, which the
-          // engine reports as a sync error), so their list only shows the result.
-          // Auto-unskip items older than 4 hours
-          if (base.skipped_at && now - new Date(base.skipped_at).getTime() > FOUR_HOURS) {
-            if (canSave) getSyncEngine(listId).add({
-              id: genMutId(),
-              type: "skip",
-              payload: { listId, itemId: base.id, skipped: false, at: new Date(now).toISOString() },
-            });
-            return { ...base, skipped_at: null };
-          }
-          // Auto-respawn recurring items past the same 4-hour threshold.
-          // Deleting is final — shouldRespawn refuses any row carrying deleted_at.
-          if (shouldRespawn(base, now)) {
-            if (canSave) getSyncEngine(listId).add({
-              id: genMutId(),
-              type: "restore-recurring",
-              payload: { listId, itemId: base.id },
-            });
-            return { ...base, completed: false, completed_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
-          }
-          return base;
-        });
-        setItems(mapped);
-        if (currentListType === "grocery") await loadCategories();
-        return true;
-      }
-      console.warn("[List] Load items failed:", { listId, status: res.status });
-      unavailableRef.current = res.status === 403 || res.status === 404;
-      setNotFound(unavailableRef.current);
-      setError(true);
-      return false;
-    } catch (e) {
-      console.error("[List] Fetch error:", e);
-      setError(true);
-      return false;
-    } finally {
-      setLoading(false);
-    }
+    };
+    const load = run();
+    latestLoadRef.current = load;
+    // run() never rejects: every failure resolves false.
+    void load.finally(() => {
+      if (doneGenRef.current < gen) doneGenRef.current = gen;
+    });
+    return load;
   }, [jwtRef, listId, loadCategories]);
 
   const refreshItems = useCallback(async () => {

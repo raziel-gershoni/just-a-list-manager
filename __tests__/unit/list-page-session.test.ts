@@ -235,6 +235,160 @@ describe("a list whose first load failed, once the connection is back (C27)", ()
     expect(hasText(await settle(), "lists.loadError")).toBe(true);
   });
 
+  // A reconnect runs on every return to the app, in the same moment as the first tap. Had it
+  // swapped the error screen for the skeleton, the button under the finger would go and iOS
+  // would drop the tap. So the re-check is quiet: the screen stays until the answer is in.
+  const holdServer = () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => { release = r; });
+    const serve = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string) => { await held; return serve(url); });
+    return release;
+  };
+
+  it("the registered refresh re-checks quietly: the error screen stays, with no skeleton, while the request is out", async () => {
+    await settle();
+    listsOk = true;
+    const release = holdServer();
+    const pending = refresh();
+    for (let k = 0; k < 10; k++) await Promise.resolve();
+    const during = render();
+    expect(skeleton(during)).toBe(false);
+    expect(hasText(during, "lists.loadError")).toBe(true);
+    release();
+    await pending;
+    const after = await settle();
+    expect(hasText(after, "lists.loadError")).toBe(false);
+    expect(header(after)?.props.listName).toBe("Groceries");
+  });
+
+  it("over the not-found view, a quiet re-check still refused keeps it, with no skeleton in between", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      const json = (ok: boolean, status: number, body: unknown) => ({ ok, status, json: async () => body });
+      if (url.startsWith("/api/lists/L/items")) return json(false, 404, { error: "Not found" });
+      if (url.startsWith("/api/lists")) return json(true, 200, []);
+      throw new Error(`unexpected ${url}`);
+    });
+    expect(hasText(await settle(), "errors.notFound")).toBe(true);
+    const release = holdServer();
+    const pending = refresh();
+    for (let k = 0; k < 10; k++) await Promise.resolve();
+    const during = render();
+    expect(skeleton(during)).toBe(false);
+    expect(hasText(during, "errors.notFound")).toBe(true);
+    release();
+    await expect(pending).resolves.toBeUndefined();
+    expect(hasText(await settle(), "errors.notFound")).toBe(true);
+  });
+
+  it("the error screen's own Retry still shows the skeleton while it loads (C22)", async () => {
+    await settle();
+    listsOk = true;
+    const release = holdServer();
+    const retry = find(render(), (el) => el.type === "button" && [el.props.children].flat().includes("common.retry"));
+    (retry!.props.onClick as () => void)();
+    for (let k = 0; k < 10; k++) await Promise.resolve();
+    expect(skeleton(render())).toBe(true);
+    release();
+    expect(header(await settle())?.props.listName).toBe("Groceries");
+  });
+
+  it("a quiet re-check that can't reach the server over the not-found view rejects, so the reconnect retries", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      const json = (ok: boolean, status: number, body: unknown) => ({ ok, status, json: async () => body });
+      if (url.startsWith("/api/lists/L/items")) return json(false, 404, { error: "Not found" });
+      if (url.startsWith("/api/lists")) return json(true, 200, []);
+      throw new Error(`unexpected ${url}`);
+    });
+    expect(hasText(await settle(), "errors.notFound")).toBe(true);
+    fetchMock.mockImplementation(async () => { throw new TypeError("Failed to fetch"); });
+    await expect(refresh()).rejects.toThrow();
+    expect(hasText(await settle(), "errors.notFound")).toBe(true);
+  });
+
+  // The Retry tap's focus starts a reconnect, so the user's Retry and the quiet re-check run
+  // side by side. Each load's items request answers when the test says.
+  const answerItems = () => {
+    const pending: ((status: number) => void)[] = [];
+    fetchMock.mockImplementation(async (url: string) => {
+      const json = (ok: boolean, status: number, body: unknown) => ({ ok, status, json: async () => body });
+      if (url === "/api/lists") return json(true, 200, [{ id: "L", name: "Groceries", type: "regular" }]);
+      if (url.startsWith("/api/lists/L/items")) {
+        const status = await new Promise<number>((r) => pending.push(r));
+        if (status === 0) throw new TypeError("Failed to fetch");
+        return status === 200
+          ? json(true, 200, { items: [{ id: "i1", text: "Milk", completed: false, recurring: false, position: 1 }] })
+          : json(false, status, {});
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    return pending;
+  };
+  const pressRetry = () =>
+    (find(render(), (el) => el.type === "button" && [el.props.children].flat().includes("common.retry"))!.props.onClick as () => void)();
+  const drain = async () => { for (let k = 0; k < 100; k++) await Promise.resolve(); };
+
+  it("a quiet re-check while the Retry is out joins it: one request, and the Retry's answer decides", async () => {
+    await settle();
+    const answer = answerItems();
+    const callsBefore = fetchMock.mock.calls.length;
+    pressRetry();
+    const recheck = refresh();
+    await drain();
+    expect(answer).toHaveLength(1);
+    expect(fetchMock.mock.calls.length - callsBefore).toBe(2); // the Retry's lists and items, nothing more
+    expect(skeleton(render())).toBe(true); // the Retry's skeleton, never the error screen meanwhile
+    answer[0](200);
+    await expect(recheck).resolves.toBeUndefined();
+    const tree = await settle();
+    expect(hasText(tree, "lists.loadError")).toBe(false);
+    expect(shownItems(tree)).toHaveLength(1);
+  });
+
+  it("a quiet re-check that fails while the Retry is out leaves the Retry's skeleton up", async () => {
+    await settle();
+    const answer = answerItems();
+    pressRetry();
+    const recheck = refresh();
+    await drain();
+    answer[0](500);
+    await expect(recheck).rejects.toThrow();
+    expect(hasText(await settle(), "lists.loadError")).toBe(true);
+    expect(answer).toHaveLength(1);
+  });
+
+  it("a Retry while a quiet re-check is out starts afresh; the older answer writes nothing and the Retry decides", async () => {
+    await settle();
+    const answer = answerItems();
+    const recheck = refresh();
+    await drain();
+    pressRetry();
+    await drain();
+    expect(answer).toHaveLength(2);
+    answer[0](0); // the older re-check can't reach the server while the Retry is out
+    await drain();
+    expect(skeleton(render())).toBe(true);
+    expect(hasText(render(), "lists.loadError")).toBe(false);
+    answer[1](200);
+    await expect(recheck).resolves.toBeUndefined(); // the Retry's outcome is the re-check's too
+    expect(shownItems(await settle())).toHaveLength(1);
+  });
+
+  it("the older answer of two loads never replaces the list the newer one showed", async () => {
+    await settle();
+    const answer = answerItems();
+    void refresh();
+    await drain();
+    pressRetry();
+    await drain();
+    answer[1](200); // the Retry shows the list
+    await drain();
+    const shown = shownItems(render());
+    answer[0](200); // the older re-check answers later
+    await drain();
+    expect(shownItems(render())).toBe(shown);
+  });
+
   it("a first load that finds the list gone: the registered refresh resolves and the not-found view stays", async () => {
     fetchMock.mockImplementation(async (url: string) => {
       const json = (ok: boolean, status: number, body: unknown) => ({ ok, status, json: async () => body });

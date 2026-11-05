@@ -195,14 +195,15 @@ export default function ListPage() {
   // Until one load has worked, the screen has no list name, type or items to merge into, so
   // the reconnect's refresh does the full load; after that a refresh only merges rows.
   const loadedOkRef = useRef(false);
-  const loadList = useCallback(async () => {
-    const ok = await fetchItems();
+  const loadList = useCallback(async (options?: { silent?: boolean }) => {
+    const ok = await fetchItems(options);
     if (ok) loadedOkRef.current = true;
     return ok;
   }, [fetchItems]);
   const refreshForReconnect = useCallback(async () => {
     if (loadedOkRef.current) return refreshItems();
-    if (await loadList()) return;
+    // Quiet: an error or not-found screen stays put while it re-checks (see fetchItems).
+    if (await loadList({ silent: true })) return;
     // A list that is gone for this user (403/404) keeps its not-found view: resolve, because
     // retrying can never clear it. Any other failed load rejects, so the orchestrator retries
     // and the banner never claims success over the error screen.
