@@ -42,7 +42,7 @@ async function readErrorCode(res: Response): Promise<string | null> {
 }
 
 export default function HomePage() {
-  const { isReady, locale, setLanguage, jwtRef, onRefreshNeededRef, homeScreenStatus, addToHomeScreen } = useTelegram();
+  const { isReady, locale, setLanguage, jwtRef, onRefreshNeededRef, homeScreenStatus, addToHomeScreen, reconnect } = useTelegram();
   const t = useTranslations();
   const router = useRouter();
   const [lists, setLists] = useState<ListData[]>([]);
@@ -51,9 +51,39 @@ export default function HomePage() {
   // the body must not render cards, or the outgoing view's rows appear under
   // the incoming view's affordances (an Archive icon on an archived card).
   const [loadedView, setLoadedView] = useState<"active" | "archived">("active");
+  // The view whose rows are on screen, readable when a load answers (null until a load is
+  // shown): only rows on screen need guarding, and a view with none shows the Retry screen.
+  const loadedViewRef = useRef<"active" | "archived" | null>(null);
   // Only the most recently started fetch may write state; two view switches in
   // flight can otherwise resolve out of order.
   const fetchGenRef = useRef(0);
+  // The user's own Home changes whose request is still out: archive, delete, rename, reorder
+  // and their Undos. A background load that left before one of them, or answers while one is
+  // out, holds the server's lists from before it; shown, it would put an archived card back
+  // or undo a rename. It is set aside, and the lists load again once the changes landed.
+  const changesRef = useRef({ inFlight: 0, started: 0, setAside: false });
+  const fetchListsRef = useRef<(opts?: { silent?: boolean }) => Promise<boolean>>(async () => true);
+  const reconnectRef = useRef(reconnect);
+  reconnectRef.current = reconnect;
+  // The caller chains on the promise returned, which settles as the request did once the
+  // change counts as landed, so a reload the caller starts on failure isn't set aside.
+  const trackChange = useCallback(<T,>(request: Promise<T>): Promise<T> => {
+    const changes = changesRef.current;
+    changes.inFlight++;
+    changes.started++;
+    return request.finally(() => {
+      changes.inFlight--;
+      if (changes.inFlight === 0 && changes.setAside) {
+        changes.setAside = false;
+        // The load a reconnect was owed: if it fails, reconnect again rather than stay stale.
+        void fetchListsRef.current({ silent: true }).then((loaded) => {
+          if (loaded) return;
+          console.warn("[Home] Reload after a set-aside load failed, reconnecting");
+          reconnectRef.current?.();
+        });
+      }
+    });
+  }, []);
   // Read by async callbacks that must not act after a tab switch.
   const viewRef = useRef<"active" | "archived">(view);
   useEffect(() => {
@@ -133,6 +163,10 @@ export default function HomePage() {
     }
     const gen = ++fetchGenRef.current;
     const requestedView = view;
+    // A change out as this load leaves may land after the server read the lists, even when
+    // its answer comes back first.
+    const changesAtStart = changesRef.current.started;
+    const changeOutAtStart = changesRef.current.inFlight > 0;
     try {
       if (!silent) setError(false);
       const res = await fetch(
@@ -144,8 +178,28 @@ export default function HomePage() {
       if (res.ok) {
         const data = await res.json();
         if (gen !== fetchGenRef.current) return true;
+        const changes = changesRef.current;
+        const raced = changeOutAtStart || changes.inFlight > 0 || changes.started !== changesAtStart;
+        // Set aside only over this view's rows: a view still on its skeleton has nothing to undo.
+        if (silent && raced && loadedViewRef.current === requestedView) {
+          console.warn("[Home] Background load set aside, a change was on its way:", { view: requestedView });
+          // Still out: load again once it landed. Landed meanwhile: load again now, and report
+          // that load's outcome, so a reconnect whose lists didn't load is retried.
+          if (changes.inFlight > 0) {
+            changes.setAside = true;
+            return true;
+          }
+          return fetchListsRef.current({ silent: true });
+        }
+        // Shown anyway (the user's own load, or a view with no rows on screen yet): it may hold
+        // the lists from before the change, so they load again once the change landed.
+        if (raced) {
+          if (changes.inFlight > 0) changes.setAside = true;
+          else void fetchListsRef.current({ silent: true });
+        }
         setLists(data);
         setLoadedView(requestedView);
+        loadedViewRef.current = requestedView;
         // Any load that worked replaces an error screen, a silent one included.
         setError(false);
 
@@ -165,17 +219,20 @@ export default function HomePage() {
         return true;
       }
       console.warn("[Home] Load lists failed:", { view: requestedView, silent, status: res.status });
-      if (!silent) setError(true);
+      // A silent load keeps the lists on screen; a view with none yet shows the Retry screen
+      // rather than its placeholders forever.
+      if (!silent || loadedViewRef.current !== requestedView) setError(true);
       return false;
     } catch (e) {
       console.error("[Home] Fetch lists error:", e);
       if (gen !== fetchGenRef.current) return true;
-      if (!silent) setError(true);
+      if (!silent || loadedViewRef.current !== requestedView) setError(true);
       return false;
     } finally {
       setLoading(false);
     }
   }, [jwtRef, router, view]);
+  fetchListsRef.current = fetchLists;
 
   // isReady turns true once the session settled, with or without a JWT.
   useEffect(() => {
@@ -239,7 +296,7 @@ export default function HomePage() {
       // Settles true once the server archived it, false when that failed (the card is
       // then already put back). The Undo waits for it, so the server never sees the undo
       // before the archive.
-      const archiveLanded = post(archived, jwt)
+      const archiveLanded = trackChange(post(archived, jwt))
         .then((res) => {
           if (!res.ok) throw new Error(`Archive failed: ${res.status}`);
         })
@@ -281,7 +338,7 @@ export default function HomePage() {
             void archiveLanded.then((landed) => {
               // The archive itself failed, so the server never archived it: nothing to undo.
               if (!landed) return;
-              return post(!archived, jwtRef.current)
+              return trackChange(post(!archived, jwtRef.current))
                 .then((res) => throwIfNotOk(res, "Undo archive"))
                 .catch((e) => {
                   console.error("[Home] Undo archive failed:", { listId: list.id }, e);
@@ -295,7 +352,7 @@ export default function HomePage() {
         };
       });
     },
-    [lists, view, jwtRef, t, fetchLists, showToast]
+    [lists, view, jwtRef, t, fetchLists, showToast, trackChange]
   );
 
   const { handleDragStart, handleDragEnd, shouldSuppressClick } = useListsDragDrop({
@@ -303,6 +360,7 @@ export default function HomePage() {
     setLists,
     jwtRef,
     onReorderFailed: handleReorderFailed,
+    trackChange,
   });
 
   // Register with orchestrator for reconnect refresh
@@ -374,7 +432,7 @@ export default function HomePage() {
     const listId = editTargetRef.current;
     setEditSaving(true);
     try {
-      const res = await fetch("/api/lists", {
+      const res = await trackChange(fetch("/api/lists", {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${jwt}`,
@@ -386,7 +444,7 @@ export default function HomePage() {
           icon: editIcon,
           color: editColor,
         }),
-      });
+      }));
       throwIfNotOk(res, "Edit");
       setLists((prev) =>
         prev.map((l) =>
@@ -403,7 +461,7 @@ export default function HomePage() {
     } finally {
       setEditSaving(false);
     }
-  }, [editName, editIcon, editColor, jwtRef, showToast]);
+  }, [editName, editIcon, editColor, jwtRef, showToast, trackChange]);
 
   const handleDeleteList = useCallback((listToDelete: ListData) => {
     const jwt = jwtRef.current;
@@ -440,10 +498,10 @@ export default function HomePage() {
       // Server delete. Settles true once the server deleted it, false when that failed
       // (the card is then already back). The Undo waits for it: a restore that arrives
       // first finds nothing to restore, and the delete then lands.
-      const deleteLanded = fetch(`/api/lists?id=${listToDelete.id}`, {
+      const deleteLanded = trackChange(fetch(`/api/lists?id=${listToDelete.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${jwt}` },
-      })
+      }))
         .then((res) => throwIfNotOk(res, "Delete"))
         .then(
           () => true,
@@ -471,14 +529,14 @@ export default function HomePage() {
             // The delete itself failed and the card is already back: nothing to restore.
             if (!landed) return;
             // Restore on server
-            return fetch("/api/lists", {
+            return trackChange(fetch("/api/lists", {
               method: "PATCH",
               headers: {
                 Authorization: `Bearer ${jwtRef.current}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ id: listToDelete.id, restore: true }),
-            })
+            }))
               .then((res) => throwIfNotOk(res, "Restore"))
               .catch((e) => {
                 console.error("[Home] Undo delete failed:", { listId: listToDelete.id }, e);
@@ -502,7 +560,7 @@ export default function HomePage() {
         doDelete();
       }
     }
-  }, [lists, view, jwtRef, t, showToast, fetchLists]);
+  }, [lists, view, jwtRef, t, showToast, fetchLists, trackChange]);
 
   if (loading) {
     return (

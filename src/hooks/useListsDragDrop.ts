@@ -18,6 +18,9 @@ interface UseListsDragDropParams<T extends ReorderableList> {
   setLists: React.Dispatch<React.SetStateAction<T[]>>;
   jwtRef: React.RefObject<string | null>;
   onReorderFailed: () => void;
+  /** Marks the reorder's request as a change on its way, so a background load that left
+   *  before it lands can't put the old order back (app/(app)/page.tsx). */
+  trackChange: <R>(request: Promise<R>) => Promise<R>;
 }
 
 export function useListsDragDrop<T extends ReorderableList>({
@@ -25,6 +28,7 @@ export function useListsDragDrop<T extends ReorderableList>({
   setLists,
   jwtRef,
   onReorderFailed,
+  trackChange,
 }: UseListsDragDropParams<T>) {
   const previousListsRef = useRef<T[]>([]);
 
@@ -105,7 +109,7 @@ export function useListsDragDrop<T extends ReorderableList>({
       setLists(reordered);
 
       const jwt = jwtRef.current;
-      fetch("/api/lists/reorder", {
+      trackChange(fetch("/api/lists/reorder", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${jwt}`,
@@ -113,7 +117,7 @@ export function useListsDragDrop<T extends ReorderableList>({
         },
         body: JSON.stringify({ orderedIds }),
         keepalive: true,
-      })
+      }))
         .then((res) => {
           if (!res.ok) throw new Error(`Reorder failed: ${res.status}`);
         })
@@ -123,7 +127,7 @@ export function useListsDragDrop<T extends ReorderableList>({
           onReorderFailed();
         });
     },
-    [lists, setLists, jwtRef, onReorderFailed, endDrag]
+    [lists, setLists, jwtRef, onReorderFailed, endDrag, trackChange]
   );
 
   return { handleDragStart, handleDragEnd, shouldSuppressClick };

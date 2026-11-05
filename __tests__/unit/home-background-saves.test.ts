@@ -53,6 +53,7 @@ const H = vi.hoisted(() => ({
   jwtRef: { current: "jwt" as string | null },
   onRefreshNeededRef: { current: null as unknown },
   setLanguage: (async () => true) as (lang: string) => Promise<boolean>,
+  reconnect: (() => {}) as () => void,
 }));
 vi.mock("next-intl", () => ({ useTranslations: () => H.t }));
 vi.mock("next/navigation", () => ({ useRouter: () => H.router }));
@@ -66,6 +67,7 @@ vi.mock("@/components/TelegramProvider", () => ({
     onRefreshNeededRef: H.onRefreshNeededRef,
     homeScreenStatus: null,
     addToHomeScreen: () => {},
+    reconnect: H.reconnect,
   }),
 }));
 vi.mock("@/src/hooks/useListsDragDrop", () => ({
@@ -80,6 +82,7 @@ vi.mock("@/components/IconColorPicker", () => ({ default: () => null }));
 
 import HomePage from "@/app/(app)/page";
 import SortableListCard from "@/components/SortableListCard";
+import ListCard from "@/components/ListCard";
 import { Globe } from "lucide-react";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
@@ -592,5 +595,248 @@ describe("Home: language", () => {
 
     expect(sheet("LanguageSheet")).toBeUndefined();
     expect(toast()).toBeNull();
+  });
+});
+
+describe("Home: a background refresh never undoes a change still on its way", () => {
+  // The reconnect's refresh runs as the user comes back to the app, in the same moment as
+  // their first tap. Its answer can hold the server's lists from before that tap's change.
+  const refresh = () => (H.onRefreshNeededRef.current as () => Promise<void>)();
+  const gets = () => calls.filter((c) => c === "GET /api/lists").length;
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  it("an archive tapped while a refresh is out stays archived when the refresh answers, and the lists load again", async () => {
+    await boot();
+    replies.set("GET /api/lists", ["hold", "hold"]);
+    const pending = refresh(); // reads the server before the archive
+    await settle();
+    press(card("B"), "onArchive");
+    await settle(); // the archive landed
+    expect(listIds()).toEqual(["A", "C"]);
+
+    held.get("GET /api/lists")!(200); // answers with A, B, C
+    await settle();
+    expect(listIds()).toEqual(["A", "C"]);
+    expect(console.warn).toHaveBeenCalledWith("[Home] Background load set aside, a change was on its way:", { view: "active" });
+
+    server.lists = ["A", "C"].map(LIST);
+    held.get("GET /api/lists")!(200); // the load once the archive landed
+    await settle();
+    // The refresh reports the reload's outcome.
+    await expect(pending).resolves.toBeUndefined();
+    expect(gets()).toBe(3);
+    expect(listIds()).toEqual(["A", "C"]);
+  });
+
+  it("a refresh that answers while the archive is still out is set aside until the archive landed", async () => {
+    await boot();
+    replies.set("POST /api/lists/archive", ["hold"]);
+    press(card("B"), "onArchive");
+    await settle();
+
+    await refresh(); // the server hasn't archived B yet: A, B, C
+    expect(listIds()).toEqual(["A", "C"]);
+    expect(gets()).toBe(2);
+
+    server.lists = ["A", "C"].map(LIST);
+    held.get("POST /api/lists/archive")!(200);
+    await settle();
+    expect(gets()).toBe(3);
+    expect(listIds()).toEqual(["A", "C"]);
+  });
+
+  it("an Undo of an archive keeps the card while its unarchive is on its way", async () => {
+    await boot();
+    press(card("B"), "onArchive");
+    await settle();
+    server.lists = ["A", "C"].map(LIST); // archived on the server
+    replies.set("POST /api/lists/archive", ["hold"]);
+    toast()!.undo!();
+    await settle();
+
+    await refresh(); // A, C: the unarchive hasn't landed
+    expect(listIds()).toEqual(["A", "B", "C"]);
+
+    server.lists = ["A", "B", "C"].map(LIST);
+    held.get("POST /api/lists/archive")!(200);
+    await settle();
+    expect(listIds()).toEqual(["A", "B", "C"]);
+  });
+
+  it("a delete on its way keeps the card gone", async () => {
+    await boot();
+    replies.set("DELETE /api/lists?id=B", ["hold"]);
+    press(card("B"), "onDelete");
+    await settle();
+
+    await refresh(); // A, B, C
+    expect(listIds()).toEqual(["A", "C"]);
+
+    server.lists = ["A", "C"].map(LIST);
+    held.get("DELETE /api/lists?id=B")!(200);
+    await settle();
+    expect(listIds()).toEqual(["A", "C"]);
+  });
+
+  it("an Undo of a delete keeps the card while its restore is on its way", async () => {
+    await boot();
+    press(card("B"), "onDelete");
+    await settle();
+    server.lists = ["A", "C"].map(LIST); // deleted on the server
+    replies.set("PATCH /api/lists", ["hold"]); // the restore is on its way
+    toast()!.undo!();
+    await settle();
+
+    await refresh(); // A, C: the restore hasn't landed
+    expect(listIds()).toEqual(["A", "B", "C"]);
+
+    server.lists = ["A", "B", "C"].map(LIST);
+    held.get("PATCH /api/lists")!(200);
+    await settle();
+    expect(listIds()).toEqual(["A", "B", "C"]);
+  });
+
+  it("a rename that landed while a refresh was out keeps its name", async () => {
+    await boot();
+    replies.set("GET /api/lists", ["hold", "hold"]);
+    const pending = refresh();
+    await settle();
+    press(card("B"), "onEdit");
+    press(sheet("EditListSheet")!, "onNameChange", "Renamed");
+    press(sheet("EditListSheet")!, "onSubmit");
+    await settle();
+    expect(card("B").props.name).toBe("Renamed");
+
+    held.get("GET /api/lists")!(200); // read before the rename: B
+    await settle();
+    expect(card("B").props.name).toBe("Renamed");
+
+    server.lists = [LIST("A"), { ...LIST("B"), name: "Renamed" }, LIST("C")];
+    held.get("GET /api/lists")!(200);
+    await settle();
+    await pending;
+    expect(card("B").props.name).toBe("Renamed");
+  });
+
+  it("a refresh that left while the archive was out stays aside even when the archive answers first", async () => {
+    await boot();
+    replies.set("POST /api/lists/archive", ["hold"]);
+    replies.set("GET /api/lists", ["hold", "hold"]);
+    press(card("B"), "onArchive");
+    await settle();
+    const pending = refresh(); // leaves while the archive is out: the server may read before it lands
+    await settle();
+    held.get("POST /api/lists/archive")!(200);
+    await settle();
+    held.get("GET /api/lists")!(200); // A, B, C
+    await settle();
+    expect(listIds()).toEqual(["A", "C"]);
+
+    server.lists = ["A", "C"].map(LIST);
+    held.get("GET /api/lists")!(200);
+    await settle();
+    await expect(pending).resolves.toBeUndefined();
+    expect(listIds()).toEqual(["A", "C"]);
+    expect(gets()).toBe(3);
+  });
+
+  it("when the reload after a set-aside refresh fails, the reconnect hears it and retries", async () => {
+    await boot();
+    replies.set("GET /api/lists", ["hold", 500]);
+    const pending = refresh();
+    await settle();
+    press(card("B"), "onArchive");
+    await settle(); // landed while the refresh was out
+    held.get("GET /api/lists")!(200);
+    await expect(pending).rejects.toThrow("Lists refresh failed");
+    expect(listIds()).toEqual(["A", "C"]);
+  });
+
+  it("a tab still loading takes the refresh's lists even while a change from the other tab is out", async () => {
+    await boot();
+    replies.set("POST /api/lists/archive", ["hold"]);
+    press(card("B"), "onArchive");
+    await settle();
+    replies.set("GET /api/lists?archived=1", ["hold", 200]);
+    bodies.set("GET /api/lists?archived=1", [LIST("Z")]);
+    const archivedTab = find(render(), (el) => el.type === "button" && el.props.children === "lists.archived")!;
+    press(archivedTab, "onClick");
+    render(); // the tab's own load leaves and waits
+    await settle();
+    await refresh(); // the reconnect's load answers while the archive is still out
+    const shown = findAll(render(), (el) => el.type === ListCard).map((el) => el.props.id);
+    expect(shown).toEqual(["Z"]);
+  });
+
+  const tab = (name: "lists.active" | "lists.archived") =>
+    press(find(render(), (el) => el.type === "button" && el.props.children === name)!, "onClick");
+  const loadError = () => find(render(), (el) => el.type === "p" && el.props.children === "lists.loadError") !== undefined;
+
+  it("the reload owed after a set-aside refresh asks for a reconnect when it fails", async () => {
+    await boot();
+    const reconnect = vi.fn();
+    H.reconnect = reconnect;
+    try {
+      replies.set("POST /api/lists/archive", ["hold"]);
+      press(card("B"), "onArchive");
+      await settle();
+      await refresh(); // set aside: the archive is still out
+      replies.set("GET /api/lists", [500]);
+      held.get("POST /api/lists/archive")!(200);
+      await settle();
+      expect(gets()).toBe(3);
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(loadError()).toBe(false);
+    } finally {
+      H.reconnect = () => {};
+    }
+  });
+
+  it("a background load that fails while its tab has no rows yet shows the Retry screen, not placeholders forever", async () => {
+    await boot();
+    replies.set("GET /api/lists?archived=1", ["hold", 500]);
+    tab("lists.archived");
+    render(); // the tab's own load leaves and waits
+    await settle();
+    await expect(refresh()).rejects.toThrow("Lists refresh failed");
+    expect(loadError()).toBe(true);
+  });
+
+  it("at launch, a background load that overtook the first load and failed shows the Retry screen", async () => {
+    replies.set("GET /api/lists", ["hold", 500]);
+    render(); // the first load leaves and waits
+    await settle();
+    await expect(refresh()).rejects.toThrow("Lists refresh failed");
+    expect(loadError()).toBe(true);
+  });
+
+  it("a tab load that left before a change landed shows what it got, and the lists load again after", async () => {
+    await boot();
+    replies.set("POST /api/lists/archive", ["hold"]);
+    press(card("B"), "onArchive");
+    await settle();
+    bodies.set("GET /api/lists?archived=1", []);
+    tab("lists.archived");
+    render();
+    await settle();
+    tab("lists.active");
+    render();
+    await settle(); // the server hasn't archived B yet: A, B, C
+    expect(listIds()).toEqual(["A", "B", "C"]);
+
+    server.lists = ["A", "C"].map(LIST);
+    held.get("POST /api/lists/archive")!(200);
+    await settle();
+    expect(listIds()).toEqual(["A", "C"]);
+  });
+
+  it("a refresh with no change on its way is shown as before", async () => {
+    await boot();
+    server.lists = ["A", "B", "C", "D"].map(LIST); // a list a partner shared meanwhile
+    await refresh();
+    expect(listIds()).toEqual(["A", "B", "C", "D"]);
+    expect(gets()).toBe(2);
   });
 });

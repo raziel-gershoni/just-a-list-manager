@@ -103,14 +103,23 @@ afterEach(() => {
 });
 
 describe("home fetchLists logs a refused load", () => {
-  // The orchestrator's refresh is silent: the Retry screen is for the first load (and the
-  // Retry button), which home-background-saves.test.ts runs with its effects.
-  it("a reconnect refresh logs the status as silent and does not show the Retry screen", async () => {
+  // The orchestrator's refresh is silent: over lists on screen it never shows the Retry
+  // screen, which is for the first load (and the Retry button; home-background-saves.test.ts
+  // runs those with their effects).
+  it("a reconnect refresh logs the status as silent and does not show the Retry screen over the lists", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => reply(200, [{ id: "a", name: "A" }])));
+    await fetchLists()();
     vi.stubGlobal("fetch", vi.fn(async () => reply(500)));
     // It rejects, so the orchestrator doesn't report stale lists as a successful reconnect.
     await expect(fetchLists()()).rejects.toThrow("Lists refresh failed");
     expect(console.warn).toHaveBeenCalledWith("[Home] Load lists failed:", { view: "active", silent: true, status: 500 });
     expect(text(render())).not.toContain("lists.loadError");
+  });
+
+  it("with no lists on screen yet, a failed reconnect refresh shows the Retry screen", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => reply(500)));
+    await expect(fetchLists()()).rejects.toThrow("Lists refresh failed");
+    expect(text(render())).toContain("lists.loadError");
   });
 
   it("a reconnect refresh that works resolves", async () => {
