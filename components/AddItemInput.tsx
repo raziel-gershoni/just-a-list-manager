@@ -85,7 +85,9 @@ export default function AddItemInput({ items, onAddItem }: AddItemInputProps) {
   }, []);
 
   return (
-    <div className="z-10 bg-tg-bg border-b border-separator px-5 py-3.5">
+    // z-30: its suggestions cover the rows, the sticky Completed header (z-20) and the
+    // floating "Syncing…" (z-25, OfflineIndicator).
+    <div className="z-30 bg-tg-bg border-b border-separator px-5 py-3.5">
       <div className="relative">
         <div className="flex gap-2">
           <div className="relative flex-1">

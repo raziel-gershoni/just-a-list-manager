@@ -309,9 +309,10 @@ export default function ListPage() {
         onSettings={() => setShowSettings(true)}
       />
 
-      <OfflineIndicator />
-
       <AddItemInput items={items} onAddItem={handleAddItem} />
+
+      {/* Takes no room: "Syncing…" floats over the top of the list. */}
+      <OfflineIndicator />
 
       {/* Item list */}
       <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y">
