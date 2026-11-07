@@ -335,7 +335,7 @@ describe("one item's changes land in the order they were made (H4)", () => {
 
     expect(w.sent).toEqual(["toggle i1 true", "toggle i2 true", "toggle i2 true"]);
     expect(reconnected).toBe(true);
-    expect(w.engine().pendingFields("i1")).toEqual(new Set(["completed", "completed_at"]));
+    expect(w.engine().pendingFields("i1")).toEqual(new Set(["completed", "completed_at", "paused_until"]));
 
     w.release("toggle i1 true");
     await settle();
@@ -647,13 +647,13 @@ describe("changes on a just-added item wait for its create (H5)", () => {
     w.add("edit", { itemId: "temp-1", value: "oat milk" });
     w.add("reorder", { orderedIds: ["i2", "temp-1"] });
     await settle();
-    expect(w.engine().pendingFields("temp-1")).toEqual(new Set(["created", "completed", "completed_at", "text", "position"]));
+    expect(w.engine().pendingFields("temp-1")).toEqual(new Set(["created", "completed", "completed_at", "paused_until", "text", "position"]));
     expect(w.engine().pendingFields("i2")).toEqual(new Set(["position"]));
 
     w.release("create temp-1");
     await settle();
-    expect(w.engine().pendingFields("r-temp-1")).toEqual(new Set(["completed", "completed_at", "text", "position"]));
-    expect(w.engine().pendingFields("temp-1")).toEqual(new Set(["completed", "completed_at", "text", "position"]));
+    expect(w.engine().pendingFields("r-temp-1")).toEqual(new Set(["completed", "completed_at", "paused_until", "text", "position"]));
+    expect(w.engine().pendingFields("temp-1")).toEqual(new Set(["completed", "completed_at", "paused_until", "text", "position"]));
 
     w.release("toggle r-temp-1 true");
     await settle();
@@ -671,9 +671,23 @@ describe("pendingFields", () => {
 
     expect(w.engine().pendingFields("i1")).toEqual(new Set(["ordered_at", "skipped_at"]));
     expect(w.engine().pendingFields("i2")).toEqual(
-      new Set(["recurring", "completed", "completed_at", "skipped_at", "ordered_at", "position"])
+      new Set(["recurring", "completed", "completed_at", "skipped_at", "ordered_at", "paused_until", "position"])
     );
     expect(w.engine().pendingFields("i4")).toEqual(new Set(["skipped_at"]));
+  });
+
+  it("covers every field a pause, a tick and a stop-repeating change", async () => {
+    const w = world();
+    w.jwt.current = null;
+    w.add("pause", { itemId: "p1", pausedUntil: "2026-11-14T22:00:00.000Z", at: "2026-11-12T15:00:00.000Z" });
+    w.add("toggle", { itemId: "p2", completed: false });
+    w.add("set-recurring", { itemId: "p3", recurring: false });
+
+    expect(w.engine().pendingFields("p1")).toEqual(
+      new Set(["completed", "completed_at", "paused_until", "skipped_at", "ordered_at"])
+    );
+    expect(w.engine().pendingFields("p2")).toEqual(new Set(["completed", "completed_at", "paused_until"]));
+    expect(w.engine().pendingFields("p3")).toEqual(new Set(["recurring", "paused_until"]));
   });
 
   it("answers from memory, without reading storage on each call", async () => {
@@ -687,7 +701,7 @@ describe("pendingFields", () => {
     for (let i = 0; i < 50; i++) w.engine().pendingFields("i1");
 
     expect(reads).not.toHaveBeenCalled();
-    expect(w.engine().pendingFields("i1")).toEqual(new Set(["completed", "completed_at", "text"]));
+    expect(w.engine().pendingFields("i1")).toEqual(new Set(["completed", "completed_at", "paused_until", "text"]));
   });
 
   it("a snapshot keeps the fields of changes that landed after it, matched under the item's saved id", async () => {
@@ -702,7 +716,7 @@ describe("pendingFields", () => {
     await settle();
 
     expect(w.engine().pendingFields("r-temp-1")).toEqual(new Set());
-    expect(w.engine().pendingFieldsOf(snapshot, "r-temp-1")).toEqual(new Set(["created", "completed", "completed_at"]));
+    expect(w.engine().pendingFieldsOf(snapshot, "r-temp-1")).toEqual(new Set(["created", "completed", "completed_at", "paused_until"]));
   });
 
   it("pendingCreateFor names the oldest create of that text still on its way, in flight or kept for a retry", async () => {

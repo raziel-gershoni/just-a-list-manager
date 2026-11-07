@@ -185,7 +185,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
               });
               return { ...base, skipped_at: null };
             }
-            // Auto-respawn recurring items past the same 4-hour threshold.
+            // Auto-respawn recurring items past the same 4-hour threshold, or a paused one whose week has ended.
             // Deleting is final — shouldRespawn refuses any row carrying deleted_at.
             if (shouldRespawn(base, now)) {
               if (canSave) getSyncEngine(listId).add({
@@ -193,7 +193,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
                 type: "restore-recurring",
                 payload: { listId, itemId: base.id },
               });
-              return { ...base, completed: false, completed_at: null, skipped_at: null, ordered_at: null, position: Date.now() };
+              return { ...base, completed: false, completed_at: null, skipped_at: null, ordered_at: null, paused_until: null, position: Date.now() };
             }
             return base;
           });

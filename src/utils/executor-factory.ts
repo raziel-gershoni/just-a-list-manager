@@ -1,7 +1,7 @@
 import type { ExecutorFactory, QueuedMutation } from "@/src/sync/engine";
 
 // The one request builder per change type: the sync engine runs every change through it,
-// online and on replay. Tap time for toggle / skip / order: the payload's `at`, or the
+// online and on replay. Tap time for toggle / skip / order / pause: the payload's `at`, or the
 // queue time for an entry saved before `at` existed.
 const tapTime = (mutation: QueuedMutation): string =>
   typeof mutation.payload.at === "string" ? mutation.payload.at : new Date(mutation.timestamp).toISOString();
@@ -112,6 +112,20 @@ export const createExecutorFactory = (): ExecutorFactory => {
             keepalive: true,
           });
           if (!res.ok) throw new Error(`Order failed: ${res.status}`);
+        };
+      case "pause":
+        return async () => {
+          const jwt = getJwt();
+          const res = await fetch(`/api/lists/${payload.listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId: payload.itemId, pausedUntil: payload.pausedUntil, at: tapTime(mutation) }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Pause failed: ${res.status}`);
         };
       case "set-recurring":
         return async () => {

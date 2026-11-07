@@ -14,6 +14,7 @@ const REPLAYABLE_TYPES = [
   "reorder",
   "skip",
   "order",
+  "pause",
   "set-recurring",
   "restore-recurring",
   "recycle",
@@ -122,6 +123,7 @@ describe("createExecutorFactory - tap time", () => {
     ["toggle", { completed: true }],
     ["skip", { skipped: true }],
     ["order", { ordered: false }],
+    ["pause", { pausedUntil: "2026-11-14T22:00:00.000Z" }],
   ])("%s sends the payload's tap time", async (type, fields) => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
@@ -138,6 +140,25 @@ describe("createExecutorFactory - tap time", () => {
     await factory({ id: "m", type: "skip", payload: { listId: "l1", itemId: "i1", skipped: true }, timestamp: Date.parse(AT) }, () => "jwt")!();
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).at).toBe(AT);
+  });
+});
+
+describe("createExecutorFactory - pause", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("PATCHes the item with the pause end and throws with the HTTP status when the server rejects it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+    vi.stubGlobal("fetch", fetchMock);
+    const factory = createExecutorFactory();
+    const run = factory({ id: "m", type: "pause", payload: { listId: "l1", itemId: "i1", pausedUntil: "2026-11-14T22:00:00.000Z", at: "2026-11-12T15:00:00.000Z" }, timestamp: 0 }, () => "jwt")!;
+
+    await expect(run()).rejects.toThrow(/^Pause failed: 404$/);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/lists/l1/items");
+    expect(init.method).toBe("PATCH");
+    expect(init.keepalive).toBe(true);
   });
 });
 

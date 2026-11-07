@@ -914,3 +914,112 @@ describe("a change made to a new item while its create is on its way shows on th
     expect(p.item("a")).toMatchObject({ completed: true, completed_at: DONE });
   });
 });
+
+describe("Not needed this week (pause)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const later = (ms: number) => new Date(Date.now() + ms).toISOString();
+  const pausedRow = (over: Partial<ItemData> = {}) =>
+    row({ id: "a", recurring: true, completed: true, completed_at: later(-DAY), paused_until: later(2 * DAY), position: 1, ...over });
+
+  it("pausing parks the item at once and sends the pause with the week's end", async () => {
+    const p = await open([row({ id: "a", recurring: true, ordered_at: later(-DAY) })]);
+    p.render().handlePause("a");
+    await settle();
+
+    expect(p.item("a")).toMatchObject({ completed: true, ordered_at: null, skipped_at: null });
+    expect(Date.parse(p.item("a")!.paused_until!)).toBeGreaterThan(Date.now());
+    expect(p.sent.find((s) => s.key === "PATCH a")?.body).toEqual({
+      itemId: "a",
+      pausedUntil: p.item("a")!.paused_until,
+      at: p.item("a")!.completed_at,
+    });
+  });
+
+  it("a refresh while the pause is still being saved keeps the item parked", async () => {
+    const p = await open([row({ id: "a", recurring: true })]);
+    p.hold("PATCH a");
+    p.render().handlePause("a");
+    await settle();
+    const until = p.item("a")!.paused_until;
+
+    await p.refresh();
+
+    expect(p.item("a")).toMatchObject({ completed: true, paused_until: until });
+  });
+
+  it("a refresh while a paused item is being brought back leaves it on the list with no pause", async () => {
+    const p = await open([pausedRow()]);
+    p.hold("PATCH a");
+    p.render().handleRestoreRecurring("a");
+    await settle();
+
+    p.server.items = [pausedRow()];
+    await p.refresh();
+
+    expect(p.item("a")).toMatchObject({ completed: false, paused_until: null });
+  });
+
+  it("an echo of the paused row while an untick is being saved does not bring the pause back", async () => {
+    const p = await open([pausedRow()]);
+    p.hold("PATCH a");
+    await p.render().handleToggle("a", false);
+    await settle();
+
+    p.realtime({ eventType: "UPDATE", new: pausedRow() });
+
+    expect(p.item("a")).toMatchObject({ completed: false, paused_until: null });
+  });
+
+  it("an echo of the paused row while stop-repeating is being saved does not bring the pause back", async () => {
+    const p = await open([pausedRow()]);
+    p.hold("PATCH a");
+    p.render().handleSetRecurring("a", false);
+    await settle();
+
+    p.realtime({ eventType: "UPDATE", new: pausedRow() });
+
+    expect(p.item("a")).toMatchObject({ recurring: false, paused_until: null });
+  });
+
+  it("typing the paused item's text again brings it back with no pause", async () => {
+    const p = await open([pausedRow({ text: "milk" })]);
+    await p.render().handleAddItem("milk");
+    await settle();
+
+    expect(p.item("a")).toMatchObject({ completed: false, paused_until: null });
+  });
+
+  it("loading the list after the week ended brings a paused item back", async () => {
+    const p = await open([pausedRow({ completed_at: later(-3 * DAY), paused_until: later(-60_000) })]);
+
+    expect(p.item("a")).toMatchObject({ completed: false, paused_until: null });
+  });
+
+  it("loading the list mid-week keeps a paused item parked, days after it was paused", async () => {
+    const p = await open([pausedRow({ completed_at: later(-3 * DAY) })]);
+
+    expect(p.item("a")).toMatchObject({ completed: true });
+    expect(p.item("a")!.paused_until).not.toBeNull();
+  });
+
+  it("pausing an item whose create is still on its way lands the pause on the saved row", async () => {
+    const p = await open([]);
+    p.hold("POST 1");
+    await p.render().handleAddItem("bread");
+    const tempId = p.items()[0].id;
+
+    p.render().handleSetRecurring(tempId, true);
+    p.render().handlePause(tempId);
+    const until = p.item(tempId)!.paused_until!;
+    p.release("POST 1", 201, { items: [row({ id: "r1", text: "bread" })] });
+    await settle();
+
+    expect(p.items()).toEqual([expect.objectContaining({ id: "r1", recurring: true, completed: true, paused_until: until })]);
+    const patches = p.sent.filter((s) => s.key === "PATCH r1");
+    expect(patches.map((s) => s.body)).toEqual([
+      { itemId: "r1", recurring: true },
+      expect.objectContaining({ itemId: "r1", pausedUntil: until }),
+    ]);
+    expect(p.sent.some((s) => s.key.includes("temp-"))).toBe(false);
+  });
+});

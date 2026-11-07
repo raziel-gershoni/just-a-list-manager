@@ -23,6 +23,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   reorder: { orderedIds: [A, B] },
   skip: { itemId: A, skipped: true, at: AT },
   order: { itemId: A, ordered: true, at: AT },
+  pause: { itemId: A, pausedUntil: "2026-11-01T22:00:00.000Z", at: AT },
   "set-recurring": { itemId: A, recurring: true },
   "restore-recurring": { itemId: A },
   recycle: { text: "milk", recycleId: A },

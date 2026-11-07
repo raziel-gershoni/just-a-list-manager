@@ -94,15 +94,19 @@ const BARRIER_TYPES = new Set(["reorder", "unskip-all"]);
 
 // Item fields each change type touches (spec §4); "deleted" and "created" stand for presence.
 const FIELDS: Record<string, string[]> = {
-  toggle: ["completed", "completed_at"],
+  // A tick or an untick also ends a "Not needed this week" pause.
+  toggle: ["completed", "completed_at", "paused_until"],
   edit: ["text"],
   skip: ["skipped_at"],
   // "On the way" also clears a skip.
   order: ["ordered_at", "skipped_at"],
+  // "Not needed this week" parks the item like a tick and takes it off On the way / Not available.
+  pause: ["completed", "completed_at", "paused_until", "skipped_at", "ordered_at"],
   "set-category": ["category_id", "category_locked"],
-  "set-recurring": ["recurring"],
-  // Restoring a recurring item also unticks it, clears skip / on the way and moves it.
-  "restore-recurring": ["recurring", "completed", "completed_at", "skipped_at", "ordered_at", "position"],
+  // Stopping the repeat also ends a pause.
+  "set-recurring": ["recurring", "paused_until"],
+  // Restoring a recurring item also unticks it, clears skip / on the way / a pause and moves it.
+  "restore-recurring": ["recurring", "completed", "completed_at", "skipped_at", "ordered_at", "paused_until", "position"],
   delete: ["deleted"],
   restore: ["deleted"],
 };

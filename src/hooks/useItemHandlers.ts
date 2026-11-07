@@ -12,6 +12,7 @@ import { findCompletedExactMatch } from "@/src/utils/search-completed-items";
 import { throwIfNotOk } from "@/src/utils/http";
 import { restoreItemsOnServer, type RestoreBody } from "@/src/utils/item-restore";
 import { getSyncEngine } from "@/src/sync/engine";
+import { weekEnd } from "@/src/utils/recurring-respawn";
 
 /**
  * The ids a bulk route (Clear completed, Unmark all) says it changed, from its `field`. An
@@ -160,7 +161,7 @@ export function useItemHandlers({
       setItems((prev) =>
         prev.map((i) =>
           i.id === recycleId
-            ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, created_by: userId, creator_name: null }
+            ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, paused_until: null, created_by: userId, creator_name: null }
             : i
         )
       );
@@ -232,6 +233,7 @@ export function useItemHandlers({
                 ...i,
                 completed,
                 completed_at: completed ? at : null,
+                paused_until: null,
                 _exiting: false,
               }
             : i
@@ -394,13 +396,39 @@ export function useItemHandlers({
     [listId, addMutation, setItems]
   );
 
+  // "Not needed this week" on a recurring grocery staple: parked like a tick, it comes back when
+  // this phone's week ends rather than 4 hours later. `at` is the tap time the server stamps
+  // completed_at with. The row's button gives the haptic, as for a tick.
+  const handlePause = useCallback(
+    (itemId: string) => {
+      const at = new Date().toISOString();
+      const pausedUntil = weekEnd(new Date(at)).toISOString();
+
+      const isItem = sameItem(itemId);
+      setItems((prev) =>
+        prev.map((i) =>
+          isItem(i)
+            ? { ...i, completed: true, completed_at: at, paused_until: pausedUntil, skipped_at: null, ordered_at: null }
+            : i
+        )
+      );
+
+      addMutation({
+        id: genMutId(),
+        type: "pause",
+        payload: { listId, itemId, pausedUntil, at },
+      });
+    },
+    [listId, addMutation, setItems, sameItem]
+  );
+
   const handleSetRecurring = useCallback(
     (itemId: string, recurring: boolean) => {
       const tg = getTelegramWebApp();
       tg?.HapticFeedback?.impactOccurred("light");
 
       setItems((prev) =>
-        prev.map((i) => (i.id === itemId ? { ...i, recurring } : i))
+        prev.map((i) => (i.id === itemId ? { ...i, recurring, paused_until: recurring ? (i.paused_until ?? null) : null } : i))
       );
 
       const mutId = genMutId();
@@ -421,7 +449,7 @@ export function useItemHandlers({
       setItems((prev) =>
         prev.map((i) =>
           i.id === itemId
-            ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, position: Date.now() }
+            ? { ...i, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, paused_until: null, position: Date.now() }
             : i
         )
       );
@@ -689,5 +717,5 @@ export function useItemHandlers({
     [sendSignal]
   );
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handlePause, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady };
 }
