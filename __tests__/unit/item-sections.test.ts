@@ -38,6 +38,18 @@ describe("item section predicates", () => {
 });
 
 describe("isParkedRecurringItem", () => {
+  it("parks a paused staple (Not needed this week), off the active list and out of Not available", () => {
+    const i = makeItem({
+      recurring: true,
+      completed: true,
+      completed_at: "2026-11-07T08:00:00Z",
+      paused_until: "2026-11-07T22:00:00Z",
+    });
+    expect(isParkedRecurringItem(i)).toBe(true);
+    expect(isActiveItem(i)).toBe(false);
+    expect(isSkippedItem(i)).toBe(false);
+  });
+
   it("parks a completed recurring item", () => {
     const i = makeItem({ recurring: true, completed: true, completed_at: "2026-09-08T00:00:00Z" });
     expect(isParkedRecurringItem(i)).toBe(true);

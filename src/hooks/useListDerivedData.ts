@@ -10,7 +10,7 @@ import {
   isParkedRecurringItem,
 } from "@/src/utils/list-helpers";
 import { computeDuplicateTexts } from "@/src/utils/duplicate-detection";
-import { respawnAnchor } from "@/src/utils/recurring-respawn";
+import { respawnAt } from "@/src/utils/recurring-respawn";
 
 type GroupingOptions = { categories: ListCategory[]; locale: string; grouped: boolean };
 
@@ -49,11 +49,7 @@ export function useListDerivedData(
     () =>
       items
         .filter(isParkedRecurringItem)
-        .sort((a, b) => {
-          const aTime = new Date(respawnAnchor(a) ?? 0).getTime();
-          const bTime = new Date(respawnAnchor(b) ?? 0).getTime();
-          return aTime - bTime;
-        }),
+        .sort((a, b) => (respawnAt(a) ?? 0) - (respawnAt(b) ?? 0)),
     [items]
   );
 

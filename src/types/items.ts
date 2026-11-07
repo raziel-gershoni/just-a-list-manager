@@ -6,6 +6,8 @@ export interface ItemData {
   deleted_at: string | null;
   skipped_at: string | null;
   ordered_at: string | null;
+  /** "Not needed this week": when this parked recurring staple comes back. Null when not paused. */
+  paused_until?: string | null;
   category_id?: string | null;
   category_locked?: boolean;
   recurring: boolean;
