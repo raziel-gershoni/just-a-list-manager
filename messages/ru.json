@@ -110,7 +110,8 @@
       "restore": "Вернуть в список",
       "returnsInMinutes": "Вернётся через {count, plural, one {# минуту} few {# минуты} other {# минут}}",
       "returnsInHours": "Вернётся через {count, plural, one {# час} few {# часа} other {# часов}}",
-      "returningSoon": "Скоро вернётся"
+      "returningSoon": "Скоро вернётся",
+      "notThisWeek": "На этой неделе не нужно"
     },
     "completedTime": {
       "today": "Сегодня",

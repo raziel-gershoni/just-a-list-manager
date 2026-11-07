@@ -155,7 +155,7 @@ export default function ListPage() {
     refresh: retrySorting,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handlePause, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -358,6 +358,7 @@ export default function ListPage() {
                     onOrder={handleOrder}
                     recurring={item.recurring}
                     onToggleRecurring={handleSetRecurring}
+                    onPause={handlePause}
                     onRemoveDuplicates={handleRemoveDuplicates}
                     isExiting={item._exiting}
                     isJustAdded={item._justAdded}
@@ -384,6 +385,7 @@ export default function ListPage() {
                   onOrder={listType === "grocery" ? handleOrder : undefined}
                   recurring={item.recurring}
                   onToggleRecurring={listType === "grocery" ? handleSetRecurring : undefined}
+                  onPause={listType === "grocery" ? handlePause : undefined}
                   onRemoveDuplicates={handleRemoveDuplicates}
                   isExiting={item._exiting}
                   isJustAdded={item._justAdded}

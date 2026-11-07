@@ -110,7 +110,8 @@
       "restore": "Add back to list",
       "returnsInMinutes": "Returns in {count, plural, one {# minute} other {# minutes}}",
       "returnsInHours": "Returns in {count, plural, one {# hour} other {# hours}}",
-      "returningSoon": "Returning soon"
+      "returningSoon": "Returning soon",
+      "notThisWeek": "Not needed this week"
     },
     "completedTime": {
       "today": "Today",

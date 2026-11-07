@@ -30,6 +30,7 @@ interface SortableItemProps {
   onOrder?: (id: string, ordered: boolean) => void;
   recurring?: boolean;
   onToggleRecurring?: (id: string, recurring: boolean) => void;
+  onPause?: (id: string) => void;
   onRemoveDuplicates?: (text: string) => void;
   isExiting?: boolean;
   isJustAdded?: boolean;
@@ -55,6 +56,7 @@ export default function SortableItem({
   onOrder,
   recurring,
   onToggleRecurring,
+  onPause,
   onRemoveDuplicates,
   isExiting,
   isJustAdded,
@@ -90,6 +92,7 @@ export default function SortableItem({
         onOrder={onOrder}
         recurring={recurring}
         onToggleRecurring={onToggleRecurring}
+        onPause={onPause}
         onRemoveDuplicates={onRemoveDuplicates}
         isExiting={isExiting}
         isJustAdded={isJustAdded}

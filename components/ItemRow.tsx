@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, Truck, X } from "lucide-react";
+import { CalendarOff, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, Truck, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
 interface ItemRowProps {
@@ -24,6 +24,7 @@ interface ItemRowProps {
   onOrder?: (id: string, ordered: boolean) => void;
   recurring?: boolean;
   onToggleRecurring?: (id: string, recurring: boolean) => void;
+  onPause?: (id: string) => void;
   onRemoveDuplicates?: (text: string) => void;
   isExiting?: boolean;
   isJustAdded?: boolean;
@@ -48,6 +49,7 @@ export default function ItemRow({
   onOrder,
   recurring,
   onToggleRecurring,
+  onPause,
   onRemoveDuplicates,
   isExiting,
   isJustAdded,
@@ -219,6 +221,21 @@ export default function ItemRow({
             className={`w-[18px] h-[18px] transition-colors ${ordered ? "text-amber-500" : "text-tg-hint"}`}
             strokeWidth={ordered ? 3 : 2}
           />
+        </button>
+      )}
+
+      {onPause && recurring && !completed && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const tg = getTelegramWebApp();
+            tg?.HapticFeedback?.impactOccurred("light");
+            onPause(id);
+          }}
+          className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
+          aria-label={t("recurring.notThisWeek")}
+        >
+          <CalendarOff className="w-[18px] h-[18px] text-tg-hint" />
         </button>
       )}
 

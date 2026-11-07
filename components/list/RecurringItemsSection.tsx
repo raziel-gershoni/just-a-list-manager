@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Repeat } from "lucide-react";
+import { CalendarOff, Check, ChevronDown, ChevronRight, Repeat } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import type { ItemData } from "@/src/types";
-import { respawnAnchor, RESPAWN_AFTER_MS } from "@/src/utils/recurring-respawn";
+import { respawnAt } from "@/src/utils/recurring-respawn";
 
 interface RecurringItemsSectionProps {
   recurringItems: ItemData[];
@@ -30,11 +30,14 @@ export default function RecurringItemsSection({
     return () => clearInterval(id);
   }, []);
 
-  const formatReturnsIn = (anchorIso: string | null): string => {
-    if (!anchorIso) return "";
-    const elapsed = now - new Date(anchorIso).getTime();
-    const remainingMs = RESPAWN_AFTER_MS - elapsed;
+  // A bought staple counts down its 4 hours; a paused one is away until its week ends. Either
+  // says "Returning soon" once its time has passed and the list has not reloaded yet.
+  const formatReturnsIn = (item: ItemData): string => {
+    const at = respawnAt(item);
+    if (at === null) return "";
+    const remainingMs = at - now;
     if (remainingMs <= 0) return t("items.recurring.returningSoon");
+    if (item.paused_until) return t("items.recurring.notThisWeek");
     const minutes = Math.ceil(remainingMs / 60000);
     if (minutes < 60) return t("items.recurring.returnsInMinutes", { count: minutes });
     const hours = Math.ceil(minutes / 60);
@@ -60,7 +63,7 @@ export default function RecurringItemsSection({
       {showRecurring && (
         <div className="item-enter">
           {recurringItems.map((item) => {
-            const anchor = respawnAnchor(item);
+            const paused = !!item.paused_until;
             return (
               <div
                 key={item.id}
@@ -73,15 +76,15 @@ export default function RecurringItemsSection({
                     tg?.HapticFeedback?.impactOccurred("medium");
                     onRestoreRecurring(item.id);
                   }}
-                  className="w-[22px] h-[22px] rounded-full flex items-center justify-center shrink-0 bg-tg-button border-[1.5px] border-tg-button transition-all duration-200 active:scale-90"
+                  className={`w-[22px] h-[22px] rounded-full flex items-center justify-center shrink-0 transition-all duration-200 active:scale-90 ${paused ? "border-[1.5px] border-tg-hint/60" : "bg-tg-button border-[1.5px] border-tg-button"}`}
                   aria-label={t("items.recurring.restore")}
                 >
-                  <Check className="w-3.5 h-3.5 text-tg-button-text" />
+                  {paused ? <CalendarOff className="w-3 h-3 text-tg-link" strokeWidth={3} /> : <Check className="w-3.5 h-3.5 text-tg-button-text" />}
                 </button>
                 <div className="flex-1 min-w-0 opacity-70">
-                  <div className="truncate text-tg-text line-through">{item.text}</div>
+                  <div className={`truncate text-tg-text ${paused ? "" : "line-through"}`}>{item.text}</div>
                   <p className="text-[11px] text-tg-hint tracking-wide truncate">
-                    {formatReturnsIn(anchor)}
+                    {formatReturnsIn(item)}
                   </p>
                 </div>
                 <button
