@@ -22,4 +22,12 @@ describe("GET /items", () => {
     expect(select.cols).toMatch(/\bcategory_id\b/);
     expect(select.cols).toMatch(/\bcategory_locked\b/);
   });
+
+  it("returns each item's pause end, so a paused staple stays parked until its week ends", async () => {
+    h.fake = fakeSupabase(() => ({ data: [], error: null }));
+    await GET(new NextRequest("https://app.test/api/lists/l1/items?limit=500"), { params: Promise.resolve({ id: "l1" }) });
+
+    const select = h.fake.calls.find((c) => c.table === "items" && c.op === "select")!;
+    expect(select.cols).toMatch(/\bpaused_until\b/);
+  });
 });

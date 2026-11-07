@@ -58,7 +58,7 @@ const RECYCLE_COLUMNS = "id, text, completed, completed_at, deleted_at, position
  * Recycle an item — bring it back to the top of the active list.
  * Acts only on a live row of this list that still has the text the caller expects
  * (`text`, compared normalized); anything else answers null and writes nothing.
- * - Completed: sets completed=false, clears completed_at, skipped_at and ordered_at,
+ * - Completed: sets completed=false, clears completed_at, skipped_at, ordered_at and paused_until,
  *   and moves it to MAX(position)+1 (top of list).
  * - Already active: returned unchanged. A replayed recycle, or a second device tapping
  *   the same suggestion, lands once instead of adding a second copy.
@@ -121,6 +121,7 @@ export async function recycleItem(
       deleted_at: null,
       skipped_at: null,
       ordered_at: null,
+      paused_until: null,
       position: nextPosition,
       created_by: userId,
     })

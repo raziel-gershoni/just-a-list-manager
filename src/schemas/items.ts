@@ -30,7 +30,10 @@ export const updateItemSchema = z.object({
   restoreRecurring: z.boolean().optional(),
   deleted_at: z.null().optional(),
   categoryId: z.string().uuid().optional(),
-  // When the user tapped (ISO date-time), for completed_at / skipped_at / ordered_at. Optional:
+  // "Not needed this week": when the pause ends, as the tapper's phone computed it (the end of
+  // its week). Unbounded text here; the route clamps it and never answers 400 for it.
+  pausedUntil: z.string().max(64).optional(),
+  // When the user tapped (ISO date-time), for completed_at / skipped_at / ordered_at and a pause. Optional:
   // entries queued before the client sent it carry none, and the server uses its own time. A
   // value that does not parse is ignored the same way (see tapTime), never a 400, because the
   // queue would drop the user's change on a 4xx.

@@ -28,6 +28,25 @@ function tapTime(at: string | undefined): string {
   return new Date(Math.min(now, Math.max(now - TAP_TIME_WINDOW_MS, tapped))).toISOString();
 }
 
+// "Not needed this week" lasts until the tapper's week ends: at most 7 days, plus the hour a DST
+// change adds to a local week.
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const PAUSE_MAX_MS = WEEK_MS + 60 * 60 * 1000;
+
+// When a pause ends. The phone computes its own week end (the server has no time zone); clamped to
+// [tap, tap + a week and an hour] so a wrong device clock can't hide a staple for longer. A value
+// that does not parse falls back to a week after the tap, never a 400, because the queue would
+// drop the user's change on a 4xx.
+function pauseEnd(raw: string, stamp: string, context: { listId: string; itemId: string }): string {
+  const tap = Date.parse(stamp);
+  const end = Date.parse(raw);
+  if (Number.isNaN(end)) {
+    console.warn("[items/PATCH] Pause end does not parse, pausing for a week:", context);
+    return new Date(tap + WEEK_MS).toISOString();
+  }
+  return new Date(Math.min(tap + PAUSE_MAX_MS, Math.max(tap, end))).toISOString();
+}
+
 // Sort new or changed grocery items after the response (categorizeList skips other
 // list types and never throws).
 function scheduleCategorize(supabase: ReturnType<typeof createServerClient>, listId: string) {
@@ -59,7 +78,7 @@ export async function GET(
   // never respawns, and is purged by the 7-day cleanup cron.
   let query = supabase
     .from("items")
-    .select("id, text, completed, completed_at, deleted_at, skipped_at, ordered_at, recurring, category_id, category_locked, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
+    .select("id, text, completed, completed_at, deleted_at, skipped_at, ordered_at, recurring, paused_until, category_id, category_locked, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
     .eq("list_id", listId)
     .is("deleted_at", null)
     .order("position", { ascending: false })
@@ -409,6 +428,9 @@ export async function PATCH(
   if (typeof updates.completed === "boolean") {
     patchData.completed = updates.completed;
     patchData.completed_at = updates.completed ? stamp : null;
+    // A tick or an untick ends a "Not needed this week" pause: a plain buy parks a staple for the
+    // usual 4 hours.
+    patchData.paused_until = null;
   }
 
   if (typeof updates.text === "string") {
@@ -435,6 +457,8 @@ export async function PATCH(
 
   if (typeof updates.recurring === "boolean") {
     patchData.recurring = updates.recurring;
+    // A pause only means something on a recurring item.
+    if (!updates.recurring) patchData.paused_until = null;
   }
 
   // Bring a recurring item back to active: clear all "out-of-active" flags atomically.
@@ -446,7 +470,19 @@ export async function PATCH(
     patchData.completed_at = null;
     patchData.skipped_at = null;
     patchData.ordered_at = null;
+    patchData.paused_until = null;
     patchData.position = Date.now();
+  }
+
+  // "Not needed this week": park the recurring staple like a tick, until its week ends. It leaves
+  // the active list, so On the way / Not available go with it. Last of the branches that write
+  // `completed`, so a pause wins over its own completed = true.
+  if (typeof updates.pausedUntil === "string") {
+    patchData.completed = true;
+    patchData.completed_at = stamp;
+    patchData.paused_until = pauseEnd(updates.pausedUntil, stamp, { listId, itemId });
+    patchData.skipped_at = null;
+    patchData.ordered_at = null;
   }
 
   // Allow restoring soft-deleted items (undo support)
@@ -475,6 +511,11 @@ export async function PATCH(
 
   if (patchData.deleted_at !== null) {
     query = query.is("deleted_at", null);
+  }
+
+  // A pause that lands after a collaborator stopped the repeat writes nothing (404 below).
+  if (typeof updates.pausedUntil === "string") {
+    query = query.eq("recurring", true);
   }
 
   // maybeSingle: zero rows (missing, or already deleted) is { data: null, error: null },

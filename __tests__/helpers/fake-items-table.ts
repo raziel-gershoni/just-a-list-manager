@@ -12,6 +12,7 @@ export type ItemRow = {
   deleted_at: string | null;
   skipped_at: string | null;
   ordered_at: string | null;
+  paused_until: string | null;
   recurring: boolean;
   position: number;
   created_by: string | null;
@@ -28,6 +29,7 @@ export function itemRow(over: Partial<ItemRow> & { id: string }): ItemRow {
     deleted_at: null,
     skipped_at: null,
     ordered_at: null,
+    paused_until: null,
     recurring: false,
     position: 1,
     created_by: null,
