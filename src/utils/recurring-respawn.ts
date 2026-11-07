@@ -41,7 +41,11 @@ export function respawnAnchor(item: RespawnCandidate): string | null {
 export function respawnAt(item: RespawnCandidate): number | null {
   const anchor = respawnAnchor(item);
   if (anchor === null) return null;
-  if (item.paused_until) return Date.parse(item.paused_until);
+  if (item.paused_until) {
+    const until = Date.parse(item.paused_until);
+    // An unreadable pause must not park the staple forever (NaN never compares as due).
+    if (!Number.isNaN(until)) return until;
+  }
   return Date.parse(anchor) + RESPAWN_AFTER_MS;
 }
 

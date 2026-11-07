@@ -134,6 +134,7 @@
     "noLists": "You don't have any lists yet! Open the app to create your first list.",
     "listNotFound": "I couldn't find a list named '{listName}'. Open the app to create it.",
     "alreadyCheckedOff": "'{item}' is already checked off in {listName}.",
+    "alreadyNotNeeded": "'{item}' is already marked as not needed this week in {listName}.",
     "notFound": "Couldn't find '{item}' in {listName}.",
     "itemFailed": "Couldn't update '{item}' in {listName}. Please try again.",
     "noUser": "Please open the app first to get started!",

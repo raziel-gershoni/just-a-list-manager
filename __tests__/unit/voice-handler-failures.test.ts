@@ -86,7 +86,7 @@ const isExactLookup = (call: FakeCall) =>
 const isFuzzyLookup = (call: FakeCall) =>
   call.table === "items" && call.op === "select" && call.cols === "id, text" && call.filters.includes("limit:200");
 const isCompletedLookup = (call: FakeCall) =>
-  call.table === "items" && call.op === "select" && call.cols === "text" && call.filters.includes("eq:completed=true");
+  call.table === "items" && call.op === "select" && call.cols === "text, paused_until" && call.filters.includes("eq:completed=true");
 const itemWrites = () =>
   (h.db!.calls as FakeCall[]).filter((c) => c.table === "items" && (c.op === "insert" || c.op === "update"));
 
@@ -227,6 +227,17 @@ describe("voice: a failed item is never receipted, the rest still are", () => {
     await speak([{ action: "remove", text: "milky", targetList: "Groceries" }]);
 
     expect(texts()).toEqual([itemFailed("milky", "Groceries")]);
+  });
+
+  it("remove: a paused staple is 'not needed this week', a plain completed item is still 'checked off'", async () => {
+    h.db = world((c) => (isCompletedLookup(c) ? ok([{ text: "milk", paused_until: "2026-11-14T22:00:00.000Z" }]) : undefined));
+    await speak([{ action: "remove", text: "milk", targetList: "Groceries" }]);
+    expect(texts()).toEqual(["'milk' is already marked as not needed this week in Groceries."]);
+
+    h.sent = [];
+    h.db = world((c) => (isCompletedLookup(c) ? ok([{ text: "milk", paused_until: null }]) : undefined));
+    await speak([{ action: "remove", text: "milk", targetList: "Groceries" }]);
+    expect(texts()).toEqual(["'milk' is already checked off in Groceries."]);
   });
 
   it("a successful removal is still receipted", async () => {

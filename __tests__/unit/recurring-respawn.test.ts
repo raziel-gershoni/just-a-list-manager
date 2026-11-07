@@ -130,6 +130,11 @@ describe("respawnAt", () => {
     expect(respawnAt({ recurring: true, completed_at: ONE_HOUR_AGO })).toBe(Date.parse(ONE_HOUR_AGO) + RESPAWN_AFTER_MS);
   });
 
+  it("falls back to four hours after the tick when paused_until can't be read", () => {
+    expect(respawnAt({ recurring: true, completed_at: ONE_HOUR_AGO, paused_until: "garbage" }))
+      .toBe(Date.parse(ONE_HOUR_AGO) + RESPAWN_AFTER_MS);
+  });
+
   it("is null for an item that never comes back on its own", () => {
     expect(respawnAt({ recurring: false, completed_at: ONE_HOUR_AGO })).toBe(null);
     expect(respawnAt({ recurring: true, completed_at: null })).toBe(null);

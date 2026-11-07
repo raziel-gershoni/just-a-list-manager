@@ -134,6 +134,7 @@
     "noLists": "אין לך עדיין רשימות! פתח את האפליקציה כדי ליצור רשימה ראשונה.",
     "listNotFound": "לא מצאתי רשימה בשם '{listName}'. פתח את האפליקציה כדי ליצור אותה.",
     "alreadyCheckedOff": "'{item}' כבר מסומן ב{listName}.",
+    "alreadyNotNeeded": "'{item}' כבר מסומן ב{listName} שלא צריך אותו השבוע.",
     "notFound": "לא מצאתי '{item}' ב{listName}.",
     "itemFailed": "לא הצלחתי לעדכן את '{item}' ב{listName}. נסה שוב.",
     "noUser": "פתח את האפליקציה כדי להתחיל!",

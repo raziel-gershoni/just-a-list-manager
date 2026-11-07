@@ -159,6 +159,7 @@ describe("createExecutorFactory - pause", () => {
     expect(url).toBe("/api/lists/l1/items");
     expect(init.method).toBe("PATCH");
     expect(init.keepalive).toBe(true);
+    expect(JSON.parse(init.body)).toEqual({ itemId: "i1", pausedUntil: "2026-11-14T22:00:00.000Z", at: "2026-11-12T15:00:00.000Z" });
   });
 });
 

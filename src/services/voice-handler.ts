@@ -551,7 +551,7 @@ async function processRemoveItem(
   // Check if it's already completed
   const { data: completedMatch, error: completedError } = await supabase
     .from("items")
-    .select("text")
+    .select("text, paused_until")
     .eq("list_id", listId)
     .eq("completed", true)
     .is("deleted_at", null)
@@ -563,7 +563,8 @@ async function processRemoveItem(
     try {
       await bot.sendMessage(
         chatId,
-        getMsg(lang, "voice.alreadyCheckedOff")
+        // A paused staple was never bought: it is parked until its week ends.
+        getMsg(lang, completedMatch[0].paused_until ? "voice.alreadyNotNeeded" : "voice.alreadyCheckedOff")
           .replace("{item}", () => completedMatch[0].text)
           .replace("{listName}", () => listName)
       );

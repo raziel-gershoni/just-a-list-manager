@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import type { ItemData } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
-import { genMutId, isActiveItem } from "@/src/utils/list-helpers";
+import { genMutId, isActiveItem, isParkedRecurringItem } from "@/src/utils/list-helpers";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { computeUnmarkCompleted } from "@/src/utils/unmark-completed";
 import { computeClearCompleted } from "@/src/utils/clear-completed";
@@ -474,8 +474,10 @@ export function useItemHandlers({
       // An active copy is kept (the highest-position one if several), else the highest-position copy.
       // Completed and skipped copies are history: a drag renumbers active rows 1..N while
       // done rows keep their large creation-time positions, so position alone would keep them.
+      // A parked recurring staple (bought or paused) is waiting to come back, so it is never a
+      // copy: deleting it would be final.
       const matches = items
-        .filter((i) => !i.deleted_at && normalizeForCompare(i.text) === normalized)
+        .filter((i) => !i.deleted_at && !isParkedRecurringItem(i) && normalizeForCompare(i.text) === normalized)
         .sort((a, b) => Number(isActiveItem(b)) - Number(isActiveItem(a)) || b.position - a.position);
 
       if (matches.length <= 1) return;

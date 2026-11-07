@@ -789,6 +789,21 @@ describe("a change made to a new item while its create is on its way shows on th
     expect(p.items().map((i) => i.id).sort()).toEqual(["old", "r1"]);
   });
 
+  it("Remove duplicates leaves a paused staple alone: it is waiting to come back, not a copy", async () => {
+    const p = await open([
+      row({ id: "paused", text: "milk", completed: true, completed_at: DONE, recurring: true, paused_until: "2026-11-14T22:00:00.000Z" }),
+      row({ id: "active", text: "milk", position: 9e15 }),
+    ]);
+
+    p.render().handleRemoveDuplicates("milk");
+    await settle();
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(p.items().map((i) => i.id).sort()).toEqual(["active", "paused"]);
+    expect(p.sent.map((s) => s.key)).not.toContain("DELETE paused");
+    expect(p.sent.map((s) => s.key)).not.toContain("DELETE active");
+  });
+
   it("an Undo of Clear completed after the create's answer brings back the saved row once, through a refresh", async () => {
     const p = await open([]);
     p.hold("POST 1");
