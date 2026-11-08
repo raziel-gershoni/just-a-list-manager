@@ -68,13 +68,19 @@ describe("GET /items", () => {
     expect(console.error).toHaveBeenCalledWith("[items/GET] Items read failed:", { listId: "L" }, boom);
   });
 
-  it("still returns the items, skips the sweep and warns when the list type read fails", async () => {
+  it("still returns the items, skips the sweep, leaves the switch out and warns when the list read fails", async () => {
     use((c) => c.table === "lists" ? { data: null, error: boom } : { data: [{ id: "a", position: 1, category_id: null }], error: null });
     const res = await GET(req("GET"), params);
     expect(res.status).toBe(200);
-    expect((await res.json()).items).toHaveLength(1);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+    expect(body).not.toHaveProperty("categories_enabled");
     expect(h.after).toEqual([]);
-    expect(console.warn).toHaveBeenCalledWith("[items/GET] List type read failed, skipping the category sweep:", { listId: "L" }, boom);
+    expect(console.warn).toHaveBeenCalledWith(
+      "[items/GET] List read failed: no category sweep, and the answer carries no categories switch",
+      { listId: "L" },
+      boom,
+    );
   });
 });
 

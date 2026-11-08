@@ -97,8 +97,8 @@ export async function GET(
   ]);
 
   if (error) return dbError("items/GET", "Items read", error, { listId });
-  // Only the sweep needs the list's type: without it, skip the sweep for this load.
-  if (listError) console.warn("[items/GET] List type read failed, skipping the category sweep:", { listId }, listError);
+  // Without the list row: skip the sweep and leave the switch out of the answer.
+  if (listError) console.warn("[items/GET] List read failed: no category sweep, and the answer carries no categories switch", { listId }, listError);
 
   const nextCursor =
     items && items.length === limit
