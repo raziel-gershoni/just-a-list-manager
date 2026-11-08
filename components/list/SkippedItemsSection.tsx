@@ -17,6 +17,7 @@ interface SkippedItemsSectionProps {
   onDelete: (id: string) => void;
   onEdit: (id: string, newText: string) => void;
   onSkip: (id: string, skipped: boolean) => void;
+  onOpenDetails: (id: string) => void;
   onRestoreAll?: () => void;
 }
 
@@ -31,6 +32,7 @@ export default function SkippedItemsSection({
   onDelete,
   onEdit,
   onSkip,
+  onOpenDetails,
   onRestoreAll,
 }: SkippedItemsSectionProps) {
   const t = useTranslations();
@@ -83,6 +85,8 @@ export default function SkippedItemsSection({
               onDelete={onDelete}
               onEdit={onEdit}
               onSkip={onSkip}
+              quantity={item.quantity}
+              onOpenDetails={onOpenDetails}
             />
           ))}
         </div>

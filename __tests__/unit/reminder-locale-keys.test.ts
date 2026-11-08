@@ -59,7 +59,6 @@ const KEPT_KEYS = [
   "bot.openList",
   "bot.remindersRemoved", // answer to a tap on an old reminder message
   "items.recurring.section", // grocery repeat staples
-  "items.recurring.toggleOn",
   "items.recurring.toggleOff",
   "items.recurring.restore",
   "items.recurring.returnsInMinutes",

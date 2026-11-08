@@ -12,6 +12,7 @@ import ShareDialog from "@/components/ShareDialog";
 import SwitchRow from "@/components/ui/SwitchRow";
 import ListHeader from "@/components/list/ListHeader";
 import SignalSheet from "@/components/list/SignalSheet";
+import ItemSheet from "@/components/list/ItemSheet";
 import CategoriesSheet from "@/components/list/CategoriesSheet";
 import SkippedItemsSection from "@/components/list/SkippedItemsSection";
 import RecurringItemsSection from "@/components/list/RecurringItemsSection";
@@ -82,6 +83,16 @@ export default function ListPage() {
   });
   const [showShare, setShowShare] = useState(false);
   const [showSignals, setShowSignals] = useState(false);
+  // The item sheet (grocery lists): which item, and whether it was a Not available item when it
+  // opened. Found by id or by the temp id it had, so a pending item's save doesn't close it.
+  const [sheet, setSheet] = useState<{ id: string; skipped: boolean } | null>(null);
+  const openSheet = useCallback((id: string) => {
+    const it = items.find((i) => i.id === id);
+    if (it) setSheet({ id, skipped: it.skipped_at != null });
+  }, [items]);
+  const sheetItem = sheet ? items.find((i) => i.id === sheet.id || i._tempId === sheet.id) : undefined;
+  // A type change to Regular closes it: regular lists have no sheet.
+  if (sheet && listType !== "grocery") setSheet(null);
   const [undoAction, setUndoAction] = useState<{
     message: string;
     undo: () => void;
@@ -169,7 +180,7 @@ export default function ListPage() {
     refresh: retrySorting,
   });
 
-  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handlePause, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady } =
+  const { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSetQuantity, handleSkip, handleRestoreSkipped, handleOrder, handlePause, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady } =
     useItemHandlers({
       listId,
       jwtRef,
@@ -399,12 +410,10 @@ export default function ListPage() {
                     onToggle={handleToggle}
                     onDelete={handleDelete}
                     onEdit={handleEditItem}
-                    onSkip={handleSkip}
                     ordered={item.ordered_at != null}
-                    onOrder={handleOrder}
                     recurring={item.recurring}
-                    onToggleRecurring={handleSetRecurring}
-                    onPause={handlePause}
+                    quantity={item.quantity}
+                    onOpenDetails={openSheet}
                     onRemoveDuplicates={handleRemoveDuplicates}
                     isExiting={item._exiting}
                     isJustAdded={item._justAdded}
@@ -426,12 +435,10 @@ export default function ListPage() {
                   onToggle={handleToggle}
                   onDelete={handleDelete}
                   onEdit={handleEditItem}
-                  onSkip={listType === "grocery" ? handleSkip : undefined}
                   ordered={item.ordered_at != null}
-                  onOrder={listType === "grocery" ? handleOrder : undefined}
                   recurring={item.recurring}
-                  onToggleRecurring={listType === "grocery" ? handleSetRecurring : undefined}
-                  onPause={listType === "grocery" ? handlePause : undefined}
+                  quantity={listType === "grocery" ? item.quantity : undefined}
+                  onOpenDetails={listType === "grocery" ? openSheet : undefined}
                   onRemoveDuplicates={handleRemoveDuplicates}
                   isExiting={item._exiting}
                   isJustAdded={item._justAdded}
@@ -452,6 +459,7 @@ export default function ListPage() {
               onDelete={handleDelete}
               onEdit={handleEditItem}
               onSkip={handleSkip}
+              onOpenDetails={openSheet}
               onRestoreAll={handleRestoreSkipped}
             />
             <RecurringItemsSection
@@ -472,6 +480,7 @@ export default function ListPage() {
           duplicateTexts={duplicateTexts}
           isShared={isShared}
           userId={userId}
+          showQuantity={listType === "grocery"}
           onToggle={handleToggle}
           onDelete={handleDelete}
           onEdit={handleEditItem}
@@ -507,6 +516,21 @@ export default function ListPage() {
         onRemind={handleRemind}
         onReady={handleReady}
       />
+
+      {sheet && listType === "grocery" && (
+        <ItemSheet
+          item={sheetItem}
+          openedSkipped={sheet.skipped}
+          onClose={() => setSheet(null)}
+          onEdit={handleEditItem}
+          onSetQuantity={handleSetQuantity}
+          onSkip={handleSkip}
+          onOrder={handleOrder}
+          onSetRecurring={handleSetRecurring}
+          onPause={handlePause}
+          onDelete={handleDelete}
+        />
+      )}
 
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm backdrop-enter" onClick={() => setShowSettings(false)}>

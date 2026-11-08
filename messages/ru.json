@@ -101,13 +101,11 @@
     "skippedSection": "Нет в наличии ({count})",
     "ordered": {
       "title": "В пути",
-      "toggleOn": "Отметить как заказанное",
       "label": "в пути"
     },
     "recurring": {
       "title": "Повторяющийся",
       "section": "Повторяющиеся ({count})",
-      "toggleOn": "Отметить как повторяющийся",
       "toggleOff": "Отменить повторение",
       "restore": "Вернуть в список",
       "returnsInMinutes": "Вернётся через {count, plural, one {# минуту} few {# минуты} other {# минут}}",

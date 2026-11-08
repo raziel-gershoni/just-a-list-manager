@@ -101,13 +101,11 @@
     "skippedSection": "Not available ({count})",
     "ordered": {
       "title": "On the way",
-      "toggleOn": "Mark as ordered",
       "label": "on the way"
     },
     "recurring": {
       "title": "Recurring",
       "section": "Recurring ({count})",
-      "toggleOn": "Mark as recurring",
       "toggleOff": "Stop recurring",
       "restore": "Add back to list",
       "returnsInMinutes": "Returns in {count, plural, one {# minute} other {# minutes}}",

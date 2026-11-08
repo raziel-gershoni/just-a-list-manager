@@ -14,6 +14,8 @@ interface CompletedItemsSectionProps {
   duplicateTexts: Set<string>;
   isShared: boolean;
   userId: string | null;
+  /** Grocery lists show each item's quantity, read-only. */
+  showQuantity: boolean;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string, newText: string) => void;
@@ -29,6 +31,7 @@ export default function CompletedItemsSection({
   duplicateTexts,
   isShared,
   userId,
+  showQuantity,
   onToggle,
   onDelete,
   onEdit,
@@ -104,6 +107,7 @@ export default function CompletedItemsSection({
                   onToggle={onToggle}
                   onDelete={onDelete}
                   onEdit={onEdit}
+                  quantity={showQuantity ? item.quantity : undefined}
                 />
               ))}
             </div>

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { CalendarOff, Check, CircleOff, Clock, Copy, Pencil, Repeat, RotateCcw, Truck, X } from "lucide-react";
+import { Check, Clock, Copy, Pencil, Repeat, RotateCcw, Truck, X } from "lucide-react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
 interface ItemRowProps {
@@ -21,10 +21,11 @@ interface ItemRowProps {
   skipped?: boolean;
   onSkip?: (id: string, skipped: boolean) => void;
   ordered?: boolean;
-  onOrder?: (id: string, ordered: boolean) => void;
   recurring?: boolean;
-  onToggleRecurring?: (id: string, recurring: boolean) => void;
-  onPause?: (id: string) => void;
+  /** Grocery lists only: the item's quantity, shown at the end of the row. */
+  quantity?: string | null;
+  /** Grocery lists only: a tap on the row opens the item sheet instead of the inline editor. */
+  onOpenDetails?: (id: string) => void;
   onRemoveDuplicates?: (text: string) => void;
   isExiting?: boolean;
   isJustAdded?: boolean;
@@ -46,15 +47,19 @@ export default function ItemRow({
   skipped,
   onSkip,
   ordered,
-  onOrder,
   recurring,
-  onToggleRecurring,
-  onPause,
+  quantity,
+  onOpenDetails,
   onRemoveDuplicates,
   isExiting,
   isJustAdded,
 }: ItemRowProps) {
   const t = useTranslations("items");
+  // A grocery row: the name opens the item sheet, which holds every action, so the row itself
+  // carries only the circle, the marks and the quantity.
+  const sheetMode = !!onOpenDetails;
+  // A completed row shows its quantity too, read-only.
+  const showQty = !!quantity && (sheetMode || completed);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -137,137 +142,117 @@ export default function ItemRow({
           />
         ) : (
           <div
+            {...(sheetMode
+              ? {
+                  role: "button",
+                  tabIndex: 0,
+                  "aria-haspopup": "dialog" as const,
+                  onKeyDown: (e: React.KeyboardEvent) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpenDetails!(id);
+                    }
+                  },
+                }
+              : {})}
             onClick={() => {
+              if (sheetMode) {
+                onOpenDetails!(id);
+                return;
+              }
               if (!completed && onEdit) {
                 setEditText(text);
                 setIsEditing(true);
               }
             }}
+            className={sheetMode ? "flex items-start gap-3 cursor-pointer" : showQty ? "flex items-start gap-3" : undefined}
           >
-            <div className="flex items-start gap-1.5">
-              <span
-                className={`min-w-0 wrap-anywhere ${
-                  completed ? "line-through text-tg-hint" : "text-tg-text"
-                }`}
-              >
-                {text}
-              </span>
-              {isDuplicate && (
-                onRemoveDuplicates ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemoveDuplicates(text);
-                    }}
-                    className="shrink-0 p-0.5 -m-0.5 mt-1.5 rounded active:bg-amber-500/20"
-                  >
-                    <Copy className="w-3 h-3 text-amber-500/70" />
-                  </button>
-                ) : (
-                  <Copy className="w-3 h-3 mt-1.5 text-amber-500/70 shrink-0" />
-                )
+            <div className={sheetMode || showQty ? "flex-1 min-w-0" : undefined}>
+              <div className="flex items-start gap-1.5">
+                <span
+                  className={`min-w-0 wrap-anywhere ${
+                    completed ? "line-through text-tg-hint" : "text-tg-text"
+                  }`}
+                >
+                  {text}
+                </span>
+                {isDuplicate && (
+                  onRemoveDuplicates ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveDuplicates(text);
+                      }}
+                      className="shrink-0 p-0.5 -m-0.5 mt-1.5 rounded active:bg-amber-500/20"
+                    >
+                      <Copy className="w-3 h-3 text-amber-500/70" />
+                    </button>
+                  ) : (
+                    <Copy className="w-3 h-3 mt-1.5 text-amber-500/70 shrink-0" />
+                  )
+                )}
+                {sheetMode && ordered && (
+                  <Truck aria-label={t("ordered.label")} role="img" className="w-3.5 h-3.5 shrink-0 mt-[5px] text-amber-500" strokeWidth={3} />
+                )}
+                {sheetMode && recurring && (
+                  <Repeat aria-label={t("recurring.title")} role="img" className="w-3.5 h-3.5 shrink-0 mt-[5px] text-tg-active" strokeWidth={3} />
+                )}
+                {sheetMode && isPending && (
+                  <Clock className="w-3.5 h-3.5 shrink-0 mt-[5px] text-tg-hint" />
+                )}
+              </div>
+              {((creatorName && !isOwnItem) || (editorName && !isOwnEdit)) && (
+                <p className="text-[11px] text-tg-hint tracking-wide truncate">
+                  {creatorName && !isOwnItem && creatorName.split(" ")[0]}
+                  {creatorName && !isOwnItem && editorName && !isOwnEdit && " · "}
+                  {editorName && !isOwnEdit && (
+                    <>
+                      <Pencil className="inline w-2.5 h-2.5 me-0.5" />
+                      {editorName.split(" ")[0]}
+                    </>
+                  )}
+                </p>
               )}
             </div>
-            {((creatorName && !isOwnItem) || (editorName && !isOwnEdit)) && (
-              <p className="text-[11px] text-tg-hint tracking-wide truncate">
-                {creatorName && !isOwnItem && creatorName.split(" ")[0]}
-                {creatorName && !isOwnItem && editorName && !isOwnEdit && " · "}
-                {editorName && !isOwnEdit && (
-                  <>
-                    <Pencil className="inline w-2.5 h-2.5 me-0.5" />
-                    {editorName.split(" ")[0]}
-                  </>
-                )}
-              </p>
+            {showQty && (
+              <span data-qty className="shrink-0 max-w-[40%] text-end text-[15px] leading-6 text-tg-hint tabular-nums wrap-anywhere">
+                {quantity}
+              </span>
             )}
           </div>
         )}
       </div>
 
-      {isPending && (
+      {isPending && !sheetMode && (
         <Clock className="w-4 h-4 mt-[7px] text-tg-hint shrink-0" />
       )}
 
-      {onSkip && !completed && (
+      {skipped && onSkip && !completed && (
         <button
           onClick={(e) => {
             e.stopPropagation();
             const tg = getTelegramWebApp();
             tg?.HapticFeedback?.impactOccurred("light");
-            onSkip(id, !skipped);
+            onSkip(id, false);
+          }}
+          className="p-1.5 rounded-full shrink-0"
+          aria-label={t("unskip")}
+        >
+          <RotateCcw className="w-[18px] h-[18px] text-tg-link" />
+        </button>
+      )}
+
+      {!sheetMode && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(id);
           }}
           className="p-1.5 rounded-full shrink-0"
         >
-          {skipped ? (
-            <RotateCcw className="w-[18px] h-[18px] text-tg-link" />
-          ) : (
-            <CircleOff className="w-[18px] h-[18px] text-tg-hint" />
-          )}
+          <X className="w-[18px] h-[18px] text-tg-hint/60 active:text-tg-destructive" />
         </button>
       )}
-
-      {onOrder && !completed && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            const tg = getTelegramWebApp();
-            tg?.HapticFeedback?.impactOccurred("light");
-            onOrder(id, !ordered);
-          }}
-          className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
-          aria-label={ordered ? t("ordered.label") : t("ordered.toggleOn")}
-        >
-          <Truck
-            className={`w-[18px] h-[18px] transition-colors ${ordered ? "text-amber-500" : "text-tg-hint"}`}
-            strokeWidth={ordered ? 3 : 2}
-          />
-        </button>
-      )}
-
-      {onPause && recurring && !completed && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            const tg = getTelegramWebApp();
-            tg?.HapticFeedback?.impactOccurred("light");
-            onPause(id);
-          }}
-          className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
-          aria-label={t("recurring.notThisWeek")}
-        >
-          <CalendarOff className="w-[18px] h-[18px] text-tg-hint" />
-        </button>
-      )}
-
-      {onToggleRecurring && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            const tg = getTelegramWebApp();
-            tg?.HapticFeedback?.impactOccurred("light");
-            onToggleRecurring(id, !recurring);
-          }}
-          className="p-1.5 rounded-full shrink-0 transition-transform duration-150 active:scale-90"
-          aria-label={recurring ? t("recurring.toggleOff") : t("recurring.toggleOn")}
-        >
-          <Repeat
-            className={`w-4 h-4 transition-colors ${
-              recurring ? "text-tg-active" : "text-tg-hint"
-            }`}
-            strokeWidth={recurring ? 3 : 2}
-          />
-        </button>
-      )}
-
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(id);
-        }}
-        className="p-1.5 rounded-full shrink-0"
-      >
-        <X className="w-[18px] h-[18px] text-tg-hint/60 active:text-tg-destructive" />
-      </button>
     </div>
   );
 }

@@ -101,13 +101,11 @@
     "skippedSection": "לא זמין ({count})",
     "ordered": {
       "title": "בדרך",
-      "toggleOn": "סמן כהוזמן",
       "label": "בדרך"
     },
     "recurring": {
       "title": "חוזר",
       "section": "חוזר ({count})",
-      "toggleOn": "סמן כחוזר",
       "toggleOff": "בטל חזרה",
       "restore": "החזר לרשימה",
       "returnsInMinutes": "חוזר בעוד {count, plural, one {דקה} two {שתי דקות} other {# דקות}}",

@@ -7,6 +7,8 @@
 
 1. **Where:** a fifth icon on the row, shown only on recurring items in grocery lists. The owner chose this
    over a sheet behind the repeat icon, knowing the text column gets narrower on small phones.
+   Superseded 2026-11-08: the action moved into the item sheet
+   (2026-11-08-item-sheet-and-quantity-design.md).
 2. **How long:** until the week ends. The item comes back at Saturday midnight, the start of
    Sunday on the tapper's phone (an Israeli week, Sunday to Saturday). Tap it on Thursday and it's back
    two days later. Tap it on Saturday evening and it's back at midnight.
