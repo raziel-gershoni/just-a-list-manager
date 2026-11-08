@@ -259,6 +259,17 @@ describe("useListData categories switch", () => {
     expect(state.categories).toEqual([]);
     expect(state.items[0]).toMatchObject({ category_id: null, category_locked: false });
   });
+
+  it("clearCategorization keeps the same categories array when there are none, so nothing re-renders", async () => {
+    stubFetch([]);
+    await render().fetchItems();
+    const before = render().categories;
+    expect(before).toEqual([]);
+
+    render().clearCategorization();
+
+    expect(render().categories).toBe(before);
+  });
 });
 
 // Reminders were removed: opening or refreshing a list asks only for the list, its
