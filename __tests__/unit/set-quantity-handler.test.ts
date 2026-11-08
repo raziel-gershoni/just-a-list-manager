@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/rules-of-hooks -- react is stubbed below; the hook runs as a plain function */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // useItemHandlers only uses useCallback, so it runs here as a plain function. If the hook
 // starts using other React APIs (useRef, useMemo...), extend this stub.
@@ -7,6 +7,20 @@ vi.mock("react", () => ({ useCallback: (fn: unknown) => fn }));
 
 import { useItemHandlers } from "@/src/hooks/useItemHandlers";
 import type { ItemData } from "@/src/types";
+
+// sameItem reads the list's sync engine, which reads its saved state from localStorage.
+// Node has none, so give each test an empty in-memory one (as list-merge-flows does).
+beforeEach(() => {
+  const storage = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => storage.get(k) ?? null,
+    setItem: (k: string, v: string) => void storage.set(k, v),
+    removeItem: (k: string) => void storage.delete(k),
+    key: (n: number) => [...storage.keys()][n] ?? null,
+    get length() { return storage.size; },
+  });
+});
+afterEach(() => { vi.unstubAllGlobals(); });
 
 function row(over: Partial<ItemData> & { id: string }): ItemData {
   return {
