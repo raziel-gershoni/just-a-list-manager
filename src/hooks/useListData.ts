@@ -46,15 +46,23 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   // The list works without categories (items show under "Sorting…"), so a failed request
   // (an error status or no answer at all) is only logged: it must never turn into the
   // list's error screen.
+  // clearCategorization bumps clearGenRef: an answer that left before an off holds categories
+  // the server has since deleted, so it writes nothing.
+  const clearGenRef = useRef(0);
   const loadCategories = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
+    const gen = clearGenRef.current;
     try {
       const res = await fetch(`/api/lists/${listId}/categories`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
       if (res.ok) {
         const { categories: fetched } = await res.json();
+        if (gen !== clearGenRef.current) {
+          console.warn("[List] Categories answer dropped: categories were turned off meanwhile", { listId });
+          return;
+        }
         setCategories(sortCategories(fetched ?? []));
       } else {
         console.warn("[List] Categories load failed:", { listId, status: res.status });
@@ -68,6 +76,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   // screen at once. An item left holding a deleted category would sit under "Sorting…" after
   // turning back on, because retrySorting only fills items with no category.
   const clearCategorization = useCallback(() => {
+    clearGenRef.current++;
     setCategories((prev) => (prev.length ? [] : prev));
     setItems((prev) => clearItemCategories(prev));
   }, []);

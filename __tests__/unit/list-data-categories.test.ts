@@ -270,6 +270,24 @@ describe("useListData categories switch", () => {
 
     expect(render().categories).toBe(before);
   });
+
+  it("a categories answer that left before an off never writes the deleted categories back", async () => {
+    stubFetch([dairy]);
+    await render().fetchItems();
+    let answer!: (r: unknown) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise((resolve) => { answer = resolve; })));
+    const inFlight = render().loadCategories();
+
+    render().clearCategorization();
+    answer({ ok: true, status: 200, json: async () => ({ categories: [dairy] }) });
+    await inFlight;
+    expect(render().categories).toEqual([]);
+
+    // A load that leaves after the off (turning back on) writes as usual.
+    stubFetch([produce]);
+    await render().loadCategories();
+    expect(render().categories.map((c) => c.id)).toEqual(["produce"]);
+  });
 });
 
 // Reminders were removed: opening or refreshing a list asks only for the list, its
