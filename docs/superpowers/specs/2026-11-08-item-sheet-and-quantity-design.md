@@ -1,7 +1,7 @@
 # Item sheet and quantity
 
 **Date:** 2026-11-08
-**Status:** owner's decisions taken (2026-11-08); waiting for spec approval.
+**Status:** shipped 2026-11-08.
 
 ## Owner's decisions
 
