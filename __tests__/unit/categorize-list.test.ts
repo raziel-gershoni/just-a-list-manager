@@ -185,11 +185,13 @@ describe("categorizeList", () => {
     // The first round sorts; categories go off before the rerun reads the list.
     const w = world({
       enabled: [true, true, false],
-      reruns: ["pending"],
+      reruns: ["rescan"],
       categories: [{ id: "dairy", name_en: "Dairy", position: 0 }],
       items: [row({ id: "old", text: "Milk", category_id: "dairy" }), row({ id: "new", text: "milk" })],
     });
     await categorizeList(w.deps, "L", "pending");
+    // Round 1 sorts "new" from known text, with no AI. A rescan in round 2 would ask the AI to re-sort every item.
+    expect(w.categorizer.categorize).not.toHaveBeenCalled();
     expect(w.rpc()).toHaveLength(1);
     expect(w.lock.acquire).toHaveBeenCalledTimes(2);
   });
