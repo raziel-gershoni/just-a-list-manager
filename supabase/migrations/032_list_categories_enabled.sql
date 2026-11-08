@@ -5,7 +5,12 @@ ALTER TABLE lists ADD COLUMN IF NOT EXISTS categories_enabled BOOLEAN NOT NULL D
 -- The switch and its cleanup in one transaction. The list row is updated first, so this holds the
 -- row lock the categorizer's writes check the switch under: a write either lands before the
 -- cleanup, which then removes it, or waits and sees the switch off. Categories are deleted before
--- the items are touched, the order a category delete takes, so the two cannot deadlock.
+-- the items are touched, the order a category delete takes, so this can't deadlock with a category
+-- delete, or with the categorizer's writes, which take the list row first.
+-- A hand move of an item (item PATCH categoryId) racing an off can deadlock: the move holds the item
+-- and waits for its category, the off the reverse. Postgres aborts one side, and both recover: the
+-- failed off rolls back with a toast and re-reads, and the queued move retries and is then dropped
+-- as an unknown category.
 -- On only sets the flag: a repeated "on" must never wipe a list that is sorted.
 CREATE OR REPLACE FUNCTION set_list_categories_enabled(p_list_id UUID, p_enabled BOOLEAN)
 RETURNS SETOF lists AS $$
