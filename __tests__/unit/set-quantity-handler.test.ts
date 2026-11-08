@@ -36,11 +36,11 @@ function setup(initial: ItemData[]) {
 
 describe("handleSetQuantity", () => {
   it("stores the normalized quantity on the item and queues one set-quantity mutation", () => {
-    const s = setup([row({ id: "i1" }), row({ id: "i2" })]);
+    const s = setup([row({ id: "i1", editor_name: "Someone" }), row({ id: "i2" })]);
 
     s.handlers.handleSetQuantity("i1", "  2   kg ");
 
-    expect(s.items()[0]).toMatchObject({ id: "i1", quantity: "2 kg", edited_by: "u1" });
+    expect(s.items()[0]).toMatchObject({ id: "i1", quantity: "2 kg", edited_by: "u1", editor_name: null });
     expect(s.items()[1].quantity).toBeUndefined();
     expect(s.mutations).toEqual([
       { id: expect.any(String), type: "set-quantity", payload: { listId: "L1", itemId: "i1", quantity: "2 kg" } },
@@ -65,5 +65,18 @@ describe("handleSetQuantity", () => {
 
     expect(s.items()[0].quantity).toBeNull();
     expect(s.mutations[0].payload).toEqual({ listId: "L1", itemId: "i1", quantity: null });
+  });
+});
+
+describe("a newly added item", () => {
+  it("shows on screen with quantity null, not a missing key", async () => {
+    const s = setup([]);
+
+    await s.handlers.handleAddItem("milk");
+
+    expect(s.items()).toHaveLength(1);
+    expect(s.items()[0].text).toBe("milk");
+    expect("quantity" in s.items()[0]).toBe(true);
+    expect(s.items()[0].quantity).toBeNull();
   });
 });
