@@ -351,6 +351,8 @@ describe("useListData reads carry the categories switch", () => {
     expect(state.categories).toEqual([]);
     expect(state.items[0]).toMatchObject({ category_id: null, category_locked: false });
     expect(categoryReads(f)).toBe(0);
+    // The off answer carried no categories: nothing was dropped.
+    expect(console.warn).not.toHaveBeenCalledWith(expect.stringContaining("[List] Fetched item categories dropped"), expect.anything());
   });
 
   it("a refresh that reads the switch on turns it back on and loads the categories", async () => {
@@ -401,6 +403,7 @@ describe("useListData reads carry the categories switch", () => {
     expect(state.items[0]).toMatchObject({ category_id: null, category_locked: false });
     expect(state.categories).toEqual([]);
     expect(categoryReads(f)).toBe(0);
+    expect(console.warn).toHaveBeenCalledWith("[List] Fetched item categories dropped: categories are off on screen", { listId: "L" });
   });
 
   it("a load whose items answer arrives after an off keeps the switch off and writes no categories", async () => {
@@ -419,6 +422,7 @@ describe("useListData reads carry the categories switch", () => {
     expect(state.items[0]).toMatchObject({ id: "a", category_id: null });
     expect(state.categories).toEqual([]);
     expect(categoryReads(f)).toBe(0);
+    expect(console.warn).toHaveBeenCalledWith("[List] Fetched item categories dropped: categories are off on screen", { listId: "L" });
   });
 
   it("a load takes the items answer's switch over the list summary's, as the newer read", async () => {

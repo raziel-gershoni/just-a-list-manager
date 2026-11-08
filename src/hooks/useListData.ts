@@ -91,10 +91,15 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   }, []);
 
   // While the switch is off on screen, no item carries a category: this catches an answer that
-  // left before an off and came back after it.
+  // left before an off and came back after it (the server writes none while off).
   const withSwitch = useCallback(
-    (rows: ItemData[]) => (categoriesEnabledRef.current ? rows : clearItemCategories(rows)),
-    []
+    (rows: ItemData[]) => {
+      if (categoriesEnabledRef.current) return rows;
+      const cleared = clearItemCategories(rows);
+      if (cleared !== rows) console.warn("[List] Fetched item categories dropped: categories are off on screen", { listId });
+      return cleared;
+    },
+    [listId]
   );
 
   // One load at a time writes the screen. A quiet re-check that starts while a load is out

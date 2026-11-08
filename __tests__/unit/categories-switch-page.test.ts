@@ -277,6 +277,24 @@ describe("the categories switch in list settings", () => {
     S.listType = "regular";
     expect(theSheet()).toBeUndefined();
   });
+
+  it("a sheet an off closed stays closed when categories come back on", () => {
+    openSettings();
+    (categoriesButton()!.props.onClick as () => void)();
+    S.enabled = false;
+    expect(theSheet()).toBeUndefined();
+    S.enabled = true;
+    expect(theSheet()).toBeUndefined();
+  });
+
+  it("a sheet a type change closed stays closed when the list is grocery again", () => {
+    openSettings();
+    (categoriesButton()!.props.onClick as () => void)();
+    S.listType = "regular";
+    expect(theSheet()).toBeUndefined();
+    S.listType = "grocery";
+    expect(theSheet()).toBeUndefined();
+  });
 });
 
 describe("the list type control", () => {

@@ -59,6 +59,10 @@ export default function ListPage() {
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
+  // The Categories sheet opens only on a grocery list with categories on. When either goes
+  // (another device turns categories off, or the type changes), the sheet closes for good, so
+  // it doesn't pop back up when they return. Adjusted during render, not in an effect.
+  if (showCategories && !(listType === "grocery" && categoriesEnabled)) setShowCategories(false);
 
   const [showCompleted, setShowCompleted] = useState(() => {
     if (typeof window === "undefined") return true;
