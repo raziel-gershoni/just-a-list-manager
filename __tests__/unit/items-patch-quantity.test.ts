@@ -6,7 +6,7 @@ import { fakeItemsTable, itemRow, type ItemRow } from "../helpers/fake-items-tab
 // categorizer are faked. A grocery item's quantity is optional free text: normalized, at most 30
 // code points (like Postgres char_length), and null when there is none, never ''.
 const h = vi.hoisted(() => ({
-  db: null as unknown as { client: unknown; calls: { op: string }[]; rows: ItemRow[] },
+  db: null as unknown as { client: unknown; calls: { op: string; values?: unknown }[]; rows: ItemRow[] },
 }));
 vi.mock("@/src/lib/rate-limit", () => ({ apiRateLimiter: {} }));
 vi.mock("@/src/lib/api-auth", () => ({
@@ -90,5 +90,7 @@ describe("PATCH quantity", () => {
     const updates = h.db.calls.slice(before).filter((c) => c.op === "update");
     expect(updates).toHaveLength(1);
     expect(row().category_id).toBe("c1");
+    // No update of any kind, however it is guarded, may touch the category.
+    expect(updates.every((c) => !("category_id" in (c.values as object)))).toBe(true);
   });
 });

@@ -45,7 +45,9 @@
 ## Server
 
 - **GET `/items`:** the explicit select adds `quantity`.
-- **PATCH `/items`:** `updateItemSchema` gains `quantity: z.string().max(60).nullable().optional()`.
+- **PATCH `/items`:** `updateItemSchema` gains `quantity: z.string().max(200).nullable().optional()`.
+  - The 200 only bounds the raw body, so a valid quantity padded with spaces is trimmed rather than
+    refused. The route's 30 code point check, after normalizing, is the real limit.
   - The route runs `normalizeForStorage`. An empty result is stored as `null`, and more than 30
     characters answers 400.
   - It sets `edited_by` like a name edit, so collaborators see who changed it.
