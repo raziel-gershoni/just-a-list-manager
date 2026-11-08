@@ -198,7 +198,7 @@ describe("saving the quantity", () => {
     type(nameBox, "oat milk");
     const blur = vi.fn();
     const preventDefault = vi.fn();
-    (qtyBox().props.onKeyDown as (e: unknown) => void)({ key: "Enter", preventDefault, currentTarget: { blur } });
+    (qtyBox().props.onKeyDown as (e: unknown) => void)({ key: "Enter", nativeEvent: { isComposing: false }, preventDefault, currentTarget: { blur } });
     expect(props.onSetQuantity).toHaveBeenCalledWith("i1", "5");
     expect(props.onEdit).not.toHaveBeenCalled();
     expect(preventDefault).toHaveBeenCalled();
@@ -240,10 +240,24 @@ describe("saving the name", () => {
     type(nameBox, "oat milk");
     type(qtyBox, "5");
     const blur = vi.fn();
-    (nameBox().props.onKeyDown as (e: unknown) => void)({ key: "Enter", preventDefault: () => {}, currentTarget: { blur } });
+    (nameBox().props.onKeyDown as (e: unknown) => void)({ key: "Enter", nativeEvent: { isComposing: false }, preventDefault: () => {}, currentTarget: { blur } });
     expect(props.onEdit).toHaveBeenCalledWith("i1", "oat milk");
     expect(props.onSetQuantity).not.toHaveBeenCalled();
     expect(blur).toHaveBeenCalled();
+  });
+
+  it("Enter while an IME is composing saves nothing, in the name box and the quantity box", () => {
+    type(nameBox, "oat milk");
+    type(qtyBox, "5");
+    for (const box of [nameBox, qtyBox]) {
+      const blur = vi.fn();
+      const preventDefault = vi.fn();
+      (box().props.onKeyDown as (e: unknown) => void)({ key: "Enter", nativeEvent: { isComposing: true }, preventDefault, currentTarget: { blur } });
+      expect(blur).not.toHaveBeenCalled();
+      expect(preventDefault).not.toHaveBeenCalled();
+    }
+    expect(props.onEdit).not.toHaveBeenCalled();
+    expect(props.onSetQuantity).not.toHaveBeenCalled();
   });
 
   it("an action saves the typed quantity before it acts", () => {
@@ -280,11 +294,13 @@ describe("the live value and closing by itself", () => {
     expect(props.onSetQuantity).not.toHaveBeenCalled();
   });
 
-  it("another device completing the item still saves a typed quantity, then closes", () => {
+  it("another device completing the item still saves a typed name and quantity, then closes", () => {
+    type(nameBox, "oat milk");
     type(qtyBox, "3 packs");
     expect(render({ item: { ...ITEM, completed: true } })).toBeNull();
+    expect(props.onEdit).toHaveBeenCalledWith("i1", "oat milk");
     expect(props.onSetQuantity).toHaveBeenCalledWith("i1", "3 packs");
-    expect(calls.slice(0, 2)).toEqual(["qty", "close"]);
+    expect(calls).toEqual(["edit", "qty", "close"]);
   });
 
   it("closes when the item moves to Not available elsewhere", () => {

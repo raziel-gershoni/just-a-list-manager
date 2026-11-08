@@ -69,8 +69,8 @@ export default function ItemSheet({
 
   // Gone or deleted: close and drop the drafts. Completed, or moved between the list and Not
   // available: save the drafts, then close. The drafts are not reset here (no setState in an
-  // effect): the parent unmounts the sheet on close, and a repeat save is a no-op once the
-  // item shows the saved value.
+  // effect), so the parent MUST unmount the sheet in onClose: until it does, a repeat run would
+  // queue the same save again whenever the saved value is normalised differently from the draft.
   useEffect(() => {
     if (!item || item.deleted_at) { onClose(); return; }
     if (item.completed || moved) { commitName(item); commitQuantity(item); onClose(); }
@@ -105,7 +105,8 @@ export default function ItemSheet({
           // An item is one line of text: a pasted line break becomes a space.
           onChange={(e) => setNameDraft(e.target.value.replace(/[^\S\r\n]*[\r\n]+[^\S\r\n]*/g, " "))}
           onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
+            // Enter that confirms an IME composition (Hebrew, Russian keyboards) is not a save.
+            if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
             e.preventDefault();
             saveName(item);
             e.currentTarget.blur();
@@ -124,7 +125,8 @@ export default function ItemSheet({
             value={qtyDraft ?? item.quantity ?? ""}
             onChange={(e) => setQtyDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key !== "Enter") return;
+              // Enter that confirms an IME composition is not a save.
+              if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
               e.preventDefault();
               saveQuantity(item);
               e.currentTarget.blur();
