@@ -135,5 +135,28 @@ describe("PATCH /api/lists categories switch", () => {
     expect(res.status).toBe(200);
     expect(h.fake.calls.find((c) => c.table === "lists" && c.op === "update")!.values).toEqual({ name: "Flours" });
     expect(switchCalls()).toHaveLength(1);
+    expect(await res.json()).toEqual({ id: LIST, categories_enabled: false });
+  });
+
+  it("a rename that saved stays saved when the switch then fails (two writes, not one)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    use({ switchFails: true });
+    const res = await PATCH(patch({ id: LIST, name: "Flours", categoriesEnabled: false }));
+    expect(res.status).toBe(500);
+    expect(h.fake.calls.filter((c) => c.table === "lists" && c.op === "update")).toHaveLength(1);
+    expect(h.after).toEqual([]);
+  });
+
+  it("off together with a switch to grocery schedules one sort (the categorizer skips it, switch is off)", async () => {
+    use();
+    const res = await PATCH(patch({ id: LIST, type: "grocery", categoriesEnabled: false }));
+    expect(res.status).toBe(200);
+    expect(h.after).toHaveLength(1);
+  });
+
+  it("on together with a switch to grocery schedules one sort, not two", async () => {
+    use();
+    await PATCH(patch({ id: LIST, type: "grocery", categoriesEnabled: true }));
+    expect(h.after).toHaveLength(1);
   });
 });
