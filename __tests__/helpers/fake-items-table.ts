@@ -15,6 +15,8 @@ export type ItemRow = {
   paused_until: string | null;
   recurring: boolean;
   quantity: string | null;
+  category_id?: string | null;
+  category_locked?: boolean;
   position: number;
   created_by: string | null;
   // Set by the insert RPC when it is given p_idempotency_key.

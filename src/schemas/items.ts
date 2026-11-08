@@ -24,8 +24,9 @@ export const updateItemSchema = z.object({
   completed: z.boolean().optional(),
   text: z.string().min(1).max(500).optional(),
   // Free text ("2", "1 kg"); null or blank clears it. The route normalizes it and refuses more
-  // than 30 characters; 60 here only bounds the raw body before normalizing.
-  quantity: z.string().max(60).nullable().optional(),
+  // than 30 characters; 200 here only bounds the raw body before normalizing, so padding
+  // around a valid value is trimmed, not refused.
+  quantity: z.string().max(200).nullable().optional(),
   position: z.number().optional(),
   skipped: z.boolean().optional(),
   ordered: z.boolean().optional(),

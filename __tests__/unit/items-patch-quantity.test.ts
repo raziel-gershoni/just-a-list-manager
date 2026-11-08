@@ -65,17 +65,30 @@ describe("PATCH quantity", () => {
     const res = await patch({ quantity: "x".repeat(31) });
     expect(res.status).toBe(400);
     expect(row().quantity).toBe(thirty);
+    // The log names the ids only, never the quantity text.
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("Quantity too long"), { listId: "L", itemId: ITEM });
+  });
+
+  it("a valid quantity padded with spaces is normalized, not refused for its raw length", async () => {
+    const thirty = "y".repeat(30);
+    const res = await patch({ quantity: `${" ".repeat(40)}${thirty}${" ".repeat(40)}` });
+    expect(res.status).toBe(200);
+    expect(row().quantity).toBe(thirty);
   });
 
   it("a quantity-only change is a valid update", async () => {
     const res = await patch({ quantity: "1 kg" });
-    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(200);
+    expect(row().quantity).toBe("1 kg");
   });
 
   it("does not re-sort the item (only a name change resets the category)", async () => {
+    // An unlocked, sorted item: a name change would clear category_id and re-run the sort.
+    h.db = fakeItemsTable([itemRow({ id: ITEM, text: "milk", category_id: "c1", category_locked: false })]);
     const before = h.db.calls.length;
     await patch({ quantity: "2" });
     const updates = h.db.calls.slice(before).filter((c) => c.op === "update");
     expect(updates).toHaveLength(1);
+    expect(row().category_id).toBe("c1");
   });
 });
