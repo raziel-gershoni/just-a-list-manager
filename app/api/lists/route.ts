@@ -287,10 +287,11 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (categoriesEnabled !== undefined) {
-    // Not atomic with the field update above: if this fails after a rename or type change saved,
-    // the client sees the error though those fields stuck. The client sends the switch on its own.
-    // One transaction: off deletes the list's categories and every item's placement, under the
-    // list row lock the categorizer's writes check, so a sort already running leaves nothing.
+    // This RPC is one transaction: off deletes the list's categories and every item's placement,
+    // under the list row lock the categorizer's writes check, so a sort already running leaves nothing.
+    // The field update above is a separate write. If this RPC fails after a rename or type change
+    // saved, the client sees the error although those fields stuck. The page sends the switch in
+    // its own PATCH.
     const { data: rows, error: switchError } = await supabase.rpc("set_list_categories_enabled", {
       p_list_id: id,
       p_enabled: categoriesEnabled,

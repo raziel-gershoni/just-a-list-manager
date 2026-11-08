@@ -147,7 +147,7 @@ describe("PATCH /api/lists categories switch", () => {
     expect(h.after).toEqual([]);
   });
 
-  it("off together with a switch to grocery schedules one sort (the categorizer skips it, switch is off)", async () => {
+  it("still schedules the sort when switching to grocery with the switch off (the categorizer's gate stops it)", async () => {
     use();
     const res = await PATCH(patch({ id: LIST, type: "grocery", categoriesEnabled: false }));
     expect(res.status).toBe(200);
