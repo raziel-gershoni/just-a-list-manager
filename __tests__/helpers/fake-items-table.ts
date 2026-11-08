@@ -14,6 +14,7 @@ export type ItemRow = {
   ordered_at: string | null;
   paused_until: string | null;
   recurring: boolean;
+  quantity: string | null;
   position: number;
   created_by: string | null;
   // Set by the insert RPC when it is given p_idempotency_key.
@@ -31,6 +32,7 @@ export function itemRow(over: Partial<ItemRow> & { id: string }): ItemRow {
     ordered_at: null,
     paused_until: null,
     recurring: false,
+    quantity: null,
     position: 1,
     created_by: null,
     ...over,

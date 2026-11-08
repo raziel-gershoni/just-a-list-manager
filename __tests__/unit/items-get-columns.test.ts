@@ -30,4 +30,12 @@ describe("GET /items", () => {
     const select = h.fake.calls.find((c) => c.table === "items" && c.op === "select")!;
     expect(select.cols).toMatch(/\bpaused_until\b/);
   });
+
+  it("returns each item's quantity, so a grocery row can show it", async () => {
+    h.fake = fakeSupabase(() => ({ data: [], error: null }));
+    await GET(new NextRequest("https://app.test/api/lists/l1/items?limit=500"), { params: Promise.resolve({ id: "l1" }) });
+
+    const select = h.fake.calls.find((c) => c.table === "items" && c.op === "select")!;
+    expect(select.cols).toMatch(/\bquantity\b/);
+  });
 });

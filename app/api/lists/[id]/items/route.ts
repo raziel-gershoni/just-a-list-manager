@@ -79,7 +79,7 @@ export async function GET(
   // never respawns, and is purged by the 7-day cleanup cron.
   let query = supabase
     .from("items")
-    .select("id, text, completed, completed_at, deleted_at, skipped_at, ordered_at, recurring, paused_until, category_id, category_locked, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
+    .select("id, text, quantity, completed, completed_at, deleted_at, skipped_at, ordered_at, recurring, paused_until, category_id, category_locked, position, created_by, edited_by, created_at, users!created_by(name), editor:users!edited_by(name)")
     .eq("list_id", listId)
     .is("deleted_at", null)
     .order("position", { ascending: false })
@@ -447,6 +447,17 @@ export async function PATCH(
       patchData.text = canonical;
       patchData.edited_by = auth.userId;
     }
+  }
+
+  if (updates.quantity !== undefined) {
+    const canonical = updates.quantity === null ? "" : normalizeForStorage(updates.quantity);
+    // Code points, like Postgres char_length: an emoji counts once.
+    if ([...canonical].length > 30) {
+      console.warn("[items/PATCH] Quantity too long:", { listId, itemId });
+      return NextResponse.json({ error: "Quantity is too long" }, { status: 400 });
+    }
+    patchData.quantity = canonical.length > 0 ? canonical : null;
+    patchData.edited_by = auth.userId;
   }
 
   if (typeof updates.position === "number" && Number.isFinite(updates.position) && updates.position > 0 && updates.position <= MAX_SAFE_POSITION) {
