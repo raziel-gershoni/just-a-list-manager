@@ -11,6 +11,7 @@ import {
   type GenerateContentConfig,
 } from "@google/genai";
 import { serverEnv } from "@/src/lib/env";
+import { normalizeForStorage } from "@/src/utils/text-normalize";
 
 /** Pinned stable model id. Rolling back is a one-line change. */
 const VOICE_MODEL = "gemini-3.8-flash";
@@ -38,6 +39,7 @@ const voiceResultSchema = {
           text: { type: "string" },
           action: { type: "string", enum: ["add", "remove"] },
           targetList: { type: ["string", "null"] },
+          quantity: { type: ["string", "null"] },
         },
         required: ["text", "action"],
       },
@@ -50,6 +52,7 @@ export interface VoiceItem {
   text: string;
   action: "add" | "remove";
   targetList: string | null;
+  quantity: string | null;
 }
 
 export interface VoiceResult {
@@ -63,7 +66,7 @@ export interface VoiceProcessor {
 /**
  * Parse the model's JSON and drop anything the handler must not act on. Structured output
  * guarantees the shape, not the values: an action other than "add" would otherwise reach
- * the handler's remove branch. Only text, action and targetList are copied, so a stray
+ * the handler's remove branch. Only text, action, targetList and quantity are copied, so a stray
  * field from an older schema never reaches the handler. Throws when the text is not
  * JSON or has no items array.
  */
@@ -80,10 +83,15 @@ function parseVoiceResult(text: string): VoiceResult {
     if (typeof r.text !== "string" || !r.text.trim()) continue;
     if (r.action !== "add" && r.action !== "remove") continue;
 
+    const text = r.text.trim();
+    const said = r.action === "add" && typeof r.quantity === "string" ? normalizeForStorage(r.quantity) : "";
+    // Too long for the quantity field: keep it in the name rather than lose it.
+    const tooLong = [...said].length > 30;
     items.push({
-      text: r.text.trim(),
+      text: tooLong ? `${text} ${said}` : text,
       action: r.action,
       targetList: typeof r.targetList === "string" && r.targetList.trim() ? r.targetList : null,
+      quantity: said && !tooLong ? said : null,
     });
   }
 
@@ -109,7 +117,8 @@ export class GeminiVoiceProcessor implements VoiceProcessor {
 Extract items to add/remove. Rules:
 - Match list names from available lists, or infer from context. One list = assign all to it.
 - Mixed languages OK (Hebrew, English, Russian).
-- Each item = separate entry. Item text = the item itself: drop command words in any language (e.g. "remind me to", "add", "put on the list"). Keep any time or date words: "remind me to call mom at 9" -> "call mom at 9".`;
+- Each item = separate entry. Item text = the item itself: drop command words in any language (e.g. "remind me to", "add", "put on the list"). Keep any time or date words: "remind me to call mom at 9" -> "call mom at 9".
+- If an item to add has an amount (a count, weight, volume or packs), put the amount in quantity exactly as said, in the speaker's language ("2", "1.5 kg", "2 ליטר", "3 пачки"), and leave it out of text. Otherwise quantity is null. Items to remove have no quantity.`;
 
     const config: GenerateContentConfig = {
       responseMimeType: "application/json",

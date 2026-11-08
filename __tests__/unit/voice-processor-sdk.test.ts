@@ -75,7 +75,7 @@ describe("GeminiVoiceProcessor over the real SDK", () => {
     expect(body.contents[0].parts).toContainEqual({
       inlineData: { mimeType: "audio/ogg", data: AUDIO.toString("base64") },
     });
-    expect(result.items).toStrictEqual([{ text: "milk", action: "add", targetList: "Groceries" }]);
+    expect(result.items).toStrictEqual([{ text: "milk", action: "add", targetList: "Groceries", quantity: null }]);
   });
 
   it("retries once after a 503 and returns the second attempt's items", async () => {

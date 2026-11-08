@@ -93,6 +93,16 @@ describe("GeminiVoiceProcessor request", () => {
     expect(item.required).toEqual(["text", "action"]);
   });
 
+  it("offers an optional nullable string quantity (not required) and asks for it in the prompt", async () => {
+    h.generateContent.mockResolvedValue(okResponse({ items: [] }));
+    await run();
+
+    const item = h.generateContent.mock.calls[0][0].config.responseJsonSchema.properties.items.items;
+    expect(item.properties.quantity).toEqual({ type: ["string", "null"] });
+    expect(item.required).not.toContain("quantity");
+    expect(sentPrompt()).toContain("quantity");
+  });
+
   it("sends the prompt as text plus the voice note as inline base64 audio/ogg", async () => {
     h.generateContent.mockResolvedValue(okResponse({ items: [] }));
     await run();
@@ -104,12 +114,12 @@ describe("GeminiVoiceProcessor request", () => {
     expect(audioPart.inlineData).toEqual({ mimeType: "audio/ogg", data: AUDIO.toString("base64") });
   });
 
-  it("offers the model only text, action and targetList, with no reminder fields", async () => {
+  it("offers the model only text, action, targetList and quantity, with no reminder fields", async () => {
     h.generateContent.mockResolvedValue(okResponse({ items: [] }));
     await run();
 
     const item = h.generateContent.mock.calls[0][0].config.responseJsonSchema.properties.items.items;
-    expect(Object.keys(item.properties).sort()).toEqual(["action", "targetList", "text"]);
+    expect(Object.keys(item.properties).sort()).toEqual(["action", "quantity", "targetList", "text"]);
     expect(item.properties).not.toHaveProperty("remind_at");
     expect(item.properties).not.toHaveProperty("recurrence");
   });
@@ -140,7 +150,7 @@ describe("GeminiVoiceProcessor request", () => {
 });
 
 describe("GeminiVoiceProcessor response handling", () => {
-  it("returns valid items with only text, action and targetList", async () => {
+  it("returns valid items with only text, action, targetList and quantity", async () => {
     h.generateContent.mockResolvedValue(
       okResponse({
         items: [
@@ -154,9 +164,9 @@ describe("GeminiVoiceProcessor response handling", () => {
     const result = await run();
     expect(h.generateContent).toHaveBeenCalledOnce();
     expect(result.items).toStrictEqual([
-      { text: "חלב", action: "add", targetList: "קניות" },
-      { text: "вынести мусор в четверг", action: "add", targetList: "Дом" },
-      { text: "eggs", action: "remove", targetList: null },
+      { text: "חלב", action: "add", targetList: "קניות", quantity: null },
+      { text: "вынести мусор в четверг", action: "add", targetList: "Дом", quantity: null },
+      { text: "eggs", action: "remove", targetList: null, quantity: null },
     ]);
   });
 
@@ -173,8 +183,8 @@ describe("GeminiVoiceProcessor response handling", () => {
     const result = await run();
     expect(h.generateContent).toHaveBeenCalledOnce();
     expect(result.items).toStrictEqual([
-      { text: "call mom at 9", action: "add", targetList: "Дом" },
-      { text: "pay rent tomorrow", action: "add", targetList: "Дом" },
+      { text: "call mom at 9", action: "add", targetList: "Дом", quantity: null },
+      { text: "pay rent tomorrow", action: "add", targetList: "Дом", quantity: null },
     ]);
     // Nothing parses the field any more, so nothing warns about it either.
     expect(console.warn).not.toHaveBeenCalled();
@@ -215,6 +225,60 @@ describe("GeminiVoiceProcessor response handling", () => {
     const result = await run();
     expect(h.generateContent).toHaveBeenCalledOnce();
     expect(result.items.map((i) => i.targetList)).toEqual([null, null, null, "Groceries"]);
+  });
+
+  it("keeps a said quantity, trimmed and normalized; blank or missing is null", async () => {
+    h.generateContent.mockResolvedValue(
+      okResponse({
+        items: [
+          { text: "milk", action: "add", targetList: null, quantity: "  2  litres " },
+          { text: "eggs", action: "add", targetList: null, quantity: "   " },
+          { text: "bread", action: "add", targetList: null },
+          { text: "rice", action: "add", targetList: null, quantity: null },
+          { text: "salt", action: "add", targetList: null, quantity: 5 },
+        ],
+      })
+    );
+
+    const result = await run();
+    expect(result.items.map((i) => [i.text, i.quantity])).toEqual([
+      ["milk", "2 litres"],
+      ["eggs", null],
+      ["bread", null],
+      ["rice", null],
+      ["salt", null],
+    ]);
+  });
+
+  it("folds a quantity of more than 30 code points into the text instead of losing it", async () => {
+    const long = "q".repeat(31);
+    const fits = "q".repeat(30);
+    // 30 emoji are 60 UTF-16 units but 30 code points: they fit, as Postgres char_length counts them.
+    const emoji = "😀".repeat(30);
+    h.generateContent.mockResolvedValue(
+      okResponse({
+        items: [
+          { text: "milk", action: "add", targetList: null, quantity: long },
+          { text: "tea", action: "add", targetList: null, quantity: fits },
+          { text: "jam", action: "add", targetList: null, quantity: emoji },
+        ],
+      })
+    );
+
+    const result = await run();
+    expect(result.items).toStrictEqual([
+      { text: `milk ${long}`, action: "add", targetList: null, quantity: null },
+      { text: "tea", action: "add", targetList: null, quantity: fits },
+      { text: "jam", action: "add", targetList: null, quantity: emoji },
+    ]);
+  });
+
+  it("ignores a quantity on a remove item", async () => {
+    h.generateContent.mockResolvedValue(
+      okResponse({ items: [{ text: "milk", action: "remove", targetList: null, quantity: "2" }] })
+    );
+    const result = await run();
+    expect(result.items).toStrictEqual([{ text: "milk", action: "remove", targetList: null, quantity: null }]);
   });
 
   it("logs the block reason when the prompt itself is blocked", async () => {

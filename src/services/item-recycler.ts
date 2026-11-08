@@ -69,7 +69,9 @@ export async function recycleItem(
   itemId: string,
   userId: string,
   listId: string,
-  text: string
+  text: string,
+  // A quantity said by voice replaces the old one; the app's recycle passes none and keeps it.
+  opts?: { quantity?: string }
 ): Promise<RecyclableItem | null> {
   const supabase = createServerClient();
 
@@ -124,6 +126,7 @@ export async function recycleItem(
       paused_until: null,
       position: nextPosition,
       created_by: userId,
+      ...(typeof opts?.quantity === "string" ? { quantity: opts.quantity } : {}),
     })
     .eq("id", itemId)
     .eq("list_id", listId)

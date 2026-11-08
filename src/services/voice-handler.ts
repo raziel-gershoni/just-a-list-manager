@@ -124,7 +124,7 @@ export async function handleVoiceMessage(
     // list the items land in.
     const { data: ownedLists, error: ownedError } = await supabase
       .from("lists")
-      .select("id, name")
+      .select("id, name, type")
       .eq("owner_id", user.id)
       .is("deleted_at", null);
     if (ownedError) throw dbFailure("Owned lists read", ownedError);
@@ -136,7 +136,7 @@ export async function handleVoiceMessage(
       .eq("status", "approved");
     if (collabError) throw dbFailure("Collaborators read", collabError);
 
-    let collabLists: { id: string; name: string }[] = [];
+    let collabLists: { id: string; name: string; type: string }[] = [];
     const collabListIds = (collabRecords || [])
       .filter((c) => c.permission === "edit")
       .map((c) => c.list_id);
@@ -144,7 +144,7 @@ export async function handleVoiceMessage(
     if (collabListIds.length > 0) {
       const { data, error: sharedError } = await supabase
         .from("lists")
-        .select("id, name")
+        .select("id, name, type")
         .in("id", collabListIds)
         .is("deleted_at", null);
       if (sharedError) throw dbFailure("Shared lists read", sharedError);
@@ -329,7 +329,8 @@ export async function handleVoiceMessage(
             voiceItem,
             user.id,
             receipt,
-            lang
+            lang,
+            targetList.type
           );
         } else {
           await processRemoveItem(
@@ -429,24 +430,30 @@ async function processAddItem(
   voiceItem: VoiceItem,
   userId: string,
   receipt: { added: string[]; removed: string[] },
-  lang: string | undefined
+  lang: string | undefined,
+  listType: string
 ): Promise<string | null> {
   const { getMsg } = await import("./bot");
+  // Quantities live on grocery items only; elsewhere the amount stays in the name, as before.
+  const grocery = listType === "grocery";
+  const name = !grocery && voiceItem.quantity ? `${voiceItem.text} ${voiceItem.quantity}` : voiceItem.text;
+  const quantity = grocery ? voiceItem.quantity : null;
+  const shown = (t: string) => (quantity ? `${t}, ${quantity}` : t);
   // Check for recyclable items via fuzzy match
-  const matches = await findFuzzyMatch(listId, voiceItem.text);
+  const matches = await findFuzzyMatch(listId, name);
 
   if (matches.length === 1) {
     const match = matches[0];
     // Check similarity threshold
     const similarity = textSimilarity(
       match.text.toLowerCase(),
-      voiceItem.text.toLowerCase()
+      name.toLowerCase()
     );
 
     if (similarity > 0.6) {
       // High confidence — auto-recycle
-      await recycleOrThrow(match.id, match.text, userId, listId);
-      receipt.added.push(`${match.text} ${getMsg(lang, "voice.recycledLabel")}`);
+      await recycleOrThrow(match.id, match.text, userId, listId, quantity);
+      receipt.added.push(`${shown(match.text)} ${getMsg(lang, "voice.recycledLabel")}`);
       return match.id;
     }
     // Low confidence (0.3–0.6) — fall through to create new item
@@ -455,11 +462,11 @@ async function processAddItem(
     const bestMatch = matches[0]; // Already sorted by similarity DESC
     const similarity = textSimilarity(
       bestMatch.text.toLowerCase(),
-      voiceItem.text.toLowerCase()
+      name.toLowerCase()
     );
     if (similarity > 0.6) {
-      await recycleOrThrow(bestMatch.id, bestMatch.text, userId, listId);
-      receipt.added.push(`${bestMatch.text} ${getMsg(lang, "voice.recycledLabel")}`);
+      await recycleOrThrow(bestMatch.id, bestMatch.text, userId, listId, quantity);
+      receipt.added.push(`${shown(bestMatch.text)} ${getMsg(lang, "voice.recycledLabel")}`);
       return bestMatch.id;
     }
     // Low confidence — fall through to create new item
@@ -478,13 +485,14 @@ async function processAddItem(
 
   const { data: created, error: insertError } = await supabase.from("items").insert({
     list_id: listId,
-    text: normalizeForStorage(voiceItem.text),
+    text: normalizeForStorage(name),
     position: nextPosition,
     created_by: userId,
+    ...(quantity ? { quantity } : {}),
   }).select("id").single();
   if (insertError) throw dbFailure("Item insert", insertError);
 
-  receipt.added.push(voiceItem.text);
+  receipt.added.push(shown(name));
   return created?.id ?? null;
 }
 
@@ -600,8 +608,14 @@ async function softDeleteItem(supabase: SupabaseClient, itemId: string): Promise
  * changed since the match). Either way the item was not recycled, so this throws and the
  * receipt never claims it. `text` is the matched row's own text, so a fuzzy match still recycles.
  */
-async function recycleOrThrow(itemId: string, text: string, userId: string, listId: string): Promise<void> {
-  const recycled = await recycleItem(itemId, userId, listId, text);
+async function recycleOrThrow(
+  itemId: string,
+  text: string,
+  userId: string,
+  listId: string,
+  quantity?: string | null
+): Promise<void> {
+  const recycled = await recycleItem(itemId, userId, listId, text, quantity ? { quantity } : undefined);
   if (!recycled) throw new Error(`[VoiceHandler] Recycle found no item ${itemId} in list ${listId}`);
 }
 

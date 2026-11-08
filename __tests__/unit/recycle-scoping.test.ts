@@ -108,11 +108,13 @@ describe("recycleItem scoping", () => {
 
     for (const { file, args } of callSites) {
       const argCount = args.split(",").length;
+      // The fifth, optional argument is the voice handler's `{ quantity }`; the first four are
+      // required, so neither listId nor the text check can be silently omitted.
       expect(
-        argCount,
+        [4, 5],
         `recycleItem( call in ${file} passes ${argCount} argument(s) (${args.trim()}); ` +
-          `it must pass exactly 4 (itemId, userId, listId, text) so neither listId nor the text check can be silently omitted`
-      ).toBe(4);
+          `it must pass 4 (itemId, userId, listId, text), plus the optional options object`
+      ).toContain(argCount);
     }
   });
 });

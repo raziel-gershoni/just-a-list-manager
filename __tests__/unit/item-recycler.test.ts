@@ -75,6 +75,22 @@ describe("recycleItem", () => {
     expect(updates()[0].filters).toEqual(expect.arrayContaining(["eq:id=i1", "eq:list_id=L"]));
   });
 
+  it("sets the quantity in the same update when one is passed (a quantity said by voice replaces the old one)", async () => {
+    use({ lookup: ok(milk), maxPos: ok([{ position: 7 }]), update: ok({ ...milk, completed: false }) });
+    await recycleItem("i1", "u1", "L", "milk", { quantity: "2 L" });
+    expect(updates()).toHaveLength(1);
+    expect(updates()[0].values).toMatchObject({ completed: false, quantity: "2 L" });
+  });
+
+  it("leaves the quantity out of the update when none is passed (the old one is kept)", async () => {
+    use({ lookup: ok(milk), maxPos: ok([{ position: 7 }]), update: ok({ ...milk, completed: false }) });
+    await recycleItem("i1", "u1", "L", "milk");
+    expect("quantity" in (updates()[0].values as object)).toBe(false);
+    await recycleItem("i1", "u1", "L", "milk", {});
+    expect(updates()).toHaveLength(2);
+    expect("quantity" in (updates()[1].values as object)).toBe(false);
+  });
+
   it("looks the id up among this list's live rows only (another list's id, or a deleted item, is never written)", async () => {
     use({ lookup: ok(null) });
     expect(await recycleItem("i1", "u1", "L", "milk")).toBeNull();

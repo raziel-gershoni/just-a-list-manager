@@ -56,7 +56,7 @@ vi.mock("node-telegram-bot-api", () => ({
 
 import { handleVoiceMessage } from "@/src/services/voice-handler";
 
-type Item = { action: "add" | "remove"; text: string; targetList: string | null };
+type Item = { action: "add" | "remove"; text: string; targetList: string | null; quantity?: string | null };
 const dbErr = { code: "XX000", message: "db unavailable" };
 const ok = (data: unknown): FakeResult => ({ data, error: null });
 const fail: FakeResult = { data: null, error: dbErr };
@@ -68,7 +68,7 @@ function world(override: (call: FakeCall) => FakeResult | undefined = () => unde
     const o = override(call);
     if (o) return o;
     if (call.table === "users") return ok({ id: "u1", language: "en" });
-    if (call.table === "lists") return ok([{ id: "L1", name: "Groceries" }, { id: "L2", name: "Home" }]);
+    if (call.table === "lists") return ok([{ id: "L1", name: "Groceries", type: "grocery" }, { id: "L2", name: "Home", type: "regular" }]);
     if (call.table === "collaborators") return ok([]);
     if (call.table === "user_list_state") return ok([]);
     if (call.table === "items" && call.op === "select" && call.cols === "position") return ok([{ position: 3 }]);
@@ -165,7 +165,7 @@ describe("voice: a failed item is never receipted, the rest still are", () => {
     arrange();
     await speak([{ action: "add", text: "milk", targetList: "Groceries" }]);
 
-    expect(h.recycle).toHaveBeenCalledWith("old-milk", "u1", "L1", "milk");
+    expect(h.recycle).toHaveBeenCalledWith("old-milk", "u1", "L1", "milk", undefined);
     expect(texts()).toEqual([itemFailed("milk", "Groceries")]);
     expect(itemWrites()).toEqual([]);
     expect(errorSpy).toHaveBeenCalledWith(
@@ -186,7 +186,7 @@ describe("voice: a failed item is never receipted, the rest still are", () => {
     h.fuzzy!.mockResolvedValue([{ id: "old-milk", text: "milk", completed: true, completed_at: null, deleted_at: null, position: 1 }]);
     h.recycle!.mockResolvedValue({ id: "old-milk", text: "milk", completed: false, completed_at: null, deleted_at: null, position: 4 });
     await speak([{ action: "add", text: "milks", targetList: "Groceries" }]);
-    expect(h.recycle).toHaveBeenCalledWith("old-milk", "u1", "L1", "milk");
+    expect(h.recycle).toHaveBeenCalledWith("old-milk", "u1", "L1", "milk", undefined);
     expect(texts()).toEqual(["Added to Groceries:\n- milk (recycled)"]);
     expect(itemWrites()).toEqual([]);
   });
