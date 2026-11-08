@@ -30,8 +30,7 @@ const S = vi.hoisted(() => ({
   loadCategories: (async () => {}) as () => Promise<void>,
   listType: "grocery",
   enabled: true,
-  setCategoriesEnabled: (() => {}) as (v: boolean) => void,
-  clearCategorization: (() => {}) as () => void,
+  applyCategoriesSwitch: (() => {}) as (v: boolean) => void,
   confirmAnswer: true,
   confirms: [] as string[],
   jwt: "jwt" as string | null,
@@ -57,7 +56,7 @@ vi.mock("@/src/hooks/useListData", () => ({
   useListData: () => ({
     listName: "Groceries", setListName: () => {}, items: [], setItems: () => {},
     loading: false, error: false, isShared: false, listType: S.listType, setListType: S.setListType,
-    categoriesEnabled: S.enabled, setCategoriesEnabled: S.setCategoriesEnabled, clearCategorization: S.clearCategorization,
+    categoriesEnabled: S.enabled, applyCategoriesSwitch: S.applyCategoriesSwitch,
     listIcon: null, listColor: null, categories: [], setCategories: () => {},
     loadCategories: S.loadCategories, fetchItems: async () => {}, refreshItems: () => S.refreshItems(),
   }),
@@ -90,6 +89,7 @@ vi.mock("@/components/list/ToastContainer", () => ({ default: () => null }));
 import ListPage from "@/app/(app)/list/[id]/page";
 import ListHeader from "@/components/list/ListHeader";
 import ToastContainer from "@/components/list/ToastContainer";
+import CategoriesSheet from "@/components/list/CategoriesSheet";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 
@@ -129,6 +129,8 @@ const theSwitch = () => find(render(), (el) => el.props.role === "switch");
 const press = () => (theSwitch()!.props.onClick as () => void)();
 const categoriesButton = () =>
   find(render(), (el) => el.type === "button" && findText(el) === "categories.manage");
+const typeButton = (label: string) => find(render(), (el) => el.type === "button" && findText(el) === label);
+const theSheet = () => find(render(), (el) => el.type === CategoriesSheet);
 
 // What the page's error toast says right now.
 const errorToast = () => find(render(), (el) => el.type === ToastContainer)!.props.errorToast;
@@ -153,8 +155,7 @@ beforeEach(() => {
   );
   vi.stubGlobal("fetch", fetchMock);
   loadCategories = vi.fn(async () => {});
-  S.setCategoriesEnabled = vi.fn();
-  S.clearCategorization = vi.fn();
+  S.applyCategoriesSwitch = vi.fn();
   S.listType = "grocery";
   S.enabled = true;
   S.confirmAnswer = true;
@@ -170,8 +171,7 @@ afterEach(() => {
 });
 
 describe("the categories switch in list settings", () => {
-  const setCats = () => S.setCategoriesEnabled as ReturnType<typeof vi.fn>;
-  const clearCats = () => S.clearCategorization as ReturnType<typeof vi.fn>;
+  const applied = () => S.applyCategoriesSwitch as ReturnType<typeof vi.fn>;
 
   it("shows on a grocery list, checked when categories are on", () => {
     openSettings();
@@ -191,46 +191,35 @@ describe("the categories switch in list settings", () => {
     openSettings();
     press();
     expect(S.confirms).toEqual(["categories.confirmOff"]);
-    expect(setCats()).not.toHaveBeenCalled();
-    expect(clearCats()).not.toHaveBeenCalled();
+    expect(applied()).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("a confirmed off clears the screen at once, then saves", async () => {
+  it("a confirmed off shows at once, then saves", async () => {
     openSettings();
     press();
-    expect(setCats()).toHaveBeenCalledWith(false);
-    expect(clearCats()).toHaveBeenCalledTimes(1);
+    expect(applied().mock.calls).toEqual([[false]]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(clearCats().mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[0]);
+    expect(applied().mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[0]);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ id: "L", categoriesEnabled: false });
     patch.resolve({ ok: true, status: 200 });
     await settle();
-    expect(setCats().mock.calls).toEqual([[false]]);
+    expect(applied().mock.calls).toEqual([[false]]);
+    expect(refreshItems).not.toHaveBeenCalled();
     expect(errorToast()).toBeNull();
   });
 
-  it("an off the server refused turns categories back on, reloads them, and says so", async () => {
+  it("an off the server refused turns categories back on, re-reads the list once, and says so", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     openSettings();
     press();
     patch.resolve({ ok: false, status: 403 });
     await settle();
-    expect(setCats().mock.calls).toEqual([[false], [true]]);
-    expect(loadCategories).toHaveBeenCalledTimes(1);
-    // The screen was cleared locally, so the items come back too, not after the retry's delay.
+    expect(applied().mock.calls).toEqual([[false], [true]]);
+    // The re-read carries the server's real switch and loads the categories when it is on.
     expect(refreshItems).toHaveBeenCalledTimes(1);
+    expect(loadCategories).not.toHaveBeenCalled();
     expect(errorToast()).toBe("errors.generic");
-  });
-
-  it("a failed on refreshes no items", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    S.enabled = false;
-    openSettings();
-    press();
-    patch.resolve({ ok: false, status: 403 });
-    await settle();
-    expect(refreshItems).not.toHaveBeenCalled();
   });
 
   it("with no session nothing is sent or changed, and the error toast shows", () => {
@@ -239,8 +228,7 @@ describe("the categories switch in list settings", () => {
     openSettings();
     press();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(setCats()).not.toHaveBeenCalled();
-    expect(clearCats()).not.toHaveBeenCalled();
+    expect(applied()).not.toHaveBeenCalled();
     expect(errorToast()).toBe("errors.generic");
   });
 
@@ -249,19 +237,20 @@ describe("the categories switch in list settings", () => {
     openSettings();
     press();
     expect(S.confirms).toEqual([]);
-    expect(setCats()).toHaveBeenCalledWith(true);
-    expect(clearCats()).not.toHaveBeenCalled();
+    expect(applied().mock.calls).toEqual([[true]]);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ id: "L", categoriesEnabled: true });
   });
 
-  it("an on that could not be sent turns it back off and says so, reloading nothing", async () => {
+  it("an on that could not be sent turns it back off, re-reads the list once, and says so", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     S.enabled = false;
     openSettings();
     press();
     patch.reject(new TypeError("Failed to fetch"));
     await settle();
-    expect(setCats().mock.calls).toEqual([[true], [false]]);
+    expect(applied().mock.calls).toEqual([[true], [false]]);
+    // The save may have committed with its answer lost: the re-read shows the server's switch.
+    expect(refreshItems).toHaveBeenCalledTimes(1);
     expect(loadCategories).not.toHaveBeenCalled();
     expect(errorToast()).toBe("errors.generic");
   });
@@ -271,5 +260,42 @@ describe("the categories switch in list settings", () => {
     expect(categoriesButton()).toBeDefined();
     S.enabled = false;
     expect(categoriesButton()).toBeUndefined();
+  });
+
+  it("an open Categories sheet closes when categories go off, here or on another device", () => {
+    openSettings();
+    (categoriesButton()!.props.onClick as () => void)();
+    expect(theSheet()).toBeDefined();
+    S.enabled = false;
+    expect(theSheet()).toBeUndefined();
+  });
+
+  it("an open Categories sheet closes when the list stops being a grocery list", () => {
+    openSettings();
+    (categoriesButton()!.props.onClick as () => void)();
+    expect(theSheet()).toBeDefined();
+    S.listType = "regular";
+    expect(theSheet()).toBeUndefined();
+  });
+});
+
+describe("the list type control", () => {
+  it("a switch to grocery loads the categories when they are on", async () => {
+    S.listType = "regular";
+    openSettings();
+    (typeButton("lists.typeGrocery")!.props.onClick as () => void)();
+    patch.resolve({ ok: true, status: 200 });
+    await settle();
+    expect(loadCategories).toHaveBeenCalledTimes(1);
+  });
+
+  it("a switch to grocery on a list with categories off loads none", async () => {
+    S.listType = "regular";
+    S.enabled = false;
+    openSettings();
+    (typeButton("lists.typeGrocery")!.props.onClick as () => void)();
+    patch.resolve({ ok: true, status: 200 });
+    await settle();
+    expect(loadCategories).not.toHaveBeenCalled();
   });
 });

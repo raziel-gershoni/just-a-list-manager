@@ -36,6 +36,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [categories, setCategories] = useState<ListCategory[]>([]);
   // The grocery categories switch. An old server sends no field: that list is sorted, as before.
   const [categoriesEnabled, setCategoriesEnabled] = useState(true);
+  // The same, readable at once by a read whose answer comes back before the next render.
+  const categoriesEnabledRef = useRef(true);
   // The rows on screen as of the last render: a refresh compares them with the rows on screen
   // when its answer comes back, to tell what changed while the GET was out.
   const itemsRef = useRef<ItemData[]>(items);
@@ -46,20 +48,20 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   // The list works without categories (items show under "Sorting…"), so a failed request
   // (an error status or no answer at all) is only logged: it must never turn into the
   // list's error screen.
-  // clearCategorization bumps clearGenRef: an answer that left before an off holds categories
+  // applyCategoriesSwitch bumps switchGenRef: an answer that left before an off holds categories
   // the server has since deleted, so it writes nothing.
-  const clearGenRef = useRef(0);
+  const switchGenRef = useRef(0);
   const loadCategories = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
-    const gen = clearGenRef.current;
+    const gen = switchGenRef.current;
     try {
       const res = await fetch(`/api/lists/${listId}/categories`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
       if (res.ok) {
         const { categories: fetched } = await res.json();
-        if (gen !== clearGenRef.current) {
+        if (gen !== switchGenRef.current) {
           console.warn("[List] Categories answer dropped: categories were turned off meanwhile", { listId });
           return;
         }
@@ -72,14 +74,28 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     }
   }, [jwtRef, listId]);
 
-  // Turning categories off deleted them on the server (set_list_categories_enabled): match it on
-  // screen at once. An item left holding a deleted category would sit under "Sorting…" after
-  // turning back on, because retrySorting only fills items with no category.
-  const clearCategorization = useCallback(() => {
-    clearGenRef.current++;
-    setCategories((prev) => (prev.length ? [] : prev));
-    setItems((prev) => clearItemCategories(prev));
+  // The one way a categories switch value reaches the screen: the owner's tap, a failed save's
+  // rollback, a realtime UPDATE, or a read's answer. A change bumps switchGenRef, so an answer
+  // that left before it can't put back what it replaced. Off also clears the categories on
+  // screen: the server deleted them (set_list_categories_enabled). An item left holding a
+  // deleted category would sit under "Sorting…" after turning back on, because retrySorting
+  // only fills items with no category.
+  const applyCategoriesSwitch = useCallback((enabled: boolean) => {
+    if (enabled !== categoriesEnabledRef.current) switchGenRef.current++;
+    categoriesEnabledRef.current = enabled;
+    setCategoriesEnabled(enabled);
+    if (!enabled) {
+      setCategories((prev) => (prev.length ? [] : prev));
+      setItems((prev) => clearItemCategories(prev));
+    }
   }, []);
+
+  // While the switch is off on screen, no item carries a category: this catches an answer that
+  // left before an off and came back after it.
+  const withSwitch = useCallback(
+    (rows: ItemData[]) => (categoriesEnabledRef.current ? rows : clearItemCategories(rows)),
+    []
+  );
 
   // One load at a time writes the screen. A quiet re-check that starts while a load is out
   // joins it: the reconnect that a Retry tap's focus starts would otherwise race that Retry.
@@ -107,6 +123,17 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       setError(true);
       setLoading(false);
       return false;
+    };
+    // The switch as this load reads it (the list summary, then the newer items answer), unless
+    // it changed on screen while the load was out: the owner's tap or a realtime UPDATE is newer.
+    let switchGen = switchGenRef.current;
+    const applyReadSwitch = (enabled: boolean) => {
+      if (switchGen !== switchGenRef.current) {
+        console.warn("[List] Load's categories switch dropped: it changed on screen meanwhile", { listId });
+        return;
+      }
+      applyCategoriesSwitch(enabled);
+      switchGen = switchGenRef.current;
     };
     const run = async (): Promise<boolean> => {
       const jwt = jwtRef.current;
@@ -170,7 +197,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           setListType(currentListType);
           setListIcon((currentList.icon ?? null) as ListIconName | null);
           setListColor((currentList.color ?? null) as ListColor | null);
-          setCategoriesEnabled(currentList.categories_enabled !== false);
+          applyReadSwitch(currentList.categories_enabled !== false);
         }
 
         // Fetch items
@@ -179,8 +206,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         });
         if (overtaken()) return latestLoadRef.current;
         if (res.ok) {
-          const { items: fetchedItems } = await res.json();
+          const { items: fetchedItems, categories_enabled: readEnabled } = await res.json();
           if (overtaken()) return latestLoadRef.current;
+          if (typeof readEnabled === "boolean") applyReadSwitch(readEnabled);
           const FOUR_HOURS = 4 * 60 * 60 * 1000;
           const now = Date.now();
           const canSave = currentList?.role !== "view";
@@ -218,8 +246,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
             }
             return base;
           });
-          setItems(mapped);
-          if (currentListType === "grocery") await loadCategories();
+          setItems(withSwitch(mapped));
+          if (currentListType === "grocery" && categoriesEnabledRef.current) await loadCategories();
           if (overtaken()) return latestLoadRef.current;
           // The list loaded, categories too: it replaces the skeleton, or in one step the
           // error screen a quiet re-check left up.
@@ -243,12 +271,13 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       if (doneGenRef.current < gen) doneGenRef.current = gen;
     });
     return load;
-  }, [jwtRef, listId, loadCategories]);
+  }, [jwtRef, listId, loadCategories, applyCategoriesSwitch, withSwitch]);
 
   const refreshItems = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
     const base = itemsRef.current;
+    const gen = switchGenRef.current;
     try {
       const engine = getSyncEngine(listId);
       // What is on its way as the GET leaves: a change that lands before the answer must
@@ -270,7 +299,13 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       // Any other failed refresh throws, so the reconnect orchestrator retries instead of
       // reporting a stale screen as connected.
       throwIfNotOk(res, "Background refresh");
-      const { items: fetchedItems } = await res.json();
+      const { items: fetchedItems, categories_enabled: readEnabled } = await res.json();
+      // The server's switch, unless it changed on screen while the GET was out. Applied before
+      // the merge, so the merge clears categories by the fresh value.
+      if (typeof readEnabled === "boolean") {
+        if (gen === switchGenRef.current) applyCategoriesSwitch(readEnabled);
+        else console.warn("[List] Refresh's categories switch dropped: it changed on screen meanwhile", { listId });
+      }
 
       const mapped: ItemData[] = (fetchedItems || []).map((item: Record<string, unknown> & { users?: { name?: string }; editor?: { name?: string }; id: string }) => {
         return {
@@ -286,21 +321,23 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       // when the GET left, keeps its fields on screen.
       const pendingFields = (id: string) =>
         new Set([...engine.pendingFields(id), ...engine.pendingFieldsOf(pendingAtStart, id)]);
-      setItems((prev) => mergeRefresh(prev, base, mapped, pendingFields));
-      if (listType === "grocery") await loadCategories();
+      setItems((prev) => withSwitch(mergeRefresh(prev, base, mapped, pendingFields)));
+      if (listType === "grocery" && categoriesEnabledRef.current) await loadCategories();
     } catch (e) {
       console.error("[List] Background refresh error:", { listId }, e);
       throw e;
     }
-  }, [jwtRef, listId, listType, loadCategories]);
+  }, [jwtRef, listId, listType, loadCategories, applyCategoriesSwitch, withSwitch]);
 
   // The "Sorting…" retry: re-request the list so GET /items schedules a sort, and copy in a
   // category the server already has for an item still unsorted on screen. Unlike
   // refreshItems it replaces nothing else, so a change in flight or waiting in the queue is
-  // never undone, and it sends nothing from the queue.
+  // never undone, and it sends nothing from the queue. An answer that left before the switch
+  // changed on screen writes and loads nothing.
   const retrySorting = useCallback(async () => {
     const jwt = jwtRef.current;
     if (!jwt) return;
+    const gen = switchGenRef.current;
     try {
       const res = await fetch(`/api/lists/${listId}/items${ITEMS_URL_SUFFIX}`, {
         headers: { Authorization: `Bearer ${jwt}` },
@@ -309,7 +346,14 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
         console.warn("[List] Sorting retry failed:", { listId, status: res.status });
         return;
       }
-      const { items: fetched } = await res.json();
+      const { items: fetched, categories_enabled: readEnabled } = await res.json();
+      if (gen !== switchGenRef.current) {
+        console.warn("[List] Sorting retry answer dropped: the categories switch changed meanwhile", { listId });
+        return;
+      }
+      // The server's switch first: off copies nothing and loads no categories.
+      if (typeof readEnabled === "boolean") applyCategoriesSwitch(readEnabled);
+      if (!categoriesEnabledRef.current) return;
       const server = new Map<string, { category_id?: string | null; category_locked?: boolean }>(
         (fetched ?? []).map((i: { id: string; category_id?: string | null; category_locked?: boolean }) => [i.id, i])
       );
@@ -324,8 +368,9 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       console.error("[List] Sorting retry error:", e);
       return;
     }
+    // Only reached with the switch on: an answer that reads it off returned above.
     if (listType === "grocery") await loadCategories();
-  }, [jwtRef, listId, listType, loadCategories]);
+  }, [jwtRef, listId, listType, loadCategories, applyCategoriesSwitch]);
 
-  return { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, categoriesEnabled, setCategoriesEnabled, clearCategorization, loadCategories, fetchItems, refreshItems, retrySorting };
+  return { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, categoriesEnabled, applyCategoriesSwitch, loadCategories, fetchItems, refreshItems, retrySorting };
 }

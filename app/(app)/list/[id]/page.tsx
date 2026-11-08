@@ -55,7 +55,7 @@ export default function ListPage() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, categoriesEnabled, setCategoriesEnabled, clearCategorization, loadCategories, fetchItems, refreshItems, retrySorting } =
+  const { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, categoriesEnabled, applyCategoriesSwitch, loadCategories, fetchItems, refreshItems, retrySorting } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -103,9 +103,11 @@ export default function ListPage() {
     [refreshItems]
   );
 
-  // A failed off had already cleared the items' categories on screen: re-read them too.
-  const refreshAfterFailedOff = useMemo(
-    () => coalesce(refreshItems, "[List] Refresh after a failed categories off failed"),
+  // A failed categories switch save re-reads the list: the answer carries the server's real
+  // switch (the save may have committed with its answer lost), the items a failed off had
+  // cleared, and the categories when the switch is on.
+  const refreshAfterFailedSwitch = useMemo(
+    () => coalesce(refreshItems, "[List] Refresh after a failed categories switch failed"),
     [refreshItems]
   );
 
@@ -193,8 +195,7 @@ export default function ListPage() {
     listType,
     loadCategories,
     setCategories,
-    setCategoriesEnabled,
-    clearCategorization,
+    applyCategoriesSwitch,
     isDraggingRef,
     onListDeleted,
     onChannelClosed: reconnect,
@@ -307,8 +308,8 @@ export default function ListPage() {
   }
 
   // Off deletes the list's categories on the server (set_list_categories_enabled), so it asks
-  // first and clears the screen at once. A failed save puts the switch back; after a failed off
-  // the categories and items are loaded again, since the cleanup did not run.
+  // first and clears the screen at once. A failed save of either kind puts the switch back, then
+  // re-reads the list, which shows the server's real switch and reloads what it needs.
   const saveCategoriesEnabled = (enabled: boolean) => {
     const jwt = jwtRef.current;
     if (!jwt) {
@@ -317,8 +318,7 @@ export default function ListPage() {
       setTimeout(() => setErrorToast(null), 3000);
       return;
     }
-    setCategoriesEnabled(enabled);
-    if (!enabled) clearCategorization();
+    applyCategoriesSwitch(enabled);
     fetch("/api/lists", {
       method: "PATCH",
       headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
@@ -327,11 +327,8 @@ export default function ListPage() {
       .then((res) => throwIfNotOk(res, "Categories switch"))
       .catch((err) => {
         console.error("[List] Failed to switch categories, listId:", listId, "enabled:", enabled, err);
-        setCategoriesEnabled(!enabled);
-        if (!enabled) {
-          void loadCategories();
-          refreshAfterFailedOff();
-        }
+        applyCategoriesSwitch(!enabled);
+        refreshAfterFailedSwitch();
         setErrorToast(t('errors.generic'));
         setTimeout(() => setErrorToast(null), 3000);
       });
@@ -527,8 +524,9 @@ export default function ListPage() {
                       })
                         .then((res) => {
                           throwIfNotOk(res, "Type change");
-                          // Nothing loaded categories while the list was another type.
-                          return tp === "grocery" ? loadCategories() : undefined;
+                          // Nothing loaded categories while the list was another type; a list
+                          // with them off has none.
+                          return tp === "grocery" && categoriesEnabled ? loadCategories() : undefined;
                         })
                         .catch((err) => {
                           console.error("[List] Failed to update list type, listId:", listId, "type:", tp, err);
@@ -557,7 +555,7 @@ export default function ListPage() {
                 <span>{t('categories.enabled')}</span>
                 <span
                   aria-hidden="true"
-                  className={`relative inline-flex h-7 w-12 shrink-0 rounded-full motion-safe:transition-colors ${categoriesEnabled ? "bg-tg-button" : "bg-tg-hint/30"}`}
+                  className={`relative inline-flex h-7 w-12 shrink-0 rounded-full motion-safe:transition-colors ${categoriesEnabled ? "bg-tg-button" : "bg-tg-hint/50"}`}
                 >
                   <span
                     className={`absolute top-0.5 start-0.5 h-6 w-6 rounded-full bg-white shadow-sm motion-safe:transition-transform ${categoriesEnabled ? "translate-x-5 rtl:-translate-x-5" : ""}`}
@@ -583,7 +581,8 @@ export default function ListPage() {
         </div>
       )}
 
-      {showCategories && (
+      {/* Only while categories are on: an off from another device closes it. */}
+      {showCategories && listType === "grocery" && categoriesEnabled && (
         <CategoriesSheet
           listId={listId}
           jwtRef={jwtRef}

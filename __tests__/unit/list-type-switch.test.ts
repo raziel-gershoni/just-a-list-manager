@@ -50,6 +50,7 @@ vi.mock("@/src/hooks/useListData", () => ({
     listName: "Groceries", setListName: () => {}, items: [], setItems: () => {},
     loading: false, error: false, isShared: false, listType: "regular", setListType: S.setListType,
     listIcon: null, listColor: null, categories: [], setCategories: () => {},
+    categoriesEnabled: true, applyCategoriesSwitch: () => {},
     loadCategories: S.loadCategories, fetchItems: async () => {}, refreshItems: async () => {},
   }),
 }));

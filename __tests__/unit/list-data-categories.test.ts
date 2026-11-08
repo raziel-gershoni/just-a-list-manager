@@ -247,26 +247,27 @@ describe("useListData categories switch", () => {
     expect(render().categoriesEnabled).toBe(true);
   });
 
-  it("clearCategorization empties the categories and takes the items out of them", async () => {
+  it("applyCategoriesSwitch(false) turns grouping off, empties the categories and takes the items out of them", async () => {
     stubFetch([dairy], "grocery", {}, { category_id: "c1", category_locked: true });
     await render().fetchItems();
     expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
     expect(render().items[0]).toMatchObject({ category_id: "c1", category_locked: true });
 
-    render().clearCategorization();
+    render().applyCategoriesSwitch(false);
 
     const state = render();
+    expect(state.categoriesEnabled).toBe(false);
     expect(state.categories).toEqual([]);
     expect(state.items[0]).toMatchObject({ category_id: null, category_locked: false });
   });
 
-  it("clearCategorization keeps the same categories array when there are none, so nothing re-renders", async () => {
+  it("an off keeps the same categories array when there are none, so nothing re-renders", async () => {
     stubFetch([]);
     await render().fetchItems();
     const before = render().categories;
     expect(before).toEqual([]);
 
-    render().clearCategorization();
+    render().applyCategoriesSwitch(false);
 
     expect(render().categories).toBe(before);
   });
@@ -278,15 +279,206 @@ describe("useListData categories switch", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise((resolve) => { answer = resolve; })));
     const inFlight = render().loadCategories();
 
-    render().clearCategorization();
+    render().applyCategoriesSwitch(false);
     answer({ ok: true, status: 200, json: async () => ({ categories: [dairy] }) });
     await inFlight;
     expect(render().categories).toEqual([]);
 
     // A load that leaves after the off (turning back on) writes as usual.
+    render().applyCategoriesSwitch(true);
     stubFetch([produce]);
     await render().loadCategories();
     expect(render().categories.map((c) => c.id)).toEqual(["produce"]);
+  });
+
+  it("an on while already on is no change: a categories answer already on its way still lands", async () => {
+    stubFetch([dairy]);
+    await render().fetchItems();
+    let answer!: (r: unknown) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise((resolve) => { answer = resolve; })));
+    const inFlight = render().loadCategories();
+
+    render().applyCategoriesSwitch(true);
+    answer({ ok: true, status: 200, json: async () => ({ categories: [dairy, produce] }) });
+    await inFlight;
+    expect(render().categories.map((c) => c.id)).toEqual(["produce", "dairy"]);
+  });
+});
+
+// Every items read carries the switch (GET /items), so a device that missed the realtime
+// UPDATE catches up. A read never undoes a switch change made on screen while it was out, and
+// while the switch is off on screen no item carries a category.
+describe("useListData reads carry the categories switch", () => {
+  const row = (id: string, over: Record<string, unknown> = {}) => ({
+    id, text: id, completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null,
+    recurring: false, position: 1, category_id: null, category_locked: false, ...over,
+  });
+  type ItemsAnswer = { items: unknown[]; categories_enabled?: boolean };
+  // The items GET answers from `server.items`, or waits for a test to answer it when `hold` is set.
+  function stubServer(server: { list: Record<string, unknown>; items: ItemsAnswer; categories: unknown[]; hold?: boolean }) {
+    const held: ((body: ItemsAnswer) => void)[] = [];
+    const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+    const f = vi.fn(async (url: string) => {
+      if (url === "/api/lists") return json([{ id: "L", name: "Groceries", type: "grocery", ...server.list }]);
+      if (url.startsWith("/api/lists/L/items")) {
+        if (!server.hold) return json(server.items);
+        return new Promise((resolve) => held.push((body) => resolve(json(body))));
+      }
+      if (url === "/api/lists/L/categories") return json({ categories: server.categories });
+      throw new Error(`unexpected ${url}`);
+    });
+    vi.stubGlobal("fetch", f);
+    const answer = async (body: ItemsAnswer) => {
+      await vi.waitFor(() => expect(held.length).toBeGreaterThan(0));
+      held.shift()!(body);
+    };
+    return { f, answer };
+  }
+  const categoryReads = (f: ReturnType<typeof vi.fn>) => f.mock.calls.filter(([url]) => url === "/api/lists/L/categories").length;
+
+  it("a refresh that reads the switch off turns it off and clears the categories (the phone was asleep)", async () => {
+    const server = { list: {}, items: { items: [row("a", { category_id: "dairy" })], categories_enabled: true } as ItemsAnswer, categories: [dairy] };
+    const { f } = stubServer(server);
+    await render().fetchItems();
+    expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
+    f.mockClear();
+
+    server.items = { items: [row("a")], categories_enabled: false };
+    await render().refreshItems();
+
+    const state = render();
+    expect(state.categoriesEnabled).toBe(false);
+    expect(state.categories).toEqual([]);
+    expect(state.items[0]).toMatchObject({ category_id: null, category_locked: false });
+    expect(categoryReads(f)).toBe(0);
+  });
+
+  it("a refresh that reads the switch on turns it back on and loads the categories", async () => {
+    const server = { list: { categories_enabled: false }, items: { items: [row("a")], categories_enabled: false } as ItemsAnswer, categories: [dairy] };
+    const { f } = stubServer(server);
+    await render().fetchItems();
+    expect(render().categoriesEnabled).toBe(false);
+
+    server.items = { items: [row("a", { category_id: "dairy" })], categories_enabled: true };
+    await render().refreshItems();
+
+    expect(render().categoriesEnabled).toBe(true);
+    expect(render().items[0]).toMatchObject({ category_id: "dairy" });
+    expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
+    expect(categoryReads(f)).toBe(1);
+  });
+
+  it("a refresh answer that left before the switch changed on screen leaves the switch alone", async () => {
+    const server = { list: { categories_enabled: false }, items: { items: [row("a")], categories_enabled: false } as ItemsAnswer, categories: [dairy], hold: false };
+    const { answer } = stubServer(server);
+    await render().fetchItems();
+    server.hold = true;
+    const refresh = render().refreshItems();
+
+    render().applyCategoriesSwitch(true);
+    await answer({ items: [row("a")], categories_enabled: false });
+    await refresh;
+
+    expect(render().categoriesEnabled).toBe(true);
+    expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
+  });
+
+  it("while off, a refresh answer that left before the off writes none of its categories", async () => {
+    // Unsorted at open; the server sorted it just before the off, and the answer left before it.
+    const server = { list: {}, items: { items: [row("a")], categories_enabled: true } as ItemsAnswer, categories: [dairy], hold: false };
+    const { f, answer } = stubServer(server);
+    await render().fetchItems();
+    server.hold = true;
+    f.mockClear();
+    const refresh = render().refreshItems();
+
+    render().applyCategoriesSwitch(false);
+    await answer({ items: [row("a", { category_id: "dairy", category_locked: true })], categories_enabled: true });
+    await refresh;
+
+    const state = render();
+    expect(state.categoriesEnabled).toBe(false);
+    expect(state.items[0]).toMatchObject({ category_id: null, category_locked: false });
+    expect(state.categories).toEqual([]);
+    expect(categoryReads(f)).toBe(0);
+  });
+
+  it("a load whose items answer arrives after an off keeps the switch off and writes no categories", async () => {
+    const server = { list: { categories_enabled: true }, items: { items: [] } as ItemsAnswer, categories: [dairy], hold: true };
+    const { f, answer } = stubServer(server);
+    const load = render().fetchItems();
+
+    // A realtime off lands while the items GET is out.
+    await vi.waitFor(() => expect(f.mock.calls.some(([url]) => String(url).startsWith("/api/lists/L/items"))).toBe(true));
+    render().applyCategoriesSwitch(false);
+    await answer({ items: [row("a", { category_id: "dairy" })], categories_enabled: true });
+    await load;
+
+    const state = render();
+    expect(state.categoriesEnabled).toBe(false);
+    expect(state.items[0]).toMatchObject({ id: "a", category_id: null });
+    expect(state.categories).toEqual([]);
+    expect(categoryReads(f)).toBe(0);
+  });
+
+  it("a load takes the items answer's switch over the list summary's, as the newer read", async () => {
+    stubServer({ list: { categories_enabled: true }, items: { items: [row("a", { category_id: "dairy" })], categories_enabled: false }, categories: [dairy] });
+    await render().fetchItems();
+    const state = render();
+    expect(state.categoriesEnabled).toBe(false);
+    expect(state.items[0]).toMatchObject({ category_id: null });
+    expect(state.categories).toEqual([]);
+  });
+
+  it("a Sorting retry whose answer arrives after an off writes nothing and loads nothing", async () => {
+    const server = { list: {}, items: { items: [row("a")], categories_enabled: true } as ItemsAnswer, categories: [dairy], hold: false };
+    const { f, answer } = stubServer(server);
+    await render().fetchItems();
+    server.hold = true;
+    f.mockClear();
+    const retry = render().retrySorting();
+
+    render().applyCategoriesSwitch(false);
+    await answer({ items: [row("a", { category_id: "dairy" })], categories_enabled: true });
+    await retry;
+
+    const state = render();
+    expect(state.categoriesEnabled).toBe(false);
+    expect(state.items[0]).toMatchObject({ category_id: null });
+    expect(categoryReads(f)).toBe(0);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("[List] Sorting retry"), { listId: "L" });
+  });
+
+  it("a Sorting retry that reads the switch off turns it off and copies no category", async () => {
+    const server = { list: {}, items: { items: [row("a")], categories_enabled: true } as ItemsAnswer, categories: [dairy] };
+    const { f } = stubServer(server);
+    await render().fetchItems();
+    f.mockClear();
+
+    server.items = { items: [row("a", { category_id: "dairy" })], categories_enabled: false };
+    await render().retrySorting();
+
+    const state = render();
+    expect(state.categoriesEnabled).toBe(false);
+    expect(state.items[0]).toMatchObject({ category_id: null });
+    expect(categoryReads(f)).toBe(0);
+  });
+
+  it("a grocery list with categories off asks for no categories on open, refresh or retry", async () => {
+    const { f } = stubServer({ list: { categories_enabled: false }, items: { items: [row("a")], categories_enabled: false }, categories: [dairy] });
+    await render().fetchItems();
+    await render().refreshItems();
+    await render().retrySorting();
+    expect(f.mock.calls.length).toBeGreaterThan(0);
+    expect(categoryReads(f)).toBe(0);
+  });
+
+  it("an old server's items answer without the field leaves the switch as it is", async () => {
+    stubServer({ list: { categories_enabled: false }, items: { items: [row("a")] }, categories: [dairy] });
+    await render().fetchItems();
+    await render().refreshItems();
+    await render().retrySorting();
+    expect(render().categoriesEnabled).toBe(false);
   });
 });
 

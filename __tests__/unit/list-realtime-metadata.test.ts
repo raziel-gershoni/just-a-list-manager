@@ -18,15 +18,15 @@ vi.mock("@/src/hooks/useRealtimeList", () => ({
 import { useListRealtime } from "@/src/hooks/useListRealtime";
 
 // The open list page's header state, fed by the real hook.
-function page(listType: "regular" | "grocery") {
-  const state = { name: "Groceries", type: listType as string, icon: "cart" as string | null, color: "blue" as string | null, enabled: true as boolean };
+function page(listType: "regular" | "grocery", categoriesEnabled = true) {
+  const state = { name: "Groceries", type: listType as string, icon: "cart" as string | null, color: "blue" as string | null, enabled: categoriesEnabled as boolean };
   const apply = <T,>(key: keyof typeof state) => (u: T | ((p: T) => T)) => {
     const prev = state[key] as T;
     (state as Record<string, unknown>)[key] = typeof u === "function" ? (u as (p: T) => T)(prev) : u;
   };
   const loadCategories = vi.fn(async () => {});
   const onListDeleted = vi.fn();
-  const clearCategorization = vi.fn();
+  const applyCategoriesSwitch = vi.fn((enabled: boolean) => { state.enabled = enabled; });
   const params = {
     supabaseClient: null,
     supabaseClientRef: { current: null },
@@ -39,15 +39,14 @@ function page(listType: "regular" | "grocery") {
     listType,
     loadCategories,
     setCategories: () => {},
-    setCategoriesEnabled: apply<boolean>("enabled"),
-    clearCategorization,
+    applyCategoriesSwitch,
     isDraggingRef: { current: false },
     onListDeleted,
   } as unknown as Parameters<typeof useListRealtime>[0];
   useListRealtime(params);
   const listUpdate = (row: Record<string, unknown>) =>
     RT.onChange!({ table: "lists", eventType: "UPDATE", new: { id: "L", deleted_at: null, ...row }, old: { id: "L" } });
-  return { state, loadCategories, onListDeleted, clearCategorization, listUpdate };
+  return { state, loadCategories, onListDeleted, applyCategoriesSwitch, listUpdate };
 }
 
 beforeEach(() => {
@@ -118,23 +117,20 @@ describe("an open list follows the owner's list settings live", () => {
     expect(p.loadCategories).not.toHaveBeenCalled();
   });
 
-  it("categories turned off elsewhere switch grouping off and clear the categorization at once", () => {
+  it("categories turned off elsewhere reach the screen through the one switch function", () => {
     const p = page("grocery");
 
     p.listUpdate({ name: "Flours", type: "grocery", categories_enabled: false });
 
-    expect(p.state.enabled).toBe(false);
-    expect(p.clearCategorization).toHaveBeenCalledTimes(1);
+    expect(p.applyCategoriesSwitch.mock.calls).toEqual([[false]]);
   });
 
-  it("categories turned on elsewhere switch grouping on and clear nothing", () => {
-    const p = page("grocery");
-    p.state.enabled = false;
+  it("categories turned on elsewhere reach the screen the same way", () => {
+    const p = page("grocery", false);
 
     p.listUpdate({ name: "Flours", type: "grocery", categories_enabled: true });
 
-    expect(p.state.enabled).toBe(true);
-    expect(p.clearCategorization).not.toHaveBeenCalled();
+    expect(p.applyCategoriesSwitch.mock.calls).toEqual([[true]]);
   });
 
   it("an update without the switch leaves it as it is", () => {
@@ -142,7 +138,15 @@ describe("an open list follows the owner's list settings live", () => {
 
     p.listUpdate({ name: "Renamed" });
 
-    expect(p.state.enabled).toBe(true);
-    expect(p.clearCategorization).not.toHaveBeenCalled();
+    expect(p.applyCategoriesSwitch).not.toHaveBeenCalled();
+  });
+
+  it("a switch to grocery on a list with categories off loads no categories", () => {
+    const p = page("regular", false);
+
+    p.listUpdate({ name: "Groceries", type: "grocery", categories_enabled: false });
+
+    expect(p.state.type).toBe("grocery");
+    expect(p.loadCategories).not.toHaveBeenCalled();
   });
 });

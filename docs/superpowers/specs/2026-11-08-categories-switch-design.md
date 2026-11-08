@@ -61,6 +61,11 @@ anything behind:
 Without this, a sort in the middle of its AI call when the owner turns categories off would leave
 categories behind, and turning on would no longer start from zero.
 
+**Deadlocks:** categories are deleted before items are touched, so the switch can't deadlock with
+the categorizer's writes (they take the list row first) or with a category delete. A hand move
+(item PATCH `categoryId`) racing an off can: Postgres aborts one side. The failed off rolls back
+with a toast and re-reads; the queued move retries and is then dropped as an unknown category.
+
 ### The categorizer (`src/services/categorize-list.ts`)
 
 - **Entry gate:** it reads `type, categories_enabled` and returns unless the list is grocery with
@@ -91,27 +96,37 @@ categories behind, and turning on would no longer start from zero.
 - **GET `/items` sweep:** it reads `type, categories_enabled, categories_rescan_at`. It schedules a
   sort only for a grocery list with categories on. Otherwise a list with categories off would try a
   sort on every open, because none of its items has a category.
+- **GET `/items` answer:** it carries `categories_enabled` when that list read found the list, and
+  leaves it out when the read failed. A device that missed the realtime UPDATE (asleep, offline)
+  catches up on its next read.
 - **POST `/categories`** (only a sheet left open on an older screen can reach it while off): the
   insert function refuses it, so nothing is written and no re-scan is owed. Its no-row 400 now
   names both causes ("at the cap or categories are off"). It adds no extra read. The one name
-  translation such a stale request may spend is rate limited.
+  translation such a stale request may spend is rate limited. Its owed re-scan update filters on
+  `categories_enabled = true`: an off that commits between the insert and that update cleared it.
 - **Item PATCH `categoryId`** (a drag queued offline before the switch went off): the category is
   gone, so it gets the existing 400 "Unknown category", which the queue drops. No change.
 
 ## App
 
 - **`useListData`:**
-  - `categoriesEnabled` state, read from the list summary (`categories_enabled !== false`), with
-    its setter returned.
-  - `clearCategorization()` empties `categories` and sets `category_id: null` and
-    `category_locked: false` on every item on screen that has either. When nothing changes, it
-    returns the same array. Turning off locally and an "off" from realtime both use it, so the
-    screen matches the cleanup without waiting for its echoes.
-  - Without it, an item still carrying a deleted category would stay under "Sorting…" after turning
-    back on, because the sorting retry only fills items with no category.
-- **`useListRealtime`:** a `lists` UPDATE with a boolean `categories_enabled` sets the state. When it
-  is false, it also calls `clearCategorization()`. That call is idempotent, so it's safe on every
-  update, since the full row comes with each one.
+  - `categoriesEnabled` state, mirrored in `categoriesEnabledRef`.
+  - **`applyCategoriesSwitch(enabled)`** is the one way a switch value reaches the screen: the
+    owner's tap, a failed save's rollback, a realtime UPDATE, or a read's answer. A change of value
+    bumps `switchGenRef`; the same value again bumps nothing. Off also empties `categories` and sets
+    `category_id: null` and `category_locked: false` on every item that has either (the same arrays
+    when nothing changes). Without that, an item still carrying a deleted category would stay under
+    "Sorting…" after turning back on, because the sorting retry only fills items with no category.
+  - **Generation rule:** a read takes `switchGenRef` when it leaves. A categories load whose
+    generation changed writes nothing. `fetchItems` applies the list summary's value
+    (`categories_enabled !== false`), then the items answer's, only while its generation holds.
+    `refreshItems` applies the answer's value the same way, before its merge. A sorting retry whose
+    generation changed writes and loads nothing; one that reads off copies nothing.
+  - **While off on screen, no item carries a category:** every write of fetched items clears them.
+  - Category loads follow the switch, not the type alone: no `GET /categories` for a list that's off.
+- **`useListRealtime`:** a `lists` UPDATE with a boolean `categories_enabled` calls
+  `applyCategoriesSwitch`, safe on every update since the full row comes with each one. A change to
+  grocery loads categories only when the row's switch is on.
 - **The list page:**
   - `grouped: listType === "grocery" && categoriesEnabled`. When off, the list is flat, "Sorting…"
     and its retry are gone, and a drag is a plain reorder.
@@ -120,16 +135,20 @@ categories behind, and turning on would no longer start from zero.
     - It is a `role="switch"` button with `aria-checked` and a 44px touch target. Its knob moves the
       right way in RTL.
     - It is built in the app's own tokens. The app has no switch component yet.
-  - **Turning off** asks first, with `askConfirm`. A confirmed off:
-    - It sets the state and calls `clearCategorization()` right away, then PATCHes.
-    - A failed save restores the state and reloads the categories (`loadCategories()`), with the
-      usual `errors.generic` toast. It also re-reads the items once, because the local
-      `clearCategorization()` already took their `category_id` off the screen.
-  - **Turning on:**
-    - It sets the state, then PATCHes. A failed save sets it back, with the same toast.
-    - While the AI sorts, every item shows under "Sorting…". Categories and assignments arrive by
-      realtime, and the existing sorting retry covers a missed echo.
-  - **Categories button:** shown only while the switch is on.
+  - **Turning off** asks first, with `askConfirm`. A confirmed off calls `applyCategoriesSwitch(false)`
+    right away, then PATCHes.
+  - **Turning on** calls `applyCategoriesSwitch(true)`, then PATCHes. While the AI sorts, every item
+    shows under "Sorting…". Categories and assignments arrive by realtime, and the existing sorting
+    retry covers a missed echo.
+  - **A failed save of either kind** rolls back with `applyCategoriesSwitch(!enabled)` and the usual
+    `errors.generic` toast, then re-reads the list once (`refreshAfterFailedSwitch`). The answer
+    carries the server's real switch, which covers a save that committed with its answer lost, and
+    the re-read reloads categories when on. There is no separate categories load. Crossing taps
+    settle the same way: successful saves reach every screen in commit order by realtime, and a
+    failed one re-reads.
+  - **Categories button:** shown only while the switch is on. **The Categories sheet** renders only
+    while the list is grocery with the switch on, so an off from another device closes it.
+  - **Type control:** a change to grocery loads categories only while the switch is on.
 
 ## Copy
 
@@ -157,7 +176,7 @@ categories behind, and turning on would no longer start from zero.
   on the home screen of users who haven't dragged their lists. That's the same as changing the type
   or color.
 - **Editors and viewers** see the switch, as they see the type control today. The server refuses
-  them with 403, and the switch flips back with the toast. A refused off also reloads the categories.
+  them with 403, and the switch flips back with the toast and a re-read.
 
 ## Non-goals
 
@@ -172,11 +191,15 @@ categories behind, and turning on would no longer start from zero.
   - Off deletes categories, nulls and unlocks items, clears the owed re-scan and returns the row.
   - On only sets the flag.
   - Both write functions refuse while off and work while on.
+- **`categories-switch-sql.test.ts`** (committed, source inspection): the newest migration defining
+  each of `apply_item_categories`, `insert_list_category` and `set_list_categories_enabled` keeps
+  the switch check under the list row lock before any write, and the off cleanup's order.
 - **`categorize-list.test.ts`:**
   - Off at the entry gate: no lock is taken and no AI call is made.
   - Off under the lock: no AI call and no writes.
   - The gate's failed-read path still works.
-- **`items-route-categorize.test.ts`:** no sweep when off.
+- **`items-route-categorize.test.ts`:** no sweep when off; the answer carries the switch, or leaves
+  it out when the list read fails.
 - **`lists-route-categorize.test.ts`** (or a sibling):
   - `categoriesEnabled` calls the function with the right arguments.
   - On schedules a pending sort, and off doesn't.
@@ -184,13 +207,14 @@ categories behind, and turning on would no longer start from zero.
   - A failed function call answers 500.
   - The "no updates" check counts it.
 - **GET `/api/lists`:** both selects carry `categories_enabled`.
-- **`list-realtime-metadata.test.ts`:** an UPDATE sets the state, and an off clears categorization.
-- **`useListData`:** `clearCategorization` clears what it should and returns the same array when there
-  is nothing to clear.
+- **`list-realtime-metadata.test.ts`:** an UPDATE with the field calls `applyCategoriesSwitch`.
+- **`useListData`:** an off clears what it should; reads apply the server's switch under the
+  generation rule; the while-off invariant; no categories request while off.
 - **Page:**
   - The rendered switch shows only on grocery lists.
   - Turning off asks first, and clears before saving.
-  - A failed save restores the state.
+  - A failed save of either kind rolls back and re-reads once, with no separate categories load.
+  - The Categories sheet closes when the switch goes off.
   - Turning on PATCHes.
   - The Categories button follows the switch.
   - `grouped` follows the switch.

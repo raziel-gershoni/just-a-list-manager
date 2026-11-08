@@ -24,9 +24,8 @@ interface UseListRealtimeParams {
   listType: ListType;
   loadCategories: () => Promise<void>;
   setCategories: React.Dispatch<React.SetStateAction<ListCategory[]>>;
-  setCategoriesEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-  /** Categories were turned off: clear them on screen at once (useListData.clearCategorization). */
-  clearCategorization: () => void;
+  /** The owner switched categories on or off: show it (useListData.applyCategoriesSwitch). */
+  applyCategoriesSwitch: (enabled: boolean) => void;
   isDraggingRef: React.RefObject<boolean>;
   onListDeleted: () => void;
   /** The list's channel was closed for good: reconnect so a new one starts. */
@@ -47,8 +46,7 @@ export function useListRealtime({
   listType,
   loadCategories,
   setCategories,
-  setCategoriesEnabled,
-  clearCategorization,
+  applyCategoriesSwitch,
   isDraggingRef,
   onListDeleted,
   onChannelClosed,
@@ -152,21 +150,19 @@ export function useListRealtime({
             // Same reading as fetchItems: anything but grocery opens as a regular list.
             const nextType: ListType = newRec.type === "grocery" ? "grocery" : "regular";
             setListType(nextType);
-            // Nothing loaded categories while the list was another type.
-            if (nextType === "grocery" && listType !== "grocery") void loadCategories();
+            // Nothing loaded categories while the list was another type; a list with them off has none.
+            if (nextType === "grocery" && listType !== "grocery" && newRec.categories_enabled !== false) void loadCategories();
           }
           if ("icon" in newRec) setListIcon((newRec.icon ?? null) as ListIconName | null);
           if ("color" in newRec) setListColor((newRec.color ?? null) as ListColor | null);
           // The owner switched categories on or off. Every UPDATE carries the full row
-          // (REPLICA IDENTITY FULL), so this runs on each one; clearing is idempotent.
-          if (typeof newRec.categories_enabled === "boolean") {
-            setCategoriesEnabled(newRec.categories_enabled);
-            if (!newRec.categories_enabled) clearCategorization();
-          }
+          // (REPLICA IDENTITY FULL), so this runs on each one; applying the same value again
+          // changes nothing.
+          if (typeof newRec.categories_enabled === "boolean") applyCategoriesSwitch(newRec.categories_enabled);
         }
       }
     },
-    [setItems, setListName, setListType, setListIcon, setListColor, listType, loadCategories, setCategories, setCategoriesEnabled, clearCategorization, isDraggingRef, onListDeleted, listId]
+    [setItems, setListName, setListType, setListIcon, setListColor, listType, loadCategories, setCategories, applyCategoriesSwitch, isDraggingRef, onListDeleted, listId]
   );
 
   return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange, onChannelClosed, onRejoined);

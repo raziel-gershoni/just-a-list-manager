@@ -89,8 +89,7 @@ function world(initial: ItemData[]) {
       listType: "regular",
       loadCategories: async () => {},
       setCategories: () => {},
-      setCategoriesEnabled: () => {},
-      clearCategorization: () => {},
+      applyCategoriesSwitch: () => {},
       isDraggingRef: { current: false },
       onListDeleted: () => {},
     });
