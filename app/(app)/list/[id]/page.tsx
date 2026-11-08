@@ -103,6 +103,12 @@ export default function ListPage() {
     [refreshItems]
   );
 
+  // A failed off had already cleared the items' categories on screen: re-read them too.
+  const refreshAfterFailedOff = useMemo(
+    () => coalesce(refreshItems, "[List] Refresh after a failed categories off failed"),
+    [refreshItems]
+  );
+
   const onMutationError = useCallback((info: MutationErrorInfo) => {
     if (info.dropped) {
       setErrorToast(t('items.syncError'));
@@ -302,7 +308,7 @@ export default function ListPage() {
 
   // Off deletes the list's categories on the server (set_list_categories_enabled), so it asks
   // first and clears the screen at once. A failed save puts the switch back; after a failed off
-  // the categories are loaded again, since the cleanup did not run.
+  // the categories and items are loaded again, since the cleanup did not run.
   const saveCategoriesEnabled = (enabled: boolean) => {
     const jwt = jwtRef.current;
     if (!jwt) {
@@ -322,7 +328,10 @@ export default function ListPage() {
       .catch((err) => {
         console.error("[List] Failed to switch categories, listId:", listId, "enabled:", enabled, err);
         setCategoriesEnabled(!enabled);
-        if (!enabled) void loadCategories();
+        if (!enabled) {
+          void loadCategories();
+          refreshAfterFailedOff();
+        }
         setErrorToast(t('errors.generic'));
         setTimeout(() => setErrorToast(null), 3000);
       });

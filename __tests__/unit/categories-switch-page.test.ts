@@ -34,6 +34,8 @@ const S = vi.hoisted(() => ({
   clearCategorization: (() => {}) as () => void,
   confirmAnswer: true,
   confirms: [] as string[],
+  jwt: "jwt" as string | null,
+  refreshItems: (async () => {}) as () => Promise<void>,
 }));
 
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key, useLocale: () => "en" }));
@@ -45,7 +47,7 @@ vi.mock("@/components/TelegramProvider", () => ({
     supabaseClient: null,
     supabaseClientRef: { current: null },
     userId: "u1",
-    jwtRef: { current: "jwt" },
+    jwtRef: { get current() { return S.jwt; } },
     onFlushNeededRef: { current: null },
     onResubscribeNeededRef: { current: null },
     onRefreshNeededRef: { current: null },
@@ -57,7 +59,7 @@ vi.mock("@/src/hooks/useListData", () => ({
     loading: false, error: false, isShared: false, listType: S.listType, setListType: S.setListType,
     categoriesEnabled: S.enabled, setCategoriesEnabled: S.setCategoriesEnabled, clearCategorization: S.clearCategorization,
     listIcon: null, listColor: null, categories: [], setCategories: () => {},
-    loadCategories: S.loadCategories, fetchItems: async () => {}, refreshItems: async () => {},
+    loadCategories: S.loadCategories, fetchItems: async () => {}, refreshItems: () => S.refreshItems(),
   }),
 }));
 vi.mock("@/src/types/telegram", async (orig) => ({
@@ -138,6 +140,7 @@ const settle = async () => {
 let patch: { resolve: (r: unknown) => void; reject: (e: unknown) => void };
 let fetchMock: ReturnType<typeof vi.fn>;
 let loadCategories: ReturnType<typeof vi.fn>;
+let refreshItems: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   R.slots = [];
@@ -157,6 +160,9 @@ beforeEach(() => {
   S.confirmAnswer = true;
   S.confirms = [];
   S.loadCategories = loadCategories;
+  refreshItems = vi.fn(async () => {});
+  S.refreshItems = refreshItems;
+  S.jwt = "jwt";
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -212,6 +218,29 @@ describe("the categories switch in list settings", () => {
     await settle();
     expect(setCats().mock.calls).toEqual([[false], [true]]);
     expect(loadCategories).toHaveBeenCalledTimes(1);
+    // The screen was cleared locally, so the items come back too, not after the retry's delay.
+    expect(refreshItems).toHaveBeenCalledTimes(1);
+    expect(errorToast()).toBe("errors.generic");
+  });
+
+  it("a failed on refreshes no items", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    S.enabled = false;
+    openSettings();
+    press();
+    patch.resolve({ ok: false, status: 403 });
+    await settle();
+    expect(refreshItems).not.toHaveBeenCalled();
+  });
+
+  it("with no session nothing is sent or changed, and the error toast shows", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    S.jwt = null;
+    openSettings();
+    press();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(setCats()).not.toHaveBeenCalled();
+    expect(clearCats()).not.toHaveBeenCalled();
     expect(errorToast()).toBe("errors.generic");
   });
 
