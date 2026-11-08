@@ -123,7 +123,8 @@ categories behind, and turning on would no longer start from zero.
   - **Turning off** asks first, with `askConfirm`. A confirmed off:
     - It sets the state and calls `clearCategorization()` right away, then PATCHes.
     - A failed save restores the state and reloads the categories (`loadCategories()`), with the
-      usual `errors.generic` toast.
+      usual `errors.generic` toast. It also re-reads the items once, because the local
+      `clearCategorization()` already took their `category_id` off the screen.
   - **Turning on:**
     - It sets the state, then PATCHes. A failed save sets it back, with the same toast.
     - While the AI sorts, every item shows under "Sorting…". Categories and assignments arrive by
