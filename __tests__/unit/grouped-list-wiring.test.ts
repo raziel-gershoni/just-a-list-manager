@@ -12,7 +12,7 @@ describe("grouped grocery list wiring", () => {
   it("derives category groups only for grocery lists, with the viewer's locale", () => {
     const at = page.indexOf("useListDerivedData(");
     const call = page.slice(at, page.indexOf(");", at));
-    expect(call).toMatch(/grouped: listType === "grocery"/);
+    expect(call).toMatch(/grouped: listType === "grocery" && categoriesEnabled/);
     expect(call).toMatch(/categories/);
     expect(call).toMatch(/locale/);
   });
@@ -79,7 +79,7 @@ vi.mock("@/src/hooks/useListData", () => ({
   useListData: () => ({
     listName: "Groceries", setListName: () => {}, items: S.items, setItems: () => {},
     loading: false, error: null, isShared: false, listType: S.listType, setListType: () => {},
-    listIcon: null, listColor: null, categories: S.categories, setCategories: () => {},
+    listIcon: null, listColor: null, categories: S.categories, setCategories: () => {}, categoriesEnabled: true,
     loadCategories: async () => {}, fetchItems: () => {}, refreshItems: S.refreshItems, retrySorting: S.retrySorting,
   }),
 }));

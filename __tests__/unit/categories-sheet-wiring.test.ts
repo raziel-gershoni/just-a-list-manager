@@ -6,10 +6,10 @@ const page = readFileSync(resolve(process.cwd(), "app/(app)/list/[id]/page.tsx")
 const sheet = readFileSync(resolve(process.cwd(), "components/list/CategoriesSheet.tsx"), "utf8");
 
 describe("categories sheet wiring", () => {
-  it("the settings sheet offers Categories on grocery lists only", () => {
+  it("the settings sheet offers Categories on grocery lists with categories on", () => {
     // The gate must wrap the button itself, not merely appear near it.
     expect(page).toMatch(
-      /\{listType === "grocery" && \(\s*<button\s+onClick=\{\(\) => \{[^}]*setShowCategories\(true\);?[^}]*\}\}[^<]*>\s*\{t\('categories\.manage'\)\}\s*<\/button>\s*\)\}/
+      /\{listType === "grocery" && categoriesEnabled && \(\s*<button\s+onClick=\{\(\) => \{[^}]*setShowCategories\(true\);?[^}]*\}\}[^<]*>\s*\{t\('categories\.manage'\)\}\s*<\/button>\s*\)\}/
     );
   });
 

@@ -30,6 +30,7 @@ import { normalizeForCompare } from "@/src/utils/text-normalize";
 import { SORTING_GROUP, countByCategory } from "@/src/utils/list-helpers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
 import { throwIfNotOk } from "@/src/utils/http";
+import { askConfirm } from "@/src/types/telegram";
 import { DragDropProvider } from "@dnd-kit/react";
 
 const executorFactory = createExecutorFactory();
@@ -54,7 +55,7 @@ export default function ListPage() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, setCategoriesEnabled, clearCategorization, loadCategories, fetchItems, refreshItems, retrySorting } =
+  const { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, categoriesEnabled, setCategoriesEnabled, clearCategorization, loadCategories, fetchItems, refreshItems, retrySorting } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -131,7 +132,7 @@ export default function ListPage() {
   const { addMutation, flushQueue } = useMutationQueue(listId, getJwt, executorFactory, onMutationError, onMutationSuccess, requestTokenRefresh);
 
   const { activeItems, skippedItems, recurringItems, completedItems, completedGroups, categoryGroups, duplicateTexts } =
-    useListDerivedData(items, t as (key: string) => string, { categories, locale, grouped: listType === "grocery" });
+    useListDerivedData(items, t as (key: string) => string, { categories, locale, grouped: listType === "grocery" && categoriesEnabled });
 
   const categoryCounts = useMemo(() => countByCategory(activeItems), [activeItems]);
 
@@ -298,6 +299,38 @@ export default function ListPage() {
       </>
     );
   }
+
+  // Off deletes the list's categories on the server (set_list_categories_enabled), so it asks
+  // first and clears the screen at once. A failed save puts the switch back; after a failed off
+  // the categories are loaded again, since the cleanup did not run.
+  const saveCategoriesEnabled = (enabled: boolean) => {
+    const jwt = jwtRef.current;
+    if (!jwt) {
+      console.warn("[List] Categories switch not sent: no session yet, listId:", listId);
+      setErrorToast(t('errors.generic'));
+      setTimeout(() => setErrorToast(null), 3000);
+      return;
+    }
+    setCategoriesEnabled(enabled);
+    if (!enabled) clearCategorization();
+    fetch("/api/lists", {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: listId, categoriesEnabled: enabled }),
+    })
+      .then((res) => throwIfNotOk(res, "Categories switch"))
+      .catch((err) => {
+        console.error("[List] Failed to switch categories, listId:", listId, "enabled:", enabled, err);
+        setCategoriesEnabled(!enabled);
+        if (!enabled) void loadCategories();
+        setErrorToast(t('errors.generic'));
+        setTimeout(() => setErrorToast(null), 3000);
+      });
+  };
+  const toggleCategories = () => {
+    if (categoriesEnabled) askConfirm(t('categories.confirmOff'), () => saveCategoriesEnabled(false));
+    else saveCategoriesEnabled(true);
+  };
 
   return (
     <div className="flex flex-col h-dvh overflow-hidden">
@@ -506,8 +539,27 @@ export default function ListPage() {
             </div>
             {listType === "grocery" && (
               <button
+                type="button"
+                role="switch"
+                aria-checked={categoriesEnabled}
+                onClick={toggleCategories}
+                className="w-full min-h-11 flex items-center justify-between gap-3 py-3 px-4 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium text-start active:scale-[0.98]"
+              >
+                <span>{t('categories.enabled')}</span>
+                <span
+                  aria-hidden="true"
+                  className={`relative inline-flex h-7 w-12 shrink-0 rounded-full motion-safe:transition-colors ${categoriesEnabled ? "bg-tg-button" : "bg-tg-hint/30"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 start-0.5 h-6 w-6 rounded-full bg-white shadow-sm motion-safe:transition-transform ${categoriesEnabled ? "translate-x-5 rtl:-translate-x-5" : ""}`}
+                  />
+                </span>
+              </button>
+            )}
+            {listType === "grocery" && categoriesEnabled && (
+              <button
                 onClick={() => { setShowSettings(false); setShowCategories(true); }}
-                className="w-full py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
+                className="mt-3 w-full py-3.5 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium active:scale-[0.98]"
               >
                 {t('categories.manage')}
               </button>

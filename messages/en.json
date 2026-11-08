@@ -208,6 +208,8 @@
     "confirmDelete": "Delete \"{name}\"?",
     "reorder": "Drag to reorder",
     "empty": "Categories appear after the first sort.",
-    "error": "Couldn't save the change"
+    "error": "Couldn't save the change",
+    "enabled": "Sort into categories",
+    "confirmOff": "Turn off sorting? The list's categories and their order will be deleted."
   }
 }

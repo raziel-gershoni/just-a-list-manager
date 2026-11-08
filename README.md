@@ -26,6 +26,7 @@ A real-time collaborative list app for two-person households, built to run both 
 - **Offline-first** — optimistic edits apply instantly and queue locally, then reconcile automatically on reconnect, so the app stays usable on a spotty phone connection.
 - **Share with permissions** — invite a collaborator by link with view-only or edit access.
 - **Recurring grocery staples** — mark a grocery item as recurring and it returns to the list four hours after you check it off. Not needed this week? Tap the calendar icon and it stays off the list until the week ends (Saturday night).
+- **Store-aisle sorting** — grocery lists group items into the store sections the AI picks (drag sections into your walk order). A list with nothing to sort can switch it off in list settings, which deletes its sections.
 - **Smart de-duplication** — completed items are recycled instead of duplicated; typos and near-matches are caught with fuzzy matching.
 - **Household hand-off signals** — "ready for you" and "remind to update" cues coordinate the two people around a shared list.
 - **Reorder by drag-and-drop**, list icons/colors, and item sections.
