@@ -111,7 +111,7 @@ describe("POST /categories", () => {
     });
     expect(owed).toMatchObject({ table: "lists", op: "update", values: { categories_rescan_at: expect.any(String) } });
     expect(Number.isNaN(Date.parse((owed.values as { categories_rescan_at: string }).categories_rescan_at))).toBe(false);
-    expect(owed.filters).toEqual(["eq:id=L"]);
+    expect(owed.filters).toEqual(["eq:id=L", "eq:categories_enabled=true"]);
     expect(rest).toEqual([]);
     await runAfter();
     expect(h.categorize).toHaveBeenCalledWith(expect.anything(), "L", "rescan");

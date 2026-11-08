@@ -413,9 +413,9 @@ export async function handleVoiceMessage(
     await releaseVoiceLock(voice.file_unique_id);
   }
 
-  // Sort the new items on grocery lists (categorizeList skips other list types and never
-  // throws). This runs after the lock is released: the AI call can outlast the lock, and
-  // the receipt is already sent.
+  // Sort the new items on grocery lists (categorizeList skips lists that are not grocery with
+  // categories on, and never throws). This runs after the lock is released: the AI call can
+  // outlast the lock, and the receipt is already sent.
   for (const listId of listsToSort) {
     await categorizeList({ supabase: createServerClient() }, listId, "pending");
   }

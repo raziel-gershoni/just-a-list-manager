@@ -72,6 +72,27 @@ describe("items route schedules categorization", () => {
     expect(read.cols).toContain("categories_enabled");
   });
 
+  it("GET answers with the switch as read, so a device that missed the realtime change catches up", async () => {
+    for (const enabled of [true, false]) {
+      listed([{ id: "a", position: 1, category_id: "x" }], { ...grocery, categories_enabled: enabled });
+      const body = await (await GET(req("GET"), params)).json();
+      expect(body.categories_enabled).toBe(enabled);
+      expect(body.items.map((i: { id: string }) => i.id)).toEqual(["a"]);
+    }
+  });
+
+  it("GET leaves the switch out when the list read fails or finds no list", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const list of [{ data: null, error: { message: "timeout" } }, { data: null, error: null }]) {
+      h.fake = fakeSupabase((c) => c.table === "lists" ? list : { data: [{ id: "a", position: 1, category_id: "x" }], error: null }) as typeof h.fake;
+      const res = await GET(req("GET"), params);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.items.map((i: { id: string }) => i.id)).toEqual(["a"]);
+      expect("categories_enabled" in body).toBe(false);
+    }
+  });
+
   it("GET schedules a pending sweep when an item has no category", async () => {
     listed([{ id: "a", position: 1, category_id: null }], grocery);
     await GET(req("GET"), params);

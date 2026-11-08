@@ -89,7 +89,8 @@ export async function GET(
     query = query.lt("position", parseInt(cursor));
   }
 
-  // The list's type and owed re-scan decide the sweep below; read alongside the items.
+  // The list's type, its categories switch and an owed re-scan decide the sweep below, and the
+  // switch goes back with the items; read alongside the items.
   const [{ data: items, error }, { data: list, error: listError }] = await Promise.all([
     query,
     supabase.from("lists").select("type, categories_enabled, categories_rescan_at").eq("id", listId).maybeSingle(),
@@ -112,7 +113,13 @@ export async function GET(
     scheduleCategorize(supabase, listId);
   }
 
-  return NextResponse.json({ items: items || [], nextCursor });
+  // The switch travels with every items read, so a device that missed the realtime UPDATE
+  // (asleep, or offline) catches up on its next refresh. Left out when the list read failed.
+  return NextResponse.json({
+    items: items || [],
+    nextCursor,
+    ...(typeof list?.categories_enabled === "boolean" ? { categories_enabled: list.categories_enabled } : {}),
+  });
 }
 
 export async function POST(

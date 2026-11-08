@@ -77,10 +77,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // A new category can change where existing items belong: re-sort the whole list. The
   // owed re-scan is remembered, so one the AI budget refuses now runs on a later sweep.
+  // Only while categories are on: an off that commits between the insert and this update
+  // deleted the new category and cleared the owed re-scan, and must not get one back.
   const { error: owedError } = await supabase
     .from("lists")
     .update({ categories_rescan_at: new Date().toISOString() })
-    .eq("id", listId);
+    .eq("id", listId)
+    .eq("categories_enabled", true);
   if (owedError) console.error("[categories/POST] could not record the owed re-scan", { listId, error: owedError });
   after(() => categorizeList({ supabase }, listId, "rescan"));
   return NextResponse.json({ category }, { status: 201 });
