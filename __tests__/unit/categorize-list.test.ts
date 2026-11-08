@@ -38,6 +38,9 @@ function world(opts: {
   reruns?: (RerunMode | null)[];
   listDeleted?: boolean;
   failListRead?: boolean; // the list-type read that opens categorizeList
+  failRoundRead?: boolean; // the read of the list under the lock, inside a round
+  // lists.categories_enabled. An array answers successive lists reads: the entry gate first, then each round.
+  enabled?: boolean | boolean[];
   // PostgREST reports failures as { data: null, error } instead of throwing.
   failCategoriesRead?: boolean;
   failItemsRead?: boolean;
@@ -48,11 +51,14 @@ function world(opts: {
   const categories = opts.categories ?? [];
   // The rows the fake database holds: reads return copies, apply_item_categories writes them.
   const items = (opts.items ?? []).map((r) => ({ ...r }));
-  const list: Record<string, string | null> = {
+  const list: Record<string, string | boolean | null> = {
     id: "L",
     type: opts.type === undefined ? "grocery" : opts.type,
     categories_rescan_at: opts.rescanAt ?? null,
+    categories_enabled: true,
   };
+  const answers = Array.isArray(opts.enabled) ? opts.enabled : [opts.enabled ?? true];
+  let listReads = 0;
   let nextCategory = 0;
   const dbError = { message: "fetch failed", code: "" };
   const fake = fakeSupabase((call: FakeCall) => {
@@ -66,10 +72,14 @@ function world(opts: {
       if (matches) Object.assign(list, call.values);
       return { data: null, error: null };
     }
-    if (call.table === "lists" && call.cols === "type" && opts.failListRead) return { data: null, error: dbError };
+    if (call.table === "lists" && call.cols === "type, categories_enabled" && opts.failListRead) return { data: null, error: dbError };
+    if (call.table === "lists" && call.cols === "type, categories_enabled, categories_rescan_at" && opts.failRoundRead) return { data: null, error: dbError };
     if (call.table === "lists" && opts.listDeleted)
       return { data: call.filters.includes("is:deleted_at=null") ? null : { ...list }, error: null };
-    if (call.table === "lists") return { data: list.type ? { ...list } : null, error: null };
+    if (call.table === "lists") {
+      const n = listReads++;
+      return { data: list.type ? { ...list, categories_enabled: answers[n] ?? answers[answers.length - 1] } : null, error: null };
+    }
     if (call.table === "list_categories" && call.op === "select") {
       if (opts.failCategoriesRead) return { data: null, error: dbError };
       return { data: categories.map((c) => ({ ...c, name_he: c.name_en, name_ru: c.name_en })), error: null };
@@ -152,6 +162,50 @@ beforeEach(() => {
 });
 
 describe("categorizeList", () => {
+  it("does nothing for a grocery list with categories off", async () => {
+    const w = world({ enabled: false, items: [row({ id: "a", text: "milk" })] });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.lock.acquire).not.toHaveBeenCalled();
+    expect(w.categorizer.categorize).not.toHaveBeenCalled();
+    expect(w.fake.calls.find((c) => c.table === "lists" && c.op === "select")!.cols).toContain("categories_enabled");
+  });
+
+  it("stops before the AI when categories were turned off after it started", async () => {
+    // On at the entry gate, off by the time the round reads the list under the lock.
+    const w = world({ enabled: [true, false], items: [row({ id: "a", text: "milk" })] });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.lock.acquire).toHaveBeenCalledTimes(1);
+    expect(w.lock.released).toHaveLength(1);
+    expect(w.categorizer.categorize).not.toHaveBeenCalled();
+    expect(w.inserts()).toEqual([]);
+    expect(w.rpc()).toEqual([]);
+  });
+
+  it("stops a rerun once categories are off", async () => {
+    // The first round sorts; categories go off before the rerun reads the list.
+    const w = world({
+      enabled: [true, true, false],
+      reruns: ["pending"],
+      categories: [{ id: "dairy", name_en: "Dairy", position: 0 }],
+      items: [row({ id: "old", text: "Milk", category_id: "dairy" }), row({ id: "new", text: "milk" })],
+    });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.rpc()).toHaveLength(1);
+    expect(w.lock.acquire).toHaveBeenCalledTimes(2);
+  });
+
+  it("logs and stops the round when the list cannot be read under the lock", async () => {
+    // The entry gate reads fine; the round's read fails.
+    const w = world({ failRoundRead: true, items: [row({ id: "a", text: "milk" })] });
+    await categorizeList(w.deps, "L", "pending");
+    expect(w.categorizer.categorize).not.toHaveBeenCalled();
+    expect(w.rpc()).toEqual([]);
+    expect(console.error).toHaveBeenCalledWith(
+      "[Categorizer] could not read the list",
+      expect.objectContaining({ listId: "L", error: expect.objectContaining({ message: "fetch failed" }) })
+    );
+  });
+
   it("does nothing for a list that is not a grocery list", async () => {
     const w = world({ type: "regular", items: [row({ id: "a", text: "milk" })] });
     await categorizeList(w.deps, "L", "pending");

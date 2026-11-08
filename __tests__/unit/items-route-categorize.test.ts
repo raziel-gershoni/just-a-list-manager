@@ -43,16 +43,35 @@ beforeEach(() => {
 });
 
 // GET reads the items and the list itself (its type and any owed re-scan).
-function listed(items: { id: string; position: number; category_id: string | null }[], list: { type: string; categories_rescan_at: string | null }) {
+function listed(items: { id: string; position: number; category_id: string | null }[], list: { type: string; categories_rescan_at: string | null; categories_enabled?: boolean }) {
   h.fake = fakeSupabase((c) => {
     if (c.table === "items") return { data: items, error: null };
     if (c.table === "lists") return { data: list, error: null };
     return { data: null, error: null };
   }) as typeof h.fake;
 }
-const grocery = { type: "grocery", categories_rescan_at: null };
+const grocery = { type: "grocery", categories_rescan_at: null, categories_enabled: true };
 
 describe("items route schedules categorization", () => {
+  it("GET on a grocery list with categories off schedules nothing, though none of its items has a category", async () => {
+    listed([{ id: "a", position: 1, category_id: null }], { ...grocery, categories_enabled: false });
+    await GET(req("GET"), params);
+    expect(h.after).toEqual([]);
+  });
+
+  it("GET with categories off ignores an owed re-scan", async () => {
+    listed([{ id: "a", position: 1, category_id: "x" }], { ...grocery, categories_enabled: false, categories_rescan_at: "2026-11-08T10:00:00Z" });
+    await GET(req("GET"), params);
+    expect(h.after).toEqual([]);
+  });
+
+  it("GET reads the switch with the list's type", async () => {
+    listed([{ id: "a", position: 1, category_id: null }], grocery);
+    await GET(req("GET"), params);
+    const read = h.fake.calls.find((c) => c.table === "lists") as { cols?: string };
+    expect(read.cols).toContain("categories_enabled");
+  });
+
   it("GET schedules a pending sweep when an item has no category", async () => {
     listed([{ id: "a", position: 1, category_id: null }], grocery);
     await GET(req("GET"), params);
@@ -80,7 +99,7 @@ describe("items route schedules categorization", () => {
   });
 
   it("GET schedules a run for a grocery list that owes a re-scan, though every item has a category", async () => {
-    listed([{ id: "a", position: 1, category_id: "x" }], { type: "grocery", categories_rescan_at: "2026-10-08T10:00:00+00:00" });
+    listed([{ id: "a", position: 1, category_id: "x" }], { ...grocery, categories_rescan_at: "2026-10-08T10:00:00+00:00" });
     await GET(req("GET"), params);
     expect(h.after).toHaveLength(1);
     await runAfter();

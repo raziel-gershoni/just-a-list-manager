@@ -9,6 +9,7 @@ import { parseBody, readJsonBody } from "@/src/lib/api-validation";
 import { dbError } from "@/src/lib/api-errors";
 import { normalizeForStorage } from "@/src/utils/text-normalize";
 import { categorizeList } from "@/src/services/categorize-list";
+import { sortsIntoCategories } from "@/src/utils/categories-switch";
 
 // Upper bound for position values. Requires BIGINT column (migration 010).
 const MAX_SAFE_POSITION = Number.MAX_SAFE_INTEGER;
@@ -91,7 +92,7 @@ export async function GET(
   // The list's type and owed re-scan decide the sweep below; read alongside the items.
   const [{ data: items, error }, { data: list, error: listError }] = await Promise.all([
     query,
-    supabase.from("lists").select("type, categories_rescan_at").eq("id", listId).maybeSingle(),
+    supabase.from("lists").select("type, categories_enabled, categories_rescan_at").eq("id", listId).maybeSingle(),
   ]);
 
   if (error) return dbError("items/GET", "Items read", error, { listId });
@@ -103,10 +104,10 @@ export async function GET(
       ? items[items.length - 1].position
       : null;
 
-  // Sweep grocery lists: first scan after deploy, failed runs, and a re-scan still owed.
+  // Sweep grocery lists with categories on: first scan after deploy, failed runs, and a re-scan still owed.
   if (
-    list?.type === "grocery" &&
-    (list.categories_rescan_at || (items || []).some((i) => !i.category_id))
+    sortsIntoCategories(list) &&
+    (list?.categories_rescan_at || (items || []).some((i) => !i.category_id))
   ) {
     scheduleCategorize(supabase, listId);
   }

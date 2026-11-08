@@ -71,7 +71,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (error) return dbError("categories/POST", "Category insert", error, { listId });
   const category = Array.isArray(rows) ? rows[0] : rows;
   if (!category) {
-    return NextResponse.json({ error: "A list can have at most 20 categories" }, { status: 400 });
+    // The insert runs under the list lock: at the cap, or the list's categories were turned off.
+    return NextResponse.json({ error: "Category not added: the list is at 20 categories or its categories are off" }, { status: 400 });
   }
 
   // A new category can change where existing items belong: re-sort the whole list. The

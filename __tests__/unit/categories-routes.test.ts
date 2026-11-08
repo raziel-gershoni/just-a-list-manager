@@ -158,6 +158,7 @@ describe("POST /categories", () => {
     use(inserting([]));
     const res = await POST(req("POST", { name: "One more", locale: "en" }), listParams);
     expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/categories are off/);
     expect(h.fake.calls.filter((c) => c.table === "lists")).toEqual([]);
     expect(h.after).toEqual([]);
   });

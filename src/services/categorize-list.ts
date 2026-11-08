@@ -9,6 +9,7 @@ import { getCategorizer, MAX_CATEGORIES_PER_LIST, type ItemCategorizer } from "@
 import { redisListLock, type ListLock, type RerunMode } from "@/src/utils/categorize-lock";
 import { categorizeGlobalRateLimiter, categorizeRateLimiter, checkRateLimit } from "@/src/lib/rate-limit";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
+import { sortsIntoCategories } from "@/src/utils/categories-switch";
 
 export type CategorizeMode = RerunMode;
 export interface CategorizeDeps {
@@ -70,15 +71,22 @@ function knownCategories(rows: ItemRow[]): Map<string, string> {
 async function runOnce(deps: Required<CategorizeDeps>, listId: string, requested: CategorizeMode) {
   const { supabase, categorizer, allowAiCall } = deps;
 
-  // A re-scan the user asked for stays owed until one gets an AI answer, so every run
-  // re-scans until then. Read under the lock: a later request changes the value.
+  // Read under the lock: the switch may have gone off since the entry gate (then nothing is
+  // sorted or written), and a re-scan the user asked for stays owed until one gets an AI
+  // answer, so every run re-scans until then.
   const { data: listData, error: listError } = await supabase
     .from("lists")
-    .select("categories_rescan_at")
+    .select("type, categories_enabled, categories_rescan_at")
     .eq("id", listId)
     .maybeSingle();
-  if (listError) console.error("[Categorizer] could not read the owed re-scan", { listId, error: listError });
-  const owed = (listData as { categories_rescan_at?: string | null } | null)?.categories_rescan_at ?? null;
+  if (listError) {
+    // An unknown switch is not "on": the next trigger, GET sweep or client retry runs it.
+    console.error("[Categorizer] could not read the list", { listId, error: listError });
+    return;
+  }
+  const listRow = listData as { type?: string; categories_enabled?: boolean; categories_rescan_at?: string | null } | null;
+  if (!sortsIntoCategories(listRow)) return;
+  const owed = listRow?.categories_rescan_at ?? null;
   const mode: CategorizeMode = owed ? "rescan" : requested;
   // Compare-and-swap: a re-scan asked for while this one ran stays owed.
   const settleOwed = async () => {
@@ -182,7 +190,7 @@ async function runOnce(deps: Required<CategorizeDeps>, listId: string, requested
           });
           if (insertError) console.error("[Categorizer] category insert failed", { listId, error: insertError });
           const inserted = (Array.isArray(insertedRows) ? insertedRows[0] : insertedRows) as { id?: string } | null | undefined;
-          // No row: the list reached the cap meanwhile. Its items stay uncategorized.
+          // No row: the list reached the cap meanwhile, or its categories were turned off. Its items stay uncategorized.
           if (!inserted?.id) continue;
           keyToId.set(created.ref, inserted.id);
           if (created.after === null || (afterId && afterId === leadingEnd)) leadingEnd = inserted.id;
@@ -244,7 +252,7 @@ export async function categorizeList(
     const started = full.now();
     const { data: list, error } = await full.supabase
       .from("lists")
-      .select("type")
+      .select("type, categories_enabled")
       .eq("id", listId)
       .is("deleted_at", null)
       .maybeSingle();
@@ -253,7 +261,8 @@ export async function categorizeList(
       console.error("[Categorizer] could not read the list type", { listId, mode, error });
       return;
     }
-    if ((list as { type?: string } | null)?.type !== "grocery") return;
+    // Not a grocery list, or its categories are switched off.
+    if (!sortsIntoCategories(list as Parameters<typeof sortsIntoCategories>[0])) return;
 
     // The lock is taken per round, so each round gets a fresh expiry however slow the AI
     // is. A trigger that finds it held leaves a request, and the holder looks for one
