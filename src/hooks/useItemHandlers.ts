@@ -292,8 +292,10 @@ export function useItemHandlers({
 
   const handleEditItem = useCallback(
     async (itemId: string, newText: string) => {
+      // The sheet may still hold the temp id of an item whose create has landed since.
+      const isItem = sameItem(itemId);
       setItems((prev) =>
-        prev.map((i) => (i.id === itemId ? { ...i, text: newText, edited_by: userId, editor_name: null } : i))
+        prev.map((i) => (isItem(i) ? { ...i, text: newText, edited_by: userId, editor_name: null } : i))
       );
 
       const mutId = genMutId();
@@ -303,7 +305,7 @@ export function useItemHandlers({
         payload: { listId, itemId, text: newText },
       });
     },
-    [listId, addMutation, userId, setItems]
+    [listId, addMutation, userId, setItems, sameItem]
   );
 
   // The quantity a grocery item's sheet saves: normalized like the server stores it, so the

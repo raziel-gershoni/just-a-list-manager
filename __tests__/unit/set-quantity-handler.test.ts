@@ -107,3 +107,17 @@ describe("a newly added item", () => {
     expect(s.items()[0].quantity).toBeNull();
   });
 });
+
+describe("handleEditItem", () => {
+  it("an id captured as the temp id still finds the row once its create landed", async () => {
+    const s = setup([row({ id: "real-uuid", _tempId: "temp-1", text: "milk" }), row({ id: "i2", text: "eggs" })]);
+
+    await s.handlers.handleEditItem("temp-1", "oat milk");
+
+    expect(s.items()[0]).toMatchObject({ id: "real-uuid", text: "oat milk", edited_by: "u1", editor_name: null });
+    expect(s.items()[1].text).toBe("eggs");
+    expect(s.mutations).toEqual([
+      { id: expect.any(String), type: "edit", payload: { listId: "L1", itemId: "temp-1", text: "oat milk" } },
+    ]);
+  });
+});
