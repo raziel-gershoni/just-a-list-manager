@@ -167,7 +167,7 @@ export default function ItemRow({
                 setIsEditing(true);
               }
             }}
-            className={sheetMode ? "flex items-start gap-3 cursor-pointer" : showQty ? "flex items-start gap-3" : undefined}
+            className={sheetMode ? "flex items-start gap-3 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-tg-button/60" : showQty ? "flex items-start gap-3" : undefined}
           >
             <div className={sheetMode || showQty ? "flex-1 min-w-0" : undefined}>
               <div className="flex items-start gap-1.5">

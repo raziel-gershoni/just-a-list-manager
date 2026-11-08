@@ -123,6 +123,11 @@ describe("grocery row (sheet mode)", () => {
     expect(tapDiv(row()).type).toBe("div");
   });
 
+  it("the tappable name column shows a keyboard focus ring, and a regular row's does not", () => {
+    expect(tapDiv(row()).props.className).toContain("focus-visible:outline");
+    expect(html({ onOpenDetails: undefined })).not.toContain("focus-visible");
+  });
+
   it("shows a completed row's quantity read-only, with its delete button kept", () => {
     const done = html({ completed: true, onOpenDetails: undefined, quantity: "3" });
     expect(done).toContain("data-qty");
@@ -184,5 +189,7 @@ describe("sources", () => {
     expect(page).toMatch(/<ItemSheet[\s\S]*item=\{sheetItem\}/);
     // A pending item's id changes from temp-… to the uuid while its sheet is open.
     expect(page).toContain("i._tempId === sheet.id");
+    // The sheet closes if the list stops being a grocery list (type changed on another device).
+    expect(page).toContain('if (sheet && listType !== "grocery") setSheet(null)');
   });
 });

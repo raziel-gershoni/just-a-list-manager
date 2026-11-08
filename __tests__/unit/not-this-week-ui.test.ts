@@ -14,6 +14,8 @@ vi.mock("next-intl", () => ({
 }));
 
 import RecurringItemsSection from "@/components/list/RecurringItemsSection";
+import CompletedItemsSection from "@/components/list/CompletedItemsSection";
+import SkippedItemsSection from "@/components/list/SkippedItemsSection";
 
 const PAUSE_LABEL = "items.recurring.notThisWeek";
 
@@ -70,27 +72,44 @@ describe("quantity in the drawers", () => {
         onRestoreRecurring: () => {}, onToggleRecurring: () => {},
       })
     );
-  const read = (p: string) => readFileSync(resolve(__dirname, "../..", p), "utf8");
-
   it("the Recurring drawer shows a staple's quantity, and nothing when it has none", () => {
-    expect(render([item({ quantity: "2 L" })])).toContain(">2 L<");
-    expect(render([item({ quantity: null })])).not.toContain("tabular-nums");
+    expect(render([item({ quantity: "2 L" })])).toMatch(/data-qty[^>]*>2 L</);
+    expect(render([item({ quantity: null })])).not.toContain("data-qty");
   });
 
   it("the Recurring drawer caps the quantity so a long one cannot squeeze the name", () => {
     expect(render([item({ quantity: "2 L" })])).toMatch(/max-w-\[40%\][^>]*>2 L</);
   });
 
-  it("the Completed drawer passes the quantity only on a list that shows it", () => {
-    expect(read("components/list/CompletedItemsSection.tsx")).toMatch(
-      /quantity=\{showQuantity \? item\.quantity : undefined\}/
+  const renderCompleted = (items: ItemData[], showQuantity: boolean) =>
+    renderToStaticMarkup(
+      createElement(CompletedItemsSection, {
+        completedItems: items, completedGroups: [{ label: "Today", items }], showCompleted: true,
+        setShowCompleted: () => {}, duplicateTexts: new Set<string>(), isShared: false, userId: null,
+        showQuantity, onToggle: () => {}, onDelete: () => {}, onEdit: () => {}, onClearCompleted: () => {},
+      })
     );
+
+  it("the Completed drawer shows the quantity only on a list that shows it", () => {
+    const items = [item({ quantity: "2 L" })];
+    expect(renderCompleted(items, true)).toContain(">2 L<");
+    expect(renderCompleted(items, false)).not.toContain("data-qty");
   });
 
-  it("the Not available drawer passes the quantity and the sheet opener to each row", () => {
-    const src = read("components/list/SkippedItemsSection.tsx");
-    expect(src).toMatch(/quantity=\{item\.quantity\}/);
-    expect(src).toMatch(/onOpenDetails=\{onOpenDetails\}/);
+  const renderSkipped = (items: ItemData[]) =>
+    renderToStaticMarkup(
+      createElement(SkippedItemsSection, {
+        skippedItems: items, showSkipped: true, setShowSkipped: () => {}, duplicateTexts: new Set<string>(),
+        isShared: false, userId: null, onToggle: () => {}, onDelete: () => {}, onEdit: () => {},
+        onSkip: () => {}, onOpenDetails: () => {},
+      })
+    );
+
+  it("the Not available drawer shows each row's quantity and opens the sheet from the row", () => {
+    const skipped = (over: Partial<ItemData>) => item({ completed: false, completed_at: null, skipped_at: new Date().toISOString(), ...over });
+    expect(renderSkipped([skipped({ quantity: "3" })])).toContain(">3<");
+    expect(renderSkipped([skipped({ quantity: null })])).not.toContain("data-qty");
+    expect(renderSkipped([skipped({})])).toContain('role="button"');
   });
 });
 
@@ -104,5 +123,9 @@ describe("the item sheet owns the pause", () => {
 
   it("SortableItem no longer carries it (the row has no pause button)", () => {
     expect(sortable).not.toMatch(/onPause/);
+  });
+
+  it("SortableItem has no onSkip either: it never renders a Not available row", () => {
+    expect(sortable).not.toMatch(/onSkip/);
   });
 });

@@ -25,7 +25,6 @@ interface SortableItemProps {
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
   onEdit?: (id: string, newText: string) => void;
-  onSkip?: (id: string, skipped: boolean) => void;
   ordered?: boolean;
   recurring?: boolean;
   quantity?: string | null;
@@ -50,7 +49,6 @@ export default function SortableItem({
   onToggle,
   onDelete,
   onEdit,
-  onSkip,
   ordered,
   recurring,
   quantity,
@@ -85,7 +83,6 @@ export default function SortableItem({
         onToggle={onToggle}
         onDelete={onDelete}
         onEdit={onEdit}
-        onSkip={onSkip}
         ordered={ordered}
         recurring={recurring}
         quantity={quantity}
