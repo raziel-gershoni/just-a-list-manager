@@ -101,11 +101,22 @@ describe("grocery row (sheet mode)", () => {
     const onOpenDetails = vi.fn();
     const preventDefault = vi.fn();
     const onKeyDown = tapDiv(row({ onOpenDetails })).props.onKeyDown as (e: unknown) => void;
-    onKeyDown({ key: "Enter", preventDefault });
-    onKeyDown({ key: " ", preventDefault });
-    onKeyDown({ key: "a", preventDefault });
+    const self = {};
+    onKeyDown({ key: "Enter", target: self, currentTarget: self, preventDefault });
+    onKeyDown({ key: " ", target: self, currentTarget: self, preventDefault });
+    onKeyDown({ key: "a", target: self, currentTarget: self, preventDefault });
     expect(onOpenDetails).toHaveBeenCalledTimes(2);
     expect(onOpenDetails).toHaveBeenCalledWith("a");
+  });
+
+  it("leaves Enter and Space from the button inside (Remove duplicates) to that button", () => {
+    const onOpenDetails = vi.fn();
+    const preventDefault = vi.fn();
+    const onKeyDown = tapDiv(row({ onOpenDetails })).props.onKeyDown as (e: unknown) => void;
+    onKeyDown({ key: "Enter", target: {}, currentTarget: {}, preventDefault });
+    onKeyDown({ key: " ", target: {}, currentTarget: {}, preventDefault });
+    expect(onOpenDetails).not.toHaveBeenCalled();
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 
   it("the tappable name column is a div, so dnd-kit can still start a drag", () => {

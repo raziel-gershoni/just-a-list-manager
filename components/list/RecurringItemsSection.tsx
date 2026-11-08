@@ -87,7 +87,7 @@ export default function RecurringItemsSection({
                     {formatReturnsIn(item)}
                   </p>
                 </div>
-                {item.quantity && <span className="shrink-0 text-[15px] text-tg-hint tabular-nums">{item.quantity}</span>}
+                {item.quantity && <span className="shrink-0 max-w-[40%] text-end text-[15px] leading-6 text-tg-hint tabular-nums wrap-anywhere">{item.quantity}</span>}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

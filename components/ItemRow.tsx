@@ -148,6 +148,8 @@ export default function ItemRow({
                   tabIndex: 0,
                   "aria-haspopup": "dialog" as const,
                   onKeyDown: (e: React.KeyboardEvent) => {
+                    // Keys from the Remove duplicates button inside must reach that button.
+                    if (e.target !== e.currentTarget) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       onOpenDetails!(id);

@@ -57,6 +57,43 @@ describe("RecurringItemsSection: a paused staple", () => {
   });
 });
 
+describe("quantity in the drawers", () => {
+  const item = (over: Partial<ItemData>): ItemData => ({
+    id: "x", text: "Milk", completed: true, completed_at: new Date().toISOString(), deleted_at: null,
+    skipped_at: null, ordered_at: null, recurring: true, position: 1,
+    created_by: null, creator_name: null, edited_by: null, editor_name: null, ...over,
+  });
+  const render = (items: ItemData[]) =>
+    renderToStaticMarkup(
+      createElement(RecurringItemsSection, {
+        recurringItems: items, showRecurring: true, setShowRecurring: () => {},
+        onRestoreRecurring: () => {}, onToggleRecurring: () => {},
+      })
+    );
+  const read = (p: string) => readFileSync(resolve(__dirname, "../..", p), "utf8");
+
+  it("the Recurring drawer shows a staple's quantity, and nothing when it has none", () => {
+    expect(render([item({ quantity: "2 L" })])).toContain(">2 L<");
+    expect(render([item({ quantity: null })])).not.toContain("tabular-nums");
+  });
+
+  it("the Recurring drawer caps the quantity so a long one cannot squeeze the name", () => {
+    expect(render([item({ quantity: "2 L" })])).toMatch(/max-w-\[40%\][^>]*>2 L</);
+  });
+
+  it("the Completed drawer passes the quantity only on a list that shows it", () => {
+    expect(read("components/list/CompletedItemsSection.tsx")).toMatch(
+      /quantity=\{showQuantity \? item\.quantity : undefined\}/
+    );
+  });
+
+  it("the Not available drawer passes the quantity and the sheet opener to each row", () => {
+    const src = read("components/list/SkippedItemsSection.tsx");
+    expect(src).toMatch(/quantity=\{item\.quantity\}/);
+    expect(src).toMatch(/onOpenDetails=\{onOpenDetails\}/);
+  });
+});
+
 describe("the item sheet owns the pause", () => {
   const page = readFileSync(resolve(__dirname, "../../app/(app)/list/[id]/page.tsx"), "utf8");
   const sortable = readFileSync(resolve(__dirname, "../../components/SortableItem.tsx"), "utf8");

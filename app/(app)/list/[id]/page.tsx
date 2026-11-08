@@ -91,7 +91,9 @@ export default function ListPage() {
     if (it) setSheet({ id, skipped: it.skipped_at != null });
   }, [items]);
   const sheetItem = sheet ? items.find((i) => i.id === sheet.id || i._tempId === sheet.id) : undefined;
-  // A type change to Regular closes it: regular lists have no sheet.
+  // A type change to Regular closes it: regular lists have no sheet. An unsaved name or quantity
+  // draft is dropped on purpose: changing the type needs the list settings sheet, so this is only
+  // reachable from another device or a race, and flushing drafts on unmount isn't worth it.
   if (sheet && listType !== "grocery") setSheet(null);
   const [undoAction, setUndoAction] = useState<{
     message: string;
