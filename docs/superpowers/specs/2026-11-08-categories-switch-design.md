@@ -68,6 +68,11 @@ categories behind, and turning on would no longer start from zero.
 - **Under the lock:** `runOnce` reads `type, categories_enabled, categories_rescan_at` in its existing
   read. It returns before any AI call or write when the list is no longer grocery with categories
   on. So a run, and its reruns, stop at the next round after the switch goes off.
+- **A failed read** of that row is logged and stops the round. It no longer goes on without the owed
+  re-scan, because an unknown switch is not "on". The next trigger, sweep or client retry runs it.
+- **One rule:** `sortsIntoCategories(list)` in `src/utils/categories-switch.ts` is
+  `type === "grocery" && categories_enabled === true`. The two categorizer gates and the GET sweep
+  use it.
 - **Inserts:** an insert that returns no row (the cap, or now the switch off) is already skipped. Its
   comment names both causes.
 
@@ -86,10 +91,10 @@ categories behind, and turning on would no longer start from zero.
 - **GET `/items` sweep:** it reads `type, categories_enabled, categories_rescan_at`. It schedules a
   sort only for a grocery list with categories on. Otherwise a list with categories off would try a
   sort on every open, because none of its items has a category.
-- **POST `/categories`** (only a sheet left open on an older screen can reach it while off):
-  - It reads `categories_enabled` with its existing cap pre-check, and answers 409 "Categories are
-    off for this list" before the translation AI call.
-  - Its no-row answer from the insert function now names both causes.
+- **POST `/categories`** (only a sheet left open on an older screen can reach it while off): the
+  insert function refuses it, so nothing is written and no re-scan is owed. Its no-row 400 now
+  names both causes ("at the cap or categories are off"). It adds no extra read. The one name
+  translation such a stale request may spend is rate limited.
 - **Item PATCH `categoryId`** (a drag queued offline before the switch went off): the category is
   gone, so it gets the existing 400 "Unknown category", which the queue drops. No change.
 
@@ -177,7 +182,6 @@ categories behind, and turning on would no longer start from zero.
   - Owner-only.
   - A failed function call answers 500.
   - The "no updates" check counts it.
-- **`categories-routes.test.ts`:** POST answers 409 while off, with no AI call.
 - **GET `/api/lists`:** both selects carry `categories_enabled`.
 - **`list-realtime-metadata.test.ts`:** an UPDATE sets the state, and an off clears categorization.
 - **`useListData`:** `clearCategorization` clears what it should and returns the same array when there
