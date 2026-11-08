@@ -14,8 +14,6 @@ interface SkippedItemsSectionProps {
   isShared: boolean;
   userId: string | null;
   onToggle: (id: string, completed: boolean) => void;
-  onDelete: (id: string) => void;
-  onEdit: (id: string, newText: string) => void;
   onSkip: (id: string, skipped: boolean) => void;
   onOpenDetails: (id: string) => void;
   onRestoreAll?: () => void;
@@ -29,8 +27,6 @@ export default function SkippedItemsSection({
   isShared,
   userId,
   onToggle,
-  onDelete,
-  onEdit,
   onSkip,
   onOpenDetails,
   onRestoreAll,
@@ -82,8 +78,6 @@ export default function SkippedItemsSection({
               editorName={isShared ? item.editor_name : null}
               isOwnEdit={item.edited_by === userId || item.edited_by === item.created_by}
               onToggle={onToggle}
-              onDelete={onDelete}
-              onEdit={onEdit}
               onSkip={onSkip}
               quantity={item.quantity}
               onOpenDetails={onOpenDetails}

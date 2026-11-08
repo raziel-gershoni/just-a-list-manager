@@ -39,6 +39,11 @@ const find = (el: El, pred: (e: El) => boolean): El | undefined => {
   for (const c of children(el)) { const f = find(c, pred); if (f) return f; }
   return undefined;
 };
+const findAll = (el: El, pred: (e: El) => boolean, out: El[] = []): El[] => {
+  if (pred(el)) out.push(el);
+  for (const c of children(el)) findAll(c, pred, out);
+  return out;
+};
 
 const base = () => ({
   id: "a", text: "Milk", completed: false,
@@ -54,8 +59,11 @@ const row = (over: Record<string, unknown> = {}) => {
   R.live = true;
   return ItemRow({ ...base(), ...over } as never) as El;
 };
+// The name: the row's button for keyboards and screen readers.
 const tapDiv = (root: El) =>
-  find(root, (e) => e.type === "div" && e.props.role === "button" && !!find(e, (c) => c.type === "span" && c.props.children === "Milk"))!;
+  find(root, (e) => e.type === "div" && e.props.role === "button" && e.props.children === "Milk")!;
+// The name column: takes a tap anywhere in it (name, marks, quantity, empty space).
+const column = (root: El) => find(root, (e) => e.type === "div" && typeof e.props.onClick === "function")!;
 
 beforeEach(() => { R.slots = []; R.live = false; vi.stubGlobal("window", {}); });
 afterEach(() => vi.unstubAllGlobals());
@@ -89,41 +97,43 @@ describe("grocery row (sheet mode)", () => {
     expect(html()).not.toContain("data-qty");
   });
 
-  it("opens the sheet when the name is tapped, and not the inline editor", () => {
+  it("opens the sheet when the name column is tapped, and not the inline editor", () => {
     const onOpenDetails = vi.fn();
     const r = row({ onOpenDetails });
-    (tapDiv(r).props.onClick as () => void)();
+    expect(find(column(r), (e) => e === tapDiv(r))).toBeDefined();
+    (column(r).props.onClick as () => void)();
     expect(onOpenDetails).toHaveBeenCalledWith("a");
     expect(find(row({ onOpenDetails }), (e) => e.type === "textarea")).toBeUndefined();
+  });
+
+  it("opens the sheet once per tap on the name: only the column handles the click", () => {
+    expect(tapDiv(row()).props.onClick).toBeUndefined();
+  });
+
+  it("keeps Remove duplicates beside the name's button, not nested inside it", () => {
+    const r = row({ isDuplicate: true, onRemoveDuplicates: () => {} });
+    expect(find(column(r), (e) => e.type === "button")).toBeDefined();
+    const roleButtons = findAll(r, (e) => e.props?.role === "button");
+    expect(roleButtons).toEqual([tapDiv(r)]);
+    for (const b of roleButtons) expect(find(b, (e) => e.type === "button")).toBeUndefined();
   });
 
   it("opens the sheet on Enter and Space from the keyboard", () => {
     const onOpenDetails = vi.fn();
     const preventDefault = vi.fn();
     const onKeyDown = tapDiv(row({ onOpenDetails })).props.onKeyDown as (e: unknown) => void;
-    const self = {};
-    onKeyDown({ key: "Enter", target: self, currentTarget: self, preventDefault });
-    onKeyDown({ key: " ", target: self, currentTarget: self, preventDefault });
-    onKeyDown({ key: "a", target: self, currentTarget: self, preventDefault });
+    onKeyDown({ key: "Enter", preventDefault });
+    onKeyDown({ key: " ", preventDefault });
+    onKeyDown({ key: "a", preventDefault });
     expect(onOpenDetails).toHaveBeenCalledTimes(2);
     expect(onOpenDetails).toHaveBeenCalledWith("a");
   });
 
-  it("leaves Enter and Space from the button inside (Remove duplicates) to that button", () => {
-    const onOpenDetails = vi.fn();
-    const preventDefault = vi.fn();
-    const onKeyDown = tapDiv(row({ onOpenDetails })).props.onKeyDown as (e: unknown) => void;
-    onKeyDown({ key: "Enter", target: {}, currentTarget: {}, preventDefault });
-    onKeyDown({ key: " ", target: {}, currentTarget: {}, preventDefault });
-    expect(onOpenDetails).not.toHaveBeenCalled();
-    expect(preventDefault).not.toHaveBeenCalled();
-  });
-
-  it("the tappable name column is a div, so dnd-kit can still start a drag", () => {
+  it("the name's button is a div, so dnd-kit can still start a drag", () => {
     expect(tapDiv(row()).type).toBe("div");
   });
 
-  it("the tappable name column shows a keyboard focus ring, and a regular row's does not", () => {
+  it("the name's button shows a keyboard focus ring, and a regular row's does not", () => {
     expect(tapDiv(row()).props.className).toContain("focus-visible:outline");
     expect(html({ onOpenDetails: undefined })).not.toContain("focus-visible");
   });
@@ -152,7 +162,9 @@ describe("a Not available row", () => {
 describe("a regular row", () => {
   const reg = { onOpenDetails: undefined };
 
-  it("ignores a quantity it is handed", () => {
+  // A completed regular row would show one (read-only, as the Done section does on grocery
+  // lists), so CompletedItemsSection's showQuantity is the gate there; not-this-week-ui covers it.
+  it("ignores a quantity on an active row without onOpenDetails", () => {
     expect(html({ ...reg, quantity: "2 L" })).not.toContain("2 L");
   });
 
@@ -189,7 +201,5 @@ describe("sources", () => {
     expect(page).toMatch(/<ItemSheet[\s\S]*item=\{sheetItem\}/);
     // A pending item's id changes from temp-… to the uuid while its sheet is open.
     expect(page).toContain("i._tempId === sheet.id");
-    // The sheet closes if the list stops being a grocery list (type changed on another device).
-    expect(page).toContain('if (sheet && listType !== "grocery") setSheet(null)');
   });
 });

@@ -16,7 +16,8 @@ interface ItemRowProps {
   editorName?: string | null;
   isOwnEdit?: boolean;
   onToggle: (id: string, completed: boolean) => void;
-  onDelete: (id: string) => void;
+  /** The trailing X on a regular row. A grocery row deletes from the item sheet instead. */
+  onDelete?: (id: string) => void;
   onEdit?: (id: string, newText: string) => void;
   skipped?: boolean;
   onSkip?: (id: string, skipped: boolean) => void;
@@ -142,21 +143,6 @@ export default function ItemRow({
           />
         ) : (
           <div
-            {...(sheetMode
-              ? {
-                  role: "button",
-                  tabIndex: 0,
-                  "aria-haspopup": "dialog" as const,
-                  onKeyDown: (e: React.KeyboardEvent) => {
-                    // Keys from the Remove duplicates button inside must reach that button.
-                    if (e.target !== e.currentTarget) return;
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onOpenDetails!(id);
-                    }
-                  },
-                }
-              : {})}
             onClick={() => {
               if (sheetMode) {
                 onOpenDetails!(id);
@@ -167,17 +153,39 @@ export default function ItemRow({
                 setIsEditing(true);
               }
             }}
-            className={sheetMode ? "flex items-start gap-3 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-tg-button/60" : showQty ? "flex items-start gap-3" : undefined}
+            className={sheetMode ? "flex items-start gap-3 cursor-pointer" : showQty ? "flex items-start gap-3" : undefined}
           >
             <div className={sheetMode || showQty ? "flex-1 min-w-0" : undefined}>
               <div className="flex items-start gap-1.5">
-                <span
-                  className={`min-w-0 wrap-anywhere ${
-                    completed ? "line-through text-tg-hint" : "text-tg-text"
-                  }`}
-                >
-                  {text}
-                </span>
+                {sheetMode ? (
+                  // The name is the row's button for keyboards and screen readers. Its click
+                  // reaches the column above, which opens the sheet. Remove duplicates sits
+                  // beside it, never inside it, so no interactive element is nested.
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-haspopup="dialog"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onOpenDetails!(id);
+                      }
+                    }}
+                    className={`min-w-0 wrap-anywhere rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-tg-button/60 ${
+                      completed ? "line-through text-tg-hint" : "text-tg-text"
+                    }`}
+                  >
+                    {text}
+                  </div>
+                ) : (
+                  <span
+                    className={`min-w-0 wrap-anywhere ${
+                      completed ? "line-through text-tg-hint" : "text-tg-text"
+                    }`}
+                  >
+                    {text}
+                  </span>
+                )}
                 {isDuplicate && (
                   onRemoveDuplicates ? (
                     <button
@@ -244,7 +252,7 @@ export default function ItemRow({
         </button>
       )}
 
-      {!sheetMode && (
+      {!sheetMode && onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();

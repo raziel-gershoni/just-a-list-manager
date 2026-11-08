@@ -100,7 +100,7 @@ describe("quantity in the drawers", () => {
     renderToStaticMarkup(
       createElement(SkippedItemsSection, {
         skippedItems: items, showSkipped: true, setShowSkipped: () => {}, duplicateTexts: new Set<string>(),
-        isShared: false, userId: null, onToggle: () => {}, onDelete: () => {}, onEdit: () => {},
+        isShared: false, userId: null, onToggle: () => {},
         onSkip: () => {}, onOpenDetails: () => {},
       })
     );

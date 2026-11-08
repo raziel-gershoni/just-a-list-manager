@@ -458,8 +458,6 @@ export default function ListPage() {
               isShared={isShared}
               userId={userId}
               onToggle={handleToggle}
-              onDelete={handleDelete}
-              onEdit={handleEditItem}
               onSkip={handleSkip}
               onOpenDetails={openSheet}
               onRestoreAll={handleRestoreSkipped}
