@@ -312,8 +312,10 @@ export function useItemHandlers({
     (itemId: string, typed: string | null) => {
       const canonical = typed === null ? "" : normalizeForStorage(typed);
       const quantity = canonical.length > 0 ? canonical : null;
+      // The sheet may still hold the temp id of an item whose create has landed since.
+      const isItem = sameItem(itemId);
       setItems((prev) =>
-        prev.map((i) => (i.id === itemId ? { ...i, quantity, edited_by: userId, editor_name: null } : i))
+        prev.map((i) => (isItem(i) ? { ...i, quantity, edited_by: userId, editor_name: null } : i))
       );
       addMutation({
         id: genMutId(),
@@ -321,7 +323,7 @@ export function useItemHandlers({
         payload: { listId, itemId, quantity },
       });
     },
-    [listId, addMutation, userId, setItems]
+    [listId, addMutation, userId, setItems, sameItem]
   );
 
   // Server side of a skip/unskip. Shared by handleSkip and Restore all, which uses

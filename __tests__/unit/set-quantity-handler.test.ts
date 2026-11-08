@@ -1,7 +1,8 @@
 /* eslint-disable react-hooks/rules-of-hooks -- react is stubbed below; the hook runs as a plain function */
 import { describe, it, expect, vi } from "vitest";
 
-// useItemHandlers only uses useCallback, so it runs here as a plain function.
+// useItemHandlers only uses useCallback, so it runs here as a plain function. If the hook
+// starts using other React APIs (useRef, useMemo...), extend this stub.
 vi.mock("react", () => ({ useCallback: (fn: unknown) => fn }));
 
 import { useItemHandlers } from "@/src/hooks/useItemHandlers";
@@ -44,6 +45,18 @@ describe("handleSetQuantity", () => {
     expect(s.items()[1].quantity).toBeUndefined();
     expect(s.mutations).toEqual([
       { id: expect.any(String), type: "set-quantity", payload: { listId: "L1", itemId: "i1", quantity: "2 kg" } },
+    ]);
+  });
+
+  it("an id captured as the temp id still finds the row once its create landed", () => {
+    const s = setup([row({ id: "real-uuid", _tempId: "temp-1" }), row({ id: "i2" })]);
+
+    s.handlers.handleSetQuantity("temp-1", "2");
+
+    expect(s.items()[0]).toMatchObject({ id: "real-uuid", quantity: "2", edited_by: "u1", editor_name: null });
+    expect(s.items()[1].quantity).toBeUndefined();
+    expect(s.mutations).toEqual([
+      { id: expect.any(String), type: "set-quantity", payload: { listId: "L1", itemId: "temp-1", quantity: "2" } },
     ]);
   });
 
