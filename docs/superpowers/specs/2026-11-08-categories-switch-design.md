@@ -122,7 +122,8 @@ with a toast and re-reads; the queued move retries and is then dropped as an unk
     (`categories_enabled !== false`), then the items answer's, only while its generation holds.
     `refreshItems` applies the answer's value the same way, before its merge. A sorting retry whose
     generation changed writes and loads nothing; one that reads off copies nothing.
-  - **While off on screen, no item carries a category:** every write of fetched items clears them.
+  - **While off on screen, no item carries a category:** every write of fetched items clears them,
+    and logs when it drops any.
   - Category loads follow the switch, not the type alone: no `GET /categories` for a list that's off.
 - **`useListRealtime`:** a `lists` UPDATE with a boolean `categories_enabled` calls
   `applyCategoriesSwitch`, safe on every update since the full row comes with each one. A change to
@@ -147,7 +148,8 @@ with a toast and re-reads; the queued move retries and is then dropped as an unk
     settle the same way: successful saves reach every screen in commit order by realtime, and a
     failed one re-reads.
   - **Categories button:** shown only while the switch is on. **The Categories sheet** renders only
-    while the list is grocery with the switch on, so an off from another device closes it.
+    while the list is grocery with the switch on, so an off from another device closes it, and it
+    stays closed when they return (`showCategories` is reset during render).
   - **Type control:** a change to grocery loads categories only while the switch is on.
 
 ## Copy
@@ -214,7 +216,8 @@ with a toast and re-reads; the queued move retries and is then dropped as an unk
   - The rendered switch shows only on grocery lists.
   - Turning off asks first, and clears before saving.
   - A failed save of either kind rolls back and re-reads once, with no separate categories load.
-  - The Categories sheet closes when the switch goes off.
+  - The Categories sheet closes when the switch goes off, and stays closed when it comes back on
+    or the list is grocery again.
   - Turning on PATCHes.
   - The Categories button follows the switch.
   - `grouped` follows the switch.
