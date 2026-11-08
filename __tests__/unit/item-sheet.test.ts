@@ -185,6 +185,24 @@ describe("saving the quantity", () => {
     expect(props.onClose).toHaveBeenCalled();
   });
 
+  // The server stores normalizeForStorage of it: a draft that normalizes to the stored value is
+  // no change (no PATCH, no edited mark for the others).
+  it("a quantity that differs only in spacing or Unicode form saves nothing", () => {
+    render({ item: { ...ITEM, quantity: "2 kg" } });
+    type(qtyBox, " 2  kg ");
+    press(done());
+    render({ item: { ...ITEM, quantity: "caf\u00e9" } });
+    type(qtyBox, "cafe\u0301");
+    press(done());
+    expect(props.onSetQuantity).not.toHaveBeenCalled();
+  });
+
+  it("a quantity of only invisible marks on an empty quantity saves nothing", () => {
+    type(qtyBox, "\u200f");
+    press(done());
+    expect(props.onSetQuantity).not.toHaveBeenCalled();
+  });
+
   it("clearing a set quantity saves null, never an empty string", () => {
     render({ item: { ...ITEM, quantity: "3" } });
     expect(qtyBox().props.value).toBe("3");
@@ -226,6 +244,28 @@ describe("saving the name", () => {
 
   it("a pasted line break becomes a space", () => {
     type(nameBox, "oat\nmilk");
+    backdrop();
+    expect(props.onEdit).toHaveBeenCalledWith("i1", "oat milk");
+  });
+
+  it("a name that differs only in spacing or Unicode form is not saved", () => {
+    render({ item: { ...ITEM, text: "oat milk" } });
+    type(nameBox, "oat  milk ");
+    backdrop();
+    render({ item: { ...ITEM, text: "caf\u00e9" } });
+    type(nameBox, "cafe\u0301");
+    backdrop();
+    expect(props.onEdit).not.toHaveBeenCalled();
+  });
+
+  it("a name of only invisible marks keeps the old name", () => {
+    type(nameBox, "\u200f");
+    backdrop();
+    expect(props.onEdit).not.toHaveBeenCalled();
+  });
+
+  it("a renamed item is saved as the server stores it", () => {
+    type(nameBox, "  oat   milk");
     backdrop();
     expect(props.onEdit).toHaveBeenCalledWith("i1", "oat milk");
   });

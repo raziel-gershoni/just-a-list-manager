@@ -6,6 +6,7 @@ import { CalendarOff, CircleOff, Repeat, RotateCcw, Trash2, Truck } from "lucide
 import SwitchRow from "@/components/ui/SwitchRow";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import type { ItemData } from "@/src/types/items";
+import { normalizeForStorage } from "@/src/utils/text-normalize";
 
 export interface ItemSheetProps {
   /** The live item; undefined when it is gone. */
@@ -48,17 +49,19 @@ export default function ItemSheet({
   }, [shownName]);
 
   // commitName/commitQuantity only report a change; saveName/saveQuantity also drop the draft.
+  // Drafts are compared as the server stores them (normalizeForStorage), so one that differs only
+  // in spacing or Unicode form is no change: no save, and no edited mark for the others.
   // An emptied name keeps the old one.
   const commitName = (it: ItemData) => {
     if (nameDraft === null) return;
-    const trimmed = nameDraft.trim();
-    if (trimmed && trimmed !== it.text) onEdit(it.id, trimmed);
+    const next = normalizeForStorage(nameDraft);
+    if (next && next !== it.text) onEdit(it.id, next);
   };
   // An emptied quantity is null, never "".
   const commitQuantity = (it: ItemData) => {
     if (qtyDraft === null) return;
-    const trimmed = qtyDraft.trim();
-    if (trimmed !== (it.quantity ?? "")) onSetQuantity(it.id, trimmed || null);
+    const next = normalizeForStorage(qtyDraft) || null;
+    if (next !== (it.quantity ?? null)) onSetQuantity(it.id, next);
   };
   const saveName = (it: ItemData) => { commitName(it); setNameDraft(null); };
   const saveQuantity = (it: ItemData) => { commitQuantity(it); setQtyDraft(null); };
