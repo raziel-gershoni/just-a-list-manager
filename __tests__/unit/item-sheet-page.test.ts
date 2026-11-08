@@ -78,6 +78,7 @@ vi.mock("@/components/list/ItemSheet", () => ({ default: () => null }));
 import ListPage from "@/app/(app)/list/[id]/page";
 import SkippedItemsSection from "@/components/list/SkippedItemsSection";
 import ItemSheet from "@/components/list/ItemSheet";
+import { getSyncEngine } from "@/src/sync/engine";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 const ListContent = ListPage as () => El;
@@ -124,6 +125,34 @@ describe("the item sheet on the list page", () => {
     expect(sheet()).toBeUndefined();
     openMilk();
     expect(sheet()?.props.item).toBe(milk);
+  });
+
+  // Opens the sheet of a pending item (any row's onOpenDetails is the page's openSheet).
+  const pending: ItemData = { ...milk, id: "temp-1", skipped_at: null, quantity: null, _pending: true };
+  function openPending() {
+    S.items = [pending];
+    const section = find(render(), (el) => el.type === SkippedItemsSection);
+    expect(section).toBeDefined();
+    (section!.props.onOpenDetails as (id: string) => void)("temp-1");
+    expect(sheet()?.props.item).toBe(pending);
+  }
+
+  it("follows a pending item to its saved row when the realtime INSERT comes first", () => {
+    openPending();
+    // The INSERT's row has the saved id and keeps the temp id; the create hasn't answered yet.
+    const inserted: ItemData = { ...milk, id: "a", skipped_at: null, quantity: null, _tempId: "temp-1" };
+    S.items = [inserted];
+    expect(sheet()?.props.item).toBe(inserted);
+  });
+
+  it("follows a pending item to its saved row when the create answers before the INSERT", () => {
+    openPending();
+    // The create's answer swapped in the saved row, with no temp id on it (a later refresh does
+    // the same). The engine still maps the temp id to the saved one.
+    const saved: ItemData = { ...milk, id: "a", skipped_at: null, quantity: null };
+    S.items = [saved];
+    vi.spyOn(getSyncEngine("L"), "resolveId").mockImplementation((id) => (id === "temp-1" ? "a" : id));
+    expect(sheet()?.props.item).toBe(saved);
   });
 
   it("is gone the moment the list stops being a grocery list", () => {

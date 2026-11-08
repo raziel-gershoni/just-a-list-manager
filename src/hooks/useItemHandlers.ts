@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import type { ItemData } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
-import { genMutId, isActiveItem, isParkedRecurringItem } from "@/src/utils/list-helpers";
+import { genMutId, isActiveItem, isParkedRecurringItem, sameItemAs } from "@/src/utils/list-helpers";
 import { normalizeForCompare, normalizeForStorage } from "@/src/utils/text-normalize";
 import { computeUnmarkCompleted } from "@/src/utils/unmark-completed";
 import { computeClearCompleted } from "@/src/utils/clear-completed";
@@ -90,10 +90,7 @@ export function useItemHandlers({
   // whose realtime INSERT came first: its row is now on screen under the saved id (the
   // INSERT's row also carries the temp id). Updates applied later match any of them.
   const sameItem = useCallback(
-    (capturedId: string) => {
-      const savedId = getSyncEngine(listId).resolveId(capturedId);
-      return (i: ItemData) => i.id === capturedId || i.id === savedId || i._tempId === capturedId;
-    },
+    (capturedId: string) => sameItemAs(capturedId, getSyncEngine(listId).resolveId(capturedId)),
     [listId]
   );
 

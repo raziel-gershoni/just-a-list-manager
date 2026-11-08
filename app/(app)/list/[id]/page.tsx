@@ -29,7 +29,7 @@ import { useListRealtime } from "@/src/hooks/useListRealtime";
 import { useListDerivedData } from "@/src/hooks/useListDerivedData";
 import { useSortingRetry } from "@/src/hooks/useSortingRetry";
 import { normalizeForCompare } from "@/src/utils/text-normalize";
-import { SORTING_GROUP, countByCategory } from "@/src/utils/list-helpers";
+import { SORTING_GROUP, countByCategory, sameItemAs } from "@/src/utils/list-helpers";
 import { createExecutorFactory } from "@/src/utils/executor-factory";
 import { throwIfNotOk } from "@/src/utils/http";
 import { askConfirm } from "@/src/types/telegram";
@@ -84,13 +84,14 @@ export default function ListPage() {
   const [showShare, setShowShare] = useState(false);
   const [showSignals, setShowSignals] = useState(false);
   // The item sheet (grocery lists): which item, and whether it was a Not available item when it
-  // opened. Found by id or by the temp id it had, so a pending item's save doesn't close it.
+  // opened. Found like any captured id (by id, by the saved id the engine maps a temp id to, or by
+  // the temp id an INSERT's row keeps), so a pending item's save doesn't close it.
   const [sheet, setSheet] = useState<{ id: string; skipped: boolean } | null>(null);
   const openSheet = useCallback((id: string) => {
     const it = items.find((i) => i.id === id);
     if (it) setSheet({ id, skipped: it.skipped_at != null });
   }, [items]);
-  const sheetItem = sheet ? items.find((i) => i.id === sheet.id || i._tempId === sheet.id) : undefined;
+  const sheetItem = sheet ? items.find(sameItemAs(sheet.id, getSyncEngine(listId).resolveId(sheet.id))) : undefined;
   // A type change to Regular closes it: regular lists have no sheet. An unsaved name or quantity
   // draft is dropped on purpose: changing the type needs the list settings sheet, so this is only
   // reachable from another device or a race, and flushing drafts on unmount isn't worth it.

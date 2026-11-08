@@ -57,6 +57,16 @@ export function groupByCompletionTime(
     }));
 }
 
+/**
+ * Matches the row of an item whose id was captured earlier (at a tap, or when a sheet opened).
+ * The id may be a new item's temp id whose create has landed since: its row is then on screen
+ * under the saved id (`savedId`, the sync engine's `resolveId` of it), with or without the temp
+ * id on it (only a realtime INSERT's row keeps it; the create's answer and a refresh don't).
+ */
+export function sameItemAs(capturedId: string, savedId: string): (i: ItemData) => boolean {
+  return (i) => i.id === capturedId || i.id === savedId || i._tempId === capturedId;
+}
+
 export const SORTING_GROUP = "sorting";
 
 /**

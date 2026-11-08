@@ -196,10 +196,10 @@ describe("sources", () => {
     expect(page).toMatch(/showQuantity=\{listType === "grocery"\}/);
   });
 
-  it("the page renders the sheet for the live item, found by id or by its temp id", () => {
+  it("the page renders the sheet for the live item", () => {
+    // Which row is the live item (a pending item's temp id → saved id) is tested by behaviour
+    // in item-sheet-page.test.ts.
     const page = read("app/(app)/list/[id]/page.tsx");
     expect(page).toMatch(/<ItemSheet[\s\S]*item=\{sheetItem\}/);
-    // A pending item's id changes from temp-… to the uuid while its sheet is open.
-    expect(page).toContain("i._tempId === sheet.id");
   });
 });
