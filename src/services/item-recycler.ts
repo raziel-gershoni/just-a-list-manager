@@ -71,6 +71,8 @@ export async function recycleItem(
   listId: string,
   text: string,
   // A quantity said by voice replaces the old one; the app's recycle passes none and keeps it.
+  // When given, it must be non-empty (the DB CHECK is 1..30 characters): the caller leaves an
+  // empty one out instead of passing it, as an empty string would fail that CHECK.
   opts?: { quantity?: string }
 ): Promise<RecyclableItem | null> {
   const supabase = createServerClient();
