@@ -100,10 +100,12 @@
     },
     "skippedSection": "Not available ({count})",
     "ordered": {
+      "title": "On the way",
       "toggleOn": "Mark as ordered",
       "label": "on the way"
     },
     "recurring": {
+      "title": "Recurring",
       "section": "Recurring ({count})",
       "toggleOn": "Mark as recurring",
       "toggleOff": "Stop recurring",
@@ -122,7 +124,16 @@
       "monthAgo": "About a month ago",
       "monthsAgo": "A few months ago",
       "longAgo": "A long time ago"
-    }
+    },
+    "sheet": {
+      "name": "Item name"
+    },
+    "quantity": {
+      "label": "Quantity",
+      "placeholder": "e.g. 2, 1 kg, 3 packs"
+    },
+    "skip": "Not available",
+    "unskip": "Back to the list"
   },
   "voice": {
     "added": "Added to {listName}:",

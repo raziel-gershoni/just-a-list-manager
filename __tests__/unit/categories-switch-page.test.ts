@@ -90,6 +90,7 @@ import ListPage from "@/app/(app)/list/[id]/page";
 import ListHeader from "@/components/list/ListHeader";
 import ToastContainer from "@/components/list/ToastContainer";
 import CategoriesSheet from "@/components/list/CategoriesSheet";
+import SwitchRow from "@/components/ui/SwitchRow";
 
 type El = ReactElement<Record<string, unknown> & { children?: unknown }>;
 
@@ -125,8 +126,10 @@ const openSettings = () => {
   const header = find(render(), (el) => el.type === ListHeader);
   (header!.props.onSettings as () => void)();
 };
-const theSwitch = () => find(render(), (el) => el.props.role === "switch");
-const press = () => (theSwitch()!.props.onClick as () => void)();
+// The switch is the shared SwitchRow: its own markup (role="switch") is pinned by the SwitchRow
+// element's props here, since the page renders it as a child component.
+const theSwitch = () => find(render(), (el) => el.type === SwitchRow);
+const press = () => (theSwitch()!.props.onChange as () => void)();
 const categoriesButton = () =>
   find(render(), (el) => el.type === "button" && findText(el) === "categories.manage");
 const typeButton = (label: string) => find(render(), (el) => el.type === "button" && findText(el) === label);
@@ -175,9 +178,10 @@ describe("the categories switch in list settings", () => {
 
   it("shows on a grocery list, checked when categories are on", () => {
     openSettings();
-    expect(theSwitch()!.props["aria-checked"]).toBe(true);
+    expect(theSwitch()!.props.label).toBe("categories.enabled");
+    expect(theSwitch()!.props.checked).toBe(true);
     S.enabled = false;
-    expect(theSwitch()!.props["aria-checked"]).toBe(false);
+    expect(theSwitch()!.props.checked).toBe(false);
   });
 
   it("is not offered on a regular list", () => {

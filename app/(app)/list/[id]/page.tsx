@@ -9,6 +9,7 @@ import AddItemInput from "@/components/AddItemInput";
 import SortableItem from "@/components/SortableItem";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import ShareDialog from "@/components/ShareDialog";
+import SwitchRow from "@/components/ui/SwitchRow";
 import ListHeader from "@/components/list/ListHeader";
 import SignalSheet from "@/components/list/SignalSheet";
 import CategoriesSheet from "@/components/list/CategoriesSheet";
@@ -549,23 +550,7 @@ export default function ListPage() {
               ))}
             </div>
             {listType === "grocery" && (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={categoriesEnabled}
-                onClick={toggleCategories}
-                className="w-full min-h-11 flex items-center justify-between gap-3 py-3 px-4 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium text-start active:scale-[0.98]"
-              >
-                <span>{t('categories.enabled')}</span>
-                <span
-                  aria-hidden="true"
-                  className={`relative inline-flex h-7 w-12 shrink-0 rounded-full motion-safe:transition-colors ${categoriesEnabled ? "bg-tg-button" : "bg-tg-hint/50"}`}
-                >
-                  <span
-                    className={`absolute top-0.5 start-0.5 h-6 w-6 rounded-full bg-white shadow-sm motion-safe:transition-transform ${categoriesEnabled ? "translate-x-5 rtl:-translate-x-5" : ""}`}
-                  />
-                </span>
-              </button>
+              <SwitchRow label={t('categories.enabled')} checked={categoriesEnabled} onChange={toggleCategories} />
             )}
             {listType === "grocery" && categoriesEnabled && (
               <button

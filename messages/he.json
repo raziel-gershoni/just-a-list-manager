@@ -100,10 +100,12 @@
     },
     "skippedSection": "לא זמין ({count})",
     "ordered": {
+      "title": "בדרך",
       "toggleOn": "סמן כהוזמן",
       "label": "בדרך"
     },
     "recurring": {
+      "title": "חוזר",
       "section": "חוזר ({count})",
       "toggleOn": "סמן כחוזר",
       "toggleOff": "בטל חזרה",
@@ -122,7 +124,16 @@
       "monthAgo": "לפני כחודש",
       "monthsAgo": "לפני כמה חודשים",
       "longAgo": "לפני זמן רב"
-    }
+    },
+    "sheet": {
+      "name": "שם הפריט"
+    },
+    "quantity": {
+      "label": "כמות",
+      "placeholder": "למשל 2, 1 ק״ג, 3 חבילות"
+    },
+    "skip": "לא זמין",
+    "unskip": "החזר לרשימה"
   },
   "voice": {
     "added": "נוסף ל{listName}:",
