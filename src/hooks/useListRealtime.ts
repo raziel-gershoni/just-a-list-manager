@@ -24,6 +24,9 @@ interface UseListRealtimeParams {
   listType: ListType;
   loadCategories: () => Promise<void>;
   setCategories: React.Dispatch<React.SetStateAction<ListCategory[]>>;
+  setCategoriesEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Categories were turned off: clear them on screen at once (useListData.clearCategorization). */
+  clearCategorization: () => void;
   isDraggingRef: React.RefObject<boolean>;
   onListDeleted: () => void;
   /** The list's channel was closed for good: reconnect so a new one starts. */
@@ -44,6 +47,8 @@ export function useListRealtime({
   listType,
   loadCategories,
   setCategories,
+  setCategoriesEnabled,
+  clearCategorization,
   isDraggingRef,
   onListDeleted,
   onChannelClosed,
@@ -152,10 +157,16 @@ export function useListRealtime({
           }
           if ("icon" in newRec) setListIcon((newRec.icon ?? null) as ListIconName | null);
           if ("color" in newRec) setListColor((newRec.color ?? null) as ListColor | null);
+          // The owner switched categories on or off. Every UPDATE carries the full row
+          // (REPLICA IDENTITY FULL), so this runs on each one; clearing is idempotent.
+          if (typeof newRec.categories_enabled === "boolean") {
+            setCategoriesEnabled(newRec.categories_enabled);
+            if (!newRec.categories_enabled) clearCategorization();
+          }
         }
       }
     },
-    [setItems, setListName, setListType, setListIcon, setListColor, listType, loadCategories, setCategories, isDraggingRef, onListDeleted, listId]
+    [setItems, setListName, setListType, setListIcon, setListColor, listType, loadCategories, setCategories, setCategoriesEnabled, clearCategorization, isDraggingRef, onListDeleted, listId]
   );
 
   return useRealtimeList(supabaseClient, supabaseClientRef, listId, onChange, onChannelClosed, onRejoined);

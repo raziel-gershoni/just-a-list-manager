@@ -19,13 +19,14 @@ import { useListRealtime } from "@/src/hooks/useListRealtime";
 
 // The open list page's header state, fed by the real hook.
 function page(listType: "regular" | "grocery") {
-  const state = { name: "Groceries", type: listType as string, icon: "cart" as string | null, color: "blue" as string | null };
+  const state = { name: "Groceries", type: listType as string, icon: "cart" as string | null, color: "blue" as string | null, enabled: true as boolean };
   const apply = <T,>(key: keyof typeof state) => (u: T | ((p: T) => T)) => {
     const prev = state[key] as T;
     (state as Record<string, unknown>)[key] = typeof u === "function" ? (u as (p: T) => T)(prev) : u;
   };
   const loadCategories = vi.fn(async () => {});
   const onListDeleted = vi.fn();
+  const clearCategorization = vi.fn();
   const params = {
     supabaseClient: null,
     supabaseClientRef: { current: null },
@@ -38,13 +39,15 @@ function page(listType: "regular" | "grocery") {
     listType,
     loadCategories,
     setCategories: () => {},
+    setCategoriesEnabled: apply<boolean>("enabled"),
+    clearCategorization,
     isDraggingRef: { current: false },
     onListDeleted,
   } as unknown as Parameters<typeof useListRealtime>[0];
   useListRealtime(params);
   const listUpdate = (row: Record<string, unknown>) =>
     RT.onChange!({ table: "lists", eventType: "UPDATE", new: { id: "L", deleted_at: null, ...row }, old: { id: "L" } });
-  return { state, loadCategories, onListDeleted, listUpdate };
+  return { state, loadCategories, onListDeleted, clearCategorization, listUpdate };
 }
 
 beforeEach(() => {
@@ -102,7 +105,7 @@ describe("an open list follows the owner's list settings live", () => {
 
     p.listUpdate({ name: "Renamed" });
 
-    expect(p.state).toEqual({ name: "Renamed", type: "regular", icon: "cart", color: "blue" });
+    expect(p.state).toEqual({ name: "Renamed", type: "regular", icon: "cart", color: "blue", enabled: true });
   });
 
   it("a deleted list still goes home and changes nothing else", () => {
@@ -111,7 +114,35 @@ describe("an open list follows the owner's list settings live", () => {
     p.listUpdate({ name: "Groceries", type: "grocery", icon: "home", deleted_at: "2026-10-29T10:00:00.000Z" });
 
     expect(p.onListDeleted).toHaveBeenCalledTimes(1);
-    expect(p.state).toEqual({ name: "Groceries", type: "regular", icon: "cart", color: "blue" });
+    expect(p.state).toEqual({ name: "Groceries", type: "regular", icon: "cart", color: "blue", enabled: true });
     expect(p.loadCategories).not.toHaveBeenCalled();
+  });
+
+  it("categories turned off elsewhere switch grouping off and clear the categorization at once", () => {
+    const p = page("grocery");
+
+    p.listUpdate({ name: "Flours", type: "grocery", categories_enabled: false });
+
+    expect(p.state.enabled).toBe(false);
+    expect(p.clearCategorization).toHaveBeenCalledTimes(1);
+  });
+
+  it("categories turned on elsewhere switch grouping on and clear nothing", () => {
+    const p = page("grocery");
+    p.state.enabled = false;
+
+    p.listUpdate({ name: "Flours", type: "grocery", categories_enabled: true });
+
+    expect(p.state.enabled).toBe(true);
+    expect(p.clearCategorization).not.toHaveBeenCalled();
+  });
+
+  it("an update without the switch leaves it as it is", () => {
+    const p = page("grocery");
+
+    p.listUpdate({ name: "Renamed" });
+
+    expect(p.state.enabled).toBe(true);
+    expect(p.clearCategorization).not.toHaveBeenCalled();
   });
 });

@@ -141,6 +141,8 @@ function page(serverItems: ItemData[]) {
       listType: data.listType,
       loadCategories: data.loadCategories,
       setCategories: data.setCategories,
+      setCategoriesEnabled: data.setCategoriesEnabled,
+      clearCategorization: data.clearCategorization,
       isDraggingRef: { current: false },
       onListDeleted: () => {},
     });

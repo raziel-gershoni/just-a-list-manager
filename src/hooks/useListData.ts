@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import type { ItemData, ListCategory } from "@/src/types";
 import type { ListColor, ListIconName, ListType } from "@/src/lib/list-icons";
 import { shouldRespawn } from "@/src/utils/recurring-respawn";
-import { sortCategories } from "@/src/utils/category-state";
+import { sortCategories, clearItemCategories } from "@/src/utils/category-state";
 import { throwIfNotOk } from "@/src/utils/http";
 import { genMutId } from "@/src/utils/list-helpers";
 import { getSyncEngine } from "@/src/sync/engine";
@@ -34,6 +34,8 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
   const [listIcon, setListIcon] = useState<ListIconName | null>(null);
   const [listColor, setListColor] = useState<ListColor | null>(null);
   const [categories, setCategories] = useState<ListCategory[]>([]);
+  // The grocery categories switch. An old server sends no field: that list is sorted, as before.
+  const [categoriesEnabled, setCategoriesEnabled] = useState(true);
   // The rows on screen as of the last render: a refresh compares them with the rows on screen
   // when its answer comes back, to tell what changed while the GET was out.
   const itemsRef = useRef<ItemData[]>(items);
@@ -61,6 +63,14 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
       console.error("[List] Categories fetch error:", e);
     }
   }, [jwtRef, listId]);
+
+  // Turning categories off deleted them on the server (set_list_categories_enabled): match it on
+  // screen at once. An item left holding a deleted category would sit under "Sorting…" after
+  // turning back on, because retrySorting only fills items with no category.
+  const clearCategorization = useCallback(() => {
+    setCategories((prev) => (prev.length ? [] : prev));
+    setItems((prev) => clearItemCategories(prev));
+  }, []);
 
   // One load at a time writes the screen. A quiet re-check that starts while a load is out
   // joins it: the reconnect that a Retry tap's focus starts would otherwise race that Retry.
@@ -119,6 +129,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           type?: string;
           icon?: string | null;
           color?: string | null;
+          categories_enabled?: boolean;
           role?: "owner" | "edit" | "view";
         };
 
@@ -150,6 +161,7 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
           setListType(currentListType);
           setListIcon((currentList.icon ?? null) as ListIconName | null);
           setListColor((currentList.color ?? null) as ListColor | null);
+          setCategoriesEnabled(currentList.categories_enabled !== false);
         }
 
         // Fetch items
@@ -306,5 +318,5 @@ export function useListData(listId: string, jwtRef: React.RefObject<string | nul
     if (listType === "grocery") await loadCategories();
   }, [jwtRef, listId, listType, loadCategories]);
 
-  return { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting };
+  return { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, setIsShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, categoriesEnabled, setCategoriesEnabled, clearCategorization, loadCategories, fetchItems, refreshItems, retrySorting };
 }

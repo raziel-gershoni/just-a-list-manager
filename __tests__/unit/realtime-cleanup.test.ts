@@ -321,6 +321,8 @@ describe("useRealtimeList keeps one channel per list (H23)", () => {
       listType: "regular",
       loadCategories: async () => {},
       setCategories: () => {},
+      setCategoriesEnabled: () => {},
+      clearCategorization: () => {},
       isDraggingRef: { current: false },
       onListDeleted: () => {},
       onChannelClosed,

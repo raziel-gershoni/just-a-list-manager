@@ -1,7 +1,14 @@
-import type { ListCategory, RealtimeChange } from "@/src/types";
+import type { ItemData, ListCategory, RealtimeChange } from "@/src/types";
 
 export function sortCategories(categories: ListCategory[]): ListCategory[] {
   return [...categories].sort((a, b) => a.position - b.position);
+}
+
+/** Every item out of its category, hand placements unlocked: what turning categories off leaves.
+ *  The same array when no item had either, so an idle call re-renders nothing. */
+export function clearItemCategories(items: ItemData[]): ItemData[] {
+  if (!items.some((i) => i.category_id || i.category_locked)) return items;
+  return items.map((i) => (i.category_id || i.category_locked ? { ...i, category_id: null, category_locked: false } : i));
 }
 
 /** Apply one Realtime change on list_categories to the client's category list. */

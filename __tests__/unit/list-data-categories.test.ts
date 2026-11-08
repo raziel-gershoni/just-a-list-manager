@@ -46,12 +46,12 @@ import { createExecutorFactory } from "@/src/utils/executor-factory";
 const jwtRef: { current: string | null } = { current: "jwt" };
 const render = () => { R.i = 0; return useListData("L", jwtRef); };
 
-function stubFetch(categories: "fail" | 500 | unknown[], type = "grocery") {
+function stubFetch(categories: "fail" | 500 | unknown[], type = "grocery", listFields: Record<string, unknown> = {}, itemOver: Record<string, unknown> = {}) {
   const f = vi.fn(async (url: string) => {
     const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
-    if (url === "/api/lists") return json([{ id: "L", name: "Groceries", type }]);
+    if (url === "/api/lists") return json([{ id: "L", name: "Groceries", type, ...listFields }]);
     if (url.startsWith("/api/lists/L/items")) {
-      return json({ items: [{ id: "a", text: "milk", completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, recurring: false, position: 1, category_id: null }] });
+      return json({ items: [{ id: "a", text: "milk", completed: false, completed_at: null, deleted_at: null, skipped_at: null, ordered_at: null, recurring: false, position: 1, category_id: null, ...itemOver }] });
     }
     if (url === "/api/lists/L/categories") {
       if (categories === "fail") throw new TypeError("Failed to fetch");
@@ -231,6 +231,33 @@ describe("useListData loadCategories", () => {
       }
       expect(f).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("useListData categories switch", () => {
+  it("opens with the switch the list summary carries", async () => {
+    stubFetch([], "grocery", { categories_enabled: false });
+    await render().fetchItems();
+    expect(render().categoriesEnabled).toBe(false);
+  });
+
+  it("a list summary without the field (an old server) opens with categories on", async () => {
+    stubFetch([]);
+    await render().fetchItems();
+    expect(render().categoriesEnabled).toBe(true);
+  });
+
+  it("clearCategorization empties the categories and takes the items out of them", async () => {
+    stubFetch([dairy], "grocery", {}, { category_id: "c1", category_locked: true });
+    await render().fetchItems();
+    expect(render().categories.map((c) => c.id)).toEqual(["dairy"]);
+    expect(render().items[0]).toMatchObject({ category_id: "c1", category_locked: true });
+
+    render().clearCategorization();
+
+    const state = render();
+    expect(state.categories).toEqual([]);
+    expect(state.items[0]).toMatchObject({ category_id: null, category_locked: false });
   });
 });
 

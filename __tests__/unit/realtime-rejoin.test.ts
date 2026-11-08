@@ -232,6 +232,8 @@ describe("useListRealtime", () => {
       listType: "regular",
       loadCategories: async () => {},
       setCategories: () => {},
+      setCategoriesEnabled: () => {},
+      clearCategorization: () => {},
       isDraggingRef: { current: false },
       onListDeleted: () => {},
       onRejoined,

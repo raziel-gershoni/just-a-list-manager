@@ -54,7 +54,7 @@ export default function ListPage() {
   const params = useParams();
   const listId = params.id as string;
 
-  const { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, loadCategories, fetchItems, refreshItems, retrySorting } =
+  const { listName, setListName, items, setItems, loading, error, notFound, unavailableRef, isShared, listType, setListType, listIcon, setListIcon, listColor, setListColor, categories, setCategories, setCategoriesEnabled, clearCategorization, loadCategories, fetchItems, refreshItems, retrySorting } =
     useListData(listId, jwtRef);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -186,6 +186,8 @@ export default function ListPage() {
     listType,
     loadCategories,
     setCategories,
+    setCategoriesEnabled,
+    clearCategorization,
     isDraggingRef,
     onListDeleted,
     onChannelClosed: reconnect,
