@@ -11,8 +11,9 @@ in the order the household walks the store, so each section is swept once.
 
 ## What the user decided
 
-- **Always on** for grocery lists. Only the to-buy (active) items are grouped; the Not
-  available, Recurring and Completed sections are unchanged.
+- **On by default** for grocery lists (amended 2026-11-08: a per-list switch turns them off and
+  deletes them; see `2026-11-08-categories-switch-design.md`). Only the to-buy (active) items
+  are grouped; the Not available, Recurring and Completed sections are unchanged.
 - **Per-list categories created by the AI.** The first scan creates the categories a list
   needs. After that a new item goes into an existing category, and the AI creates a new one
   only when the item clearly belongs to a different store section ("reuse before creating").
