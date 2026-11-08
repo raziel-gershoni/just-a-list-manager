@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   // Lists where user is owner
   const { data: ownedLists, error: ownedError } = await supabase
     .from("lists")
-    .select("id, name, owner_id, created_at, updated_at, type, icon, color")
+    .select("id, name, owner_id, created_at, updated_at, type, icon, color, categories_enabled")
     .eq("owner_id", auth.userId)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
@@ -38,12 +38,12 @@ export async function GET(request: NextRequest) {
   if (collabError) return dbError("lists/GET", "Collaborator rows read", collabError, { userId: auth.userId });
 
   const collabListIds = (collabRecords || []).map((c) => c.list_id);
-  let collabLists: { id: string; name: string; owner_id: string; created_at: string; updated_at: string; type: string; icon: string | null; color: string | null }[] = [];
+  let collabLists: { id: string; name: string; owner_id: string; created_at: string; updated_at: string; type: string; icon: string | null; color: string | null; categories_enabled: boolean }[] = [];
 
   if (collabListIds.length > 0) {
     const { data, error: sharedListsError } = await supabase
       .from("lists")
-      .select("id, name, owner_id, created_at, updated_at, type, icon, color")
+      .select("id, name, owner_id, created_at, updated_at, type, icon, color, categories_enabled")
       .in("id", collabListIds)
       .is("deleted_at", null)
       .order("updated_at", { ascending: false });
@@ -238,8 +238,8 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(restored);
   }
 
-  // Update flow (name, type, icon, color, etc.)
-  const { name, type, icon, color } = parsed.data;
+  // Update flow (name, type, icon, color, the categories switch)
+  const { name, type, icon, color, categoriesEnabled } = parsed.data;
 
   if (name !== undefined && (!name.trim() || name.trim().length > 100)) {
     return NextResponse.json(
@@ -270,23 +270,46 @@ export async function PATCH(request: NextRequest) {
   if (icon !== undefined) updates.icon = icon;
   if (color !== undefined) updates.color = color;
 
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(updates).length === 0 && categoriesEnabled === undefined) {
     return NextResponse.json({ error: "No updates provided" }, { status: 400 });
   }
 
-  const { data: updated, error } = await supabase
-    .from("lists")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+  let saved: unknown = null;
+  if (Object.keys(updates).length > 0) {
+    const { data: updated, error } = await supabase
+      .from("lists")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) return dbError("lists/PATCH", "Update", error, { listId: id });
+    saved = updated;
+  }
 
-  if (error) return dbError("lists/PATCH", "Update", error, { listId: id });
+  if (categoriesEnabled !== undefined) {
+    // One transaction: off deletes the list's categories and every item's placement, under the
+    // list row lock the categorizer's writes check, so a sort already running leaves nothing.
+    const { data: rows, error: switchError } = await supabase.rpc("set_list_categories_enabled", {
+      p_list_id: id,
+      p_enabled: categoriesEnabled,
+    });
+    if (switchError) {
+      return dbError("lists/PATCH", "Categories switch", switchError, { listId: id, enabled: categoriesEnabled });
+    }
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row) {
+      console.warn("[lists/PATCH] Categories switch found no live list", { listId: id, enabled: categoriesEnabled });
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    console.info("[lists/PATCH] Categories switched", { listId: id, enabled: categoriesEnabled });
+    saved = row;
+  }
 
-  // A list that becomes a grocery list is sorted right away, not on its next open.
-  if (type === "grocery") after(() => categorizeList({ supabase }, id, "pending"));
+  // A list that becomes a grocery list, or turns its categories on, is sorted right away, not
+  // on its next open. categorizeList itself skips a list that is not grocery with categories on.
+  if (type === "grocery" || categoriesEnabled === true) after(() => categorizeList({ supabase }, id, "pending"));
 
-  return NextResponse.json(updated);
+  return NextResponse.json(saved);
 }
 
 export async function DELETE(request: NextRequest) {

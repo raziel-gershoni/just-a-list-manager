@@ -19,6 +19,8 @@ export const updateListSchema = z.object({
   type: listTypeEnum.optional(),
   icon: listIconEnum.nullable().optional(),
   color: listColorEnum.nullable().optional(),
+  // The grocery categories switch: off deletes the list's categories (set_list_categories_enabled).
+  categoriesEnabled: z.boolean().optional(),
 });
 
 // POST /api/lists/reorder
