@@ -1110,7 +1110,7 @@ Change the Categories gate:
                 role="switch"
                 aria-checked={categoriesEnabled}
                 onClick={toggleCategories}
-                className="w-full min-h-11 flex items-center justify-between gap-3 mb-3 py-3 px-4 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium text-start active:scale-[0.98]"
+                className="w-full min-h-11 flex items-center justify-between gap-3 py-3 px-4 rounded-2xl bg-tg-secondary-bg text-tg-text font-medium text-start active:scale-[0.98]"
               >
                 <span>{t('categories.enabled')}</span>
                 <span
@@ -1128,8 +1128,13 @@ Change the Categories gate:
                 onClick={() => { setShowSettings(false); setShowCategories(true); }}
 ```
 
-That is the existing Categories button with its `onClick` body and classes unchanged. Only the gate
-changes, so the wiring regex still matches.
+That is the existing Categories button with its `onClick` body unchanged. Two changes:
+- Its gate.
+- `mt-3` added to the front of its `className`. The switch row carries no margin, so the gap above
+  Close stays 16px whether or not the Categories button shows. A `<button>` is inline-block, so its
+  margins don't collapse.
+
+The wiring regex still matches.
 
 Messages: add to the `categories` block of each file, after `"error"` (mind the comma):
 - en: `"enabled": "Sort into categories"`, `"confirmOff": "Turn off sorting? The list's categories and their order will be deleted."`
