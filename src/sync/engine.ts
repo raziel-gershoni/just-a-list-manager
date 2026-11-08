@@ -97,6 +97,7 @@ const FIELDS: Record<string, string[]> = {
   // A tick or an untick also ends a "Not needed this week" pause.
   toggle: ["completed", "completed_at", "paused_until"],
   edit: ["text"],
+  "set-quantity": ["quantity"],
   skip: ["skipped_at"],
   // "On the way" also clears a skip.
   order: ["ordered_at", "skipped_at"],

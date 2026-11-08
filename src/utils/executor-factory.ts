@@ -71,6 +71,20 @@ export const createExecutorFactory = (): ExecutorFactory => {
           });
           if (!res.ok) throw new Error(`Edit failed: ${res.status}`);
         };
+      case "set-quantity":
+        return async () => {
+          const jwt = getJwt();
+          const res = await fetch(`/api/lists/${payload.listId}/items`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ itemId: payload.itemId, quantity: payload.quantity ?? null }),
+            keepalive: true,
+          });
+          if (!res.ok) throw new Error(`Quantity failed: ${res.status}`);
+        };
       case "reorder":
         return async () => {
           const jwt = getJwt();

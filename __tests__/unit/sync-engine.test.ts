@@ -662,6 +662,14 @@ describe("changes on a just-added item wait for its create (H5)", () => {
 });
 
 describe("pendingFields", () => {
+  it("covers the quantity a set-quantity changes", async () => {
+    const w = world();
+    w.jwt.current = null;
+    w.add("set-quantity", { itemId: "q1", quantity: "2" });
+
+    expect(w.engine().pendingFields("q1")).toEqual(new Set(["quantity"]));
+  });
+
   it("covers every field an order, a restore-recurring and a Restore all change", async () => {
     const w = world();
     w.jwt.current = null;

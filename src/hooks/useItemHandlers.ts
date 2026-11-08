@@ -123,6 +123,7 @@ export function useItemHandlers({
       const newItem: ItemData = {
         id: tempId,
         text,
+        quantity: null,
         completed: false,
         completed_at: null,
         deleted_at: null,
@@ -300,6 +301,24 @@ export function useItemHandlers({
         id: mutId,
         type: "edit",
         payload: { listId, itemId, text: newText },
+      });
+    },
+    [listId, addMutation, userId, setItems]
+  );
+
+  // The quantity a grocery item's sheet saves: normalized like the server stores it, so the
+  // realtime echo matches what the screen shows. Blank clears it (null, never '').
+  const handleSetQuantity = useCallback(
+    (itemId: string, typed: string | null) => {
+      const canonical = typed === null ? "" : normalizeForStorage(typed);
+      const quantity = canonical.length > 0 ? canonical : null;
+      setItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, quantity, edited_by: userId, editor_name: null } : i))
+      );
+      addMutation({
+        id: genMutId(),
+        type: "set-quantity",
+        payload: { listId, itemId, quantity },
       });
     },
     [listId, addMutation, userId, setItems]
@@ -719,5 +738,5 @@ export function useItemHandlers({
     [sendSignal]
   );
 
-  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSkip, handleRestoreSkipped, handleOrder, handlePause, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady };
+  return { handleAddItem, handleToggle, handleDelete, handleEditItem, handleSetQuantity, handleSkip, handleRestoreSkipped, handleOrder, handlePause, handleSetRecurring, handleRestoreRecurring, handleRemoveDuplicates, handleClearCompleted, handleUnmarkAllDone, handleRemind, handleReady };
 }

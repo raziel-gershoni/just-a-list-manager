@@ -1,6 +1,8 @@
 export interface ItemData {
   id: string;
   text: string;
+  /** Grocery lists: the amount typed in the item sheet ("2 kg"). Null or absent when none. */
+  quantity?: string | null;
   completed: boolean;
   completed_at: string | null;
   deleted_at: string | null;

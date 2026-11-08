@@ -11,6 +11,7 @@ const REPLAYABLE_TYPES = [
   "toggle",
   "delete",
   "edit",
+  "set-quantity",
   "reorder",
   "skip",
   "order",
@@ -319,5 +320,34 @@ describe("createExecutorFactory - set-category", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400 }));
 
     await expect(factory(mutation, () => "jwt")!()).rejects.toThrow(/: 400$/);
+  });
+});
+
+describe("createExecutorFactory - set-quantity", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([["2"], [null]])("PATCHes the item with quantity %j", async (quantity) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    const factory = createExecutorFactory();
+
+    await factory({ id: "m", type: "set-quantity", payload: { listId: "l1", itemId: "i1", quantity }, timestamp: 0 }, () => "jwt")!();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/lists/l1/items");
+    expect(init.method).toBe("PATCH");
+    expect(init.keepalive).toBe(true);
+    expect(init.body).toBe(JSON.stringify({ itemId: "i1", quantity }));
+  });
+
+  it("throws with the HTTP status when the server rejects it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+    const factory = createExecutorFactory();
+
+    await expect(
+      factory({ id: "m", type: "set-quantity", payload: { listId: "l1", itemId: "i1", quantity: "2" }, timestamp: 0 }, () => "jwt")!()
+    ).rejects.toThrow(/^Quantity failed: 400$/);
   });
 });

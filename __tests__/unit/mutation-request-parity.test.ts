@@ -20,6 +20,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   toggle: { itemId: A, completed: true, at: AT },
   delete: { itemId: A },
   edit: { itemId: A, text: "oat milk" },
+  "set-quantity": { itemId: A, quantity: "2" },
   reorder: { orderedIds: [A, B] },
   skip: { itemId: A, skipped: true, at: AT },
   order: { itemId: A, ordered: true, at: AT },
