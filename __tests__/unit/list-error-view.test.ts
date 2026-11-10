@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 
@@ -117,8 +118,8 @@ const buttons = () => {
   return out;
 };
 
-let replace: ReturnType<typeof vi.fn>;
-let fetchItems: ReturnType<typeof vi.fn>;
+let replace: AnyMock;
+let fetchItems: AnyMock;
 
 beforeEach(() => {
   R.slots = [];

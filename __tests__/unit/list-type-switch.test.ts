@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 
@@ -132,9 +133,9 @@ const settle = async () => {
 };
 
 let patch: { resolve: (r: unknown) => void; reject: (e: unknown) => void };
-let fetchMock: ReturnType<typeof vi.fn>;
-let setListType: ReturnType<typeof vi.fn>;
-let loadCategories: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
+let setListType: AnyMock;
+let loadCategories: AnyMock;
 
 beforeEach(() => {
   R.slots = [];

@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 
@@ -160,7 +161,7 @@ let held: Map<string, (status: number) => void>;
 let bodies: Map<string, unknown>; // a reply body that replaces the default for one request
 let calls: string[];
 let sentBodies: { key: string; body: unknown }[];
-let alertMock: ReturnType<typeof vi.fn>;
+let alertMock: AnyMock;
 let errorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {

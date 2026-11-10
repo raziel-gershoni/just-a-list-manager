@@ -1,4 +1,5 @@
 /* eslint-disable react-hooks/rules-of-hooks -- react is stubbed below; the hook runs as a plain function */
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Runs the real useMutationQueue over the real sync engine and executor factory, with a
@@ -39,7 +40,7 @@ const ITEM = "00000000-0000-4000-8000-000000000001";
 const storage = new Map<string, string>();
 const jwt = { current: null as string | null };
 const getJwt = () => jwt.current;
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
 
 const saved = () => JSON.parse(storage.get("mutation_queue:L") ?? "[]") as { id: string }[];
 const settle = async () => {

@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // useLocaleSync only uses useState and useCallback; React's own throw outside a render.
@@ -14,7 +15,7 @@ import { useLocaleSync } from "@/src/hooks/useLocaleSync";
 const reply = (status: number) => ({ ok: status >= 200 && status < 300, status, json: async () => ({}) });
 
 let html: { dir?: string; lang?: string };
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
 let errorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {

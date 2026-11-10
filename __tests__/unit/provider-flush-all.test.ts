@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Calls the real TelegramProvider as a plain function with slot-based stand-ins for React's
@@ -30,7 +31,7 @@ const H = vi.hoisted(() => ({
   jwt: null as string | null,
   jwtRef: { current: null as string | null },
   requestTokenRefresh: () => {},
-  flushAllQueues: null as unknown as ReturnType<typeof vi.fn>,
+  flushAllQueues: null as unknown as AnyMock,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 vi.mock("next-intl", () => ({ NextIntlClientProvider: () => null }));

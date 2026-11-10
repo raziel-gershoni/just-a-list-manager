@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 
@@ -51,8 +52,8 @@ type FakeClient = {
   token: string;
   heartbeat: (status: string) => void;
   connected: boolean;
-  realtime: { isConnected: () => boolean; setAuth: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
-  removeAllChannels: ReturnType<typeof vi.fn>;
+  realtime: { isConnected: () => boolean; setAuth: AnyMock; disconnect: AnyMock };
+  removeAllChannels: AnyMock;
 };
 // Stable across renders, like the real hooks' return values.
 const H = vi.hoisted(() => ({
@@ -110,7 +111,7 @@ let tokenRequests: Record<string, string>[];
 let listRequests: string[];
 let userRequests: { method: string; headers: Record<string, string> }[];
 let userReply: { status: number; body: unknown };
-let push: ReturnType<typeof vi.fn>;
+let push: AnyMock;
 let local: Map<string, string>;
 let session: Map<string, string>;
 let win: EventTarget & { Telegram?: unknown; location: { pathname: string }; matchMedia: () => { matches: boolean } };

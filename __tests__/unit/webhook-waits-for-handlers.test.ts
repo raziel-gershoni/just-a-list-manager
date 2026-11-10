@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -6,7 +7,7 @@ import { NextRequest } from "next/server";
 // handlers that processUpdate started.
 const h = vi.hoisted(() => ({
   afterTasks: [] as (() => Promise<void>)[],
-  processUpdate: null as unknown as ReturnType<typeof vi.fn>,
+  processUpdate: null as unknown as AnyMock,
   handlersDone: null as Promise<void> | null,
 }));
 

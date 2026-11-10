@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 
@@ -88,7 +89,7 @@ const signIn = (s: Partial<typeof S.session>) => {
   if ("jwt" in s) S.session.jwtRef.current = s.jwt ?? null;
 };
 
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
 let answer: { status: number; body: unknown };
 const joinHeaders = () => fetchMock.mock.calls.map(([, init]) => (init as { headers: Record<string, string> }).headers);
 

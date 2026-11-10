@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { MutationQueue } from "@/src/utils/mutation-queue";
 
 const storage = new Map<string, string>();
@@ -20,6 +20,9 @@ beforeEach(() => {
     writable: true,
   });
 });
+// Vitest 4+: vi.spyOn on an already-spied console.error returns the same spy, so a spy a
+// test leaves behind carries its calls into the next test's count.
+afterEach(() => vi.restoreAllMocks());
 
 describe("MutationQueue", () => {
   it("getQueue returns empty array when no items", () => {

@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 
@@ -134,7 +135,7 @@ const has = (tree: El, type: unknown) => find(tree, (el) => el.type === type) !=
 const hasText = (tree: El, text: string) => find(tree, (el) => el.props.children === text) !== undefined;
 const skeleton = (tree: El) => find(tree, (el) => String(el.props.className).includes("skeleton-shimmer")) !== undefined;
 
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
 
 beforeEach(() => {
   R.slots = [];

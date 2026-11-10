@@ -1,4 +1,5 @@
 /* eslint-disable react-hooks/rules-of-hooks -- react is stubbed below; the hook runs as a plain function */
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Runs the real useListData against a faked network with a minimal slot-based React
@@ -334,7 +335,7 @@ describe("useListData reads carry the categories switch", () => {
     };
     return { f, answer };
   }
-  const categoryReads = (f: ReturnType<typeof vi.fn>) => f.mock.calls.filter(([url]) => url === "/api/lists/L/categories").length;
+  const categoryReads = (f: AnyMock) => f.mock.calls.filter(([url]) => url === "/api/lists/L/categories").length;
 
   it("a refresh that reads the switch off turns it off and clears the categories (the phone was asleep)", async () => {
     const server = { list: {}, items: { items: [row("a", { category_id: "dairy" })], categories_enabled: true } as ItemsAnswer, categories: [dairy] };

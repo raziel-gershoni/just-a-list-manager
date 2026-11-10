@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-supabase";
 
@@ -8,9 +9,9 @@ import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-su
 const h = vi.hoisted(() => ({
   sent: [] as { chatId: number; text: string }[],
   db: null as null | { client: unknown; calls: unknown[] },
-  process: null as null | ReturnType<typeof import("vitest").vi.fn>,
-  fuzzy: null as null | ReturnType<typeof import("vitest").vi.fn>,
-  recycle: null as null | ReturnType<typeof import("vitest").vi.fn>,
+  process: null as null | AnyMock,
+  fuzzy: null as null | AnyMock,
+  recycle: null as null | AnyMock,
 }));
 
 const FILE_URL = "https://api.telegram.org/file/bot123456:BOT_TOKEN_SECRET/voice/file_1.oga";

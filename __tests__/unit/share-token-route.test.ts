@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-supabase";
@@ -23,7 +24,7 @@ type World = {
 
 const h = vi.hoisted(() => ({
   fake: null as unknown as { client: unknown; calls: { table: string; op: string; values?: unknown; cols?: string; filters: string[] }[] },
-  sendApprovalRequest: null as unknown as ReturnType<typeof vi.fn>,
+  sendApprovalRequest: null as unknown as AnyMock,
 }));
 
 // Only "init-data" is valid; any other value stands for initData the server refuses (too old).

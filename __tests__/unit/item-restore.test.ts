@@ -1,7 +1,8 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { restoreItemsOnServer } from "@/src/utils/item-restore";
 
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
 let errorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {

@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { format } from "util";
 import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-supabase";
@@ -11,9 +12,9 @@ import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-su
 const h = vi.hoisted(() => ({
   sent: [] as { chatId: number; text: string }[],
   db: null as null | { client: unknown; calls: unknown[] },
-  process: null as null | ReturnType<typeof import("vitest").vi.fn>,
-  fuzzy: null as null | ReturnType<typeof import("vitest").vi.fn>,
-  recycle: null as null | ReturnType<typeof import("vitest").vi.fn>,
+  process: null as null | AnyMock,
+  fuzzy: null as null | AnyMock,
+  recycle: null as null | AnyMock,
 }));
 
 const FILE_URL = "https://api.telegram.org/file/bot123456:BOT_TOKEN_SECRET/voice/file_1.oga";
@@ -100,7 +101,7 @@ const VOICE_ERROR = "Sorry, I couldn't understand that. Please try again or use 
 
 let errorSpy: ReturnType<typeof vi.spyOn>;
 let warnSpy: ReturnType<typeof vi.spyOn>;
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
 
 beforeEach(() => {
   h.sent = [];
@@ -141,7 +142,7 @@ describe("voice: a failed item is never receipted, the rest still are", () => {
       expect.objectContaining({ message: expect.stringContaining("Item insert failed: XX000 db unavailable") })
     );
     // Item text never reaches the logs.
-    expect(errorSpy.mock.calls.map((a) => format(...a)).join("\n")).not.toContain("milk");
+    expect(errorSpy.mock.calls.map((a: unknown[]) => format(...a)).join("\n")).not.toContain("milk");
   });
 
   it("max position read fails: nothing is inserted for that item and it is not receipted", async () => {

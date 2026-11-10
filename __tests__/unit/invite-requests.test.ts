@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { requestToJoin, cancelJoinRequest, inviteAuthHeaders } from "@/src/utils/invite-requests";
 
@@ -9,7 +10,7 @@ const json = (status: number, body: unknown) =>
 
 const INIT = { "x-telegram-init-data": "init-data" };
 
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);

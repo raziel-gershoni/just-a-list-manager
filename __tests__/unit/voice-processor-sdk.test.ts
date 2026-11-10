@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // The real @google/genai client runs here; only the network (global fetch) is faked.
@@ -36,7 +37,7 @@ function gemini503() {
   );
 }
 
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
 
 beforeEach(() => {
   fetchMock = vi.fn();

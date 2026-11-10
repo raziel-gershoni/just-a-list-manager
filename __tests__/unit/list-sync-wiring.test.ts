@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 import type { ItemData } from "@/src/types";
@@ -38,9 +39,9 @@ const S = vi.hoisted(() => ({
   jwt: null as string | null,
   items: [] as ItemData[],
   requestTokenRefresh: () => {},
-  flushQueue: null as unknown as ReturnType<typeof vi.fn>,
-  fetchItems: null as unknown as ReturnType<typeof vi.fn>,
-  refreshItems: null as unknown as ReturnType<typeof vi.fn>,
+  flushQueue: null as unknown as AnyMock,
+  fetchItems: null as unknown as AnyMock,
+  refreshItems: null as unknown as AnyMock,
   queueArgs: [] as unknown[],
 }));
 

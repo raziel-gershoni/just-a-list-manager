@@ -1,3 +1,4 @@
+import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 
@@ -143,9 +144,9 @@ const settle = async () => {
 };
 
 let patch: { resolve: (r: unknown) => void; reject: (e: unknown) => void };
-let fetchMock: ReturnType<typeof vi.fn>;
-let loadCategories: ReturnType<typeof vi.fn>;
-let refreshItems: ReturnType<typeof vi.fn>;
+let fetchMock: AnyMock;
+let loadCategories: AnyMock;
+let refreshItems: AnyMock;
 
 beforeEach(() => {
   R.slots = [];
@@ -174,7 +175,7 @@ afterEach(() => {
 });
 
 describe("the categories switch in list settings", () => {
-  const applied = () => S.applyCategoriesSwitch as ReturnType<typeof vi.fn>;
+  const applied = () => S.applyCategoriesSwitch as AnyMock;
 
   it("shows on a grocery list, checked when categories are on", () => {
     openSettings();
