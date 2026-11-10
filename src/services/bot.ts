@@ -122,7 +122,7 @@ function registerBotHandlers(botInstance: TelegramBot) {
             inline_keyboard: [
               [
                 {
-                  text: "Open App",
+                  text: getMsg(language, "bot.openAppButton"),
                   web_app: { url: `${getAppUrl()}/invite/${token}` },
                 },
               ],
@@ -139,7 +139,7 @@ function registerBotHandlers(botInstance: TelegramBot) {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Open App", web_app: { url: getAppUrl() } }],
+            [{ text: getMsg(language, "bot.openAppButton"), web_app: { url: getAppUrl() } }],
           ],
         },
       }
@@ -151,7 +151,7 @@ function registerBotHandlers(botInstance: TelegramBot) {
         chat_id: chatId,
         menu_button: {
           type: "web_app",
-          text: "Open App",
+          text: getMsg(language, "bot.openAppButton"),
           web_app: { url: getAppUrl() },
         },
       });
@@ -171,7 +171,7 @@ function registerBotHandlers(botInstance: TelegramBot) {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Open App", web_app: { url: getAppUrl() } }],
+            [{ text: getMsg(lang, "bot.openAppButton"), web_app: { url: getAppUrl() } }],
           ],
         },
       }

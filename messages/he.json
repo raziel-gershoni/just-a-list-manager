@@ -204,6 +204,7 @@
     "listReminder": "{senderName} מזכיר לך לעדכן את \"{listName}\"",
     "listReady": "»{listName}« מוכנה! ✅ תורך — {senderName}.",
     "openList": "פתח רשימה",
+    "openAppButton": "פתח את האפליקציה",
     "remindersRemoved": "התזכורות הוסרו מהאפליקציה."
   },
   "categories": {

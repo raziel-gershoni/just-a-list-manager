@@ -204,6 +204,7 @@
     "listReminder": "{senderName} is reminding you to update \"{listName}\"",
     "listReady": "\"{listName}\" is ready! ✅ Over to you — {senderName}.",
     "openList": "Open List",
+    "openAppButton": "Open App",
     "remindersRemoved": "Reminders have been removed from the app."
   },
   "categories": {

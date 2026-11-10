@@ -103,7 +103,7 @@ export async function handleVoiceMessage(
               inline_keyboard: [
                 [
                   {
-                    text: "Open App",
+                    text: getMsg(lang, "bot.openAppButton"),
                     web_app: { url: serverEnv().NEXT_PUBLIC_APP_URL },
                   },
                 ],
@@ -178,7 +178,7 @@ export async function handleVoiceMessage(
               inline_keyboard: [
                 [
                   {
-                    text: "Open App",
+                    text: getMsg(lang, "bot.openAppButton"),
                     web_app: { url: serverEnv().NEXT_PUBLIC_APP_URL },
                   },
                 ],

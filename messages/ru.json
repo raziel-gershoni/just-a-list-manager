@@ -204,6 +204,7 @@
     "listReminder": "{senderName} напоминает вам обновить \"{listName}\"",
     "listReady": "«{listName}» готов! ✅ Ваша очередь — {senderName}.",
     "openList": "Открыть список",
+    "openAppButton": "Открыть приложение",
     "remindersRemoved": "Напоминаний в приложении больше нет."
   },
   "categories": {
