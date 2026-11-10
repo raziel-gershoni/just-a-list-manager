@@ -64,6 +64,7 @@ export default function HomePage() {
   const changesRef = useRef({ inFlight: 0, started: 0, setAside: false });
   const fetchListsRef = useRef<(opts?: { silent?: boolean }) => Promise<boolean>>(async () => true);
   const reconnectRef = useRef(reconnect);
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref, read only by callbacks after commit
   reconnectRef.current = reconnect;
   // The caller chains on the promise returned, which settles as the request did once the
   // change counts as landed, so a reload the caller starts on failure isn't set aside.
@@ -86,14 +87,6 @@ export default function HomePage() {
   }, []);
   // Read by async callbacks that must not act after a tab switch.
   const viewRef = useRef<"active" | "archived">(view);
-  useEffect(() => {
-    viewRef.current = view;
-    // A pending undo belongs to the view it was raised in; drop it on switch.
-    setToast((prev) => {
-      if (prev) clearTimeout(prev.timeout);
-      return null;
-    });
-  }, [view]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -118,6 +111,15 @@ export default function HomePage() {
     undo?: () => void;
     timeout: NodeJS.Timeout;
   } | null>(null);
+  useEffect(() => {
+    viewRef.current = view;
+    // A pending undo belongs to the view it was raised in; drop it on switch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- dropping a pending undo when the view switches
+    setToast((prev) => {
+      if (prev) clearTimeout(prev.timeout);
+      return null;
+    });
+  }, [view]);
 
   const [showLanguage, setShowLanguage] = useState(false);
   const [homeScreenDismissed, setHomeScreenDismissed] = useState<boolean | null>(null);
@@ -126,6 +128,7 @@ export default function HomePage() {
   // Read localStorage in effect to avoid SSR hydration mismatch
   useEffect(() => {
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reading localStorage after mount avoids a hydration mismatch
       setHomeScreenDismissed(localStorage.getItem("homescreen_banner_dismissed") === "true");
     } catch (err) {
       console.warn("[Home] Could not read the home-screen banner flag:", err);
@@ -232,10 +235,12 @@ export default function HomePage() {
       setLoading(false);
     }
   }, [jwtRef, router, view]);
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref, read only by callbacks after commit
   fetchListsRef.current = fetchLists;
 
   // isReady turns true once the session settled, with or without a JWT.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads the lists once the session settled
     if (isReady) fetchLists();
   }, [isReady, fetchLists]);
 

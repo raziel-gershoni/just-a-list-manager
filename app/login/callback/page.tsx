@@ -58,6 +58,7 @@ function CallbackContent() {
         localStorage.setItem("web_auth_token", token);
         sessionStorage.removeItem("oauth_state");
         sessionStorage.removeItem("oauth_code_verifier");
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- full reload so the app boots with the new token
         window.location.href = "/";
       } catch (err) {
         console.error("[LoginCallback] Telegram login exchange failed:", err);

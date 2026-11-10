@@ -238,6 +238,7 @@ export function useReconnectOrchestrator(params: {
   }, [ensureToken, endSession, syncRealtime, scheduleRetry, setOrchestratorState, runPendingTokenRefresh, onFlushNeededRef, onResubscribeNeededRef, onRefreshNeededRef, flushAll]);
 
   // Keep refs in sync for stable callbacks
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref, read only by callbacks after commit
   runReconnectRef.current = runReconnect;
 
   // The bootstrap's sign-in. It always asks the server, so a stored token is checked rather
@@ -287,6 +288,7 @@ export function useReconnectOrchestrator(params: {
   }, [runReconnect]);
 
   // Keep reconnect ref in sync
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref, read only by callbacks after commit
   reconnectRef.current = reconnect;
 
   // Throttled reconnect for browser event handlers (online, visibilitychange).

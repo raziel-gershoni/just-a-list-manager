@@ -68,7 +68,6 @@ export default function InvitePage() {
   // Telegram "Reload page" more than 5 minutes in).
   useEffect(() => {
     if (!isReady || askedRef.current) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async invite flow sets state after await
     void acceptInvite();
   }, [isReady, jwt, acceptInvite]);
 

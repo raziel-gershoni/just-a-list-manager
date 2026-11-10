@@ -219,6 +219,7 @@ export default function TelegramProvider({
   }, [jwt, flushAll]);
 
   // Keep heartbeat ref in sync with orchestrator's runReconnectRef
+  // eslint-disable-next-line react-hooks/refs -- copies one ref into another during render so the heartbeat never holds a stale reconnect; only callbacks read it
   runReconnectRef_local.current = runReconnectRef.current;
   // Also keep them pointing to the same function going forward
   useEffect(() => {
@@ -287,6 +288,7 @@ export default function TelegramProvider({
     const rawInitData = tg.initData;
     const userData = tg.initDataUnsafe?.user;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time Telegram bootstrap reads initData after mount
     if (rawInitData) setInitData(rawInitData);
     if (userData) {
       setUser(userData);
