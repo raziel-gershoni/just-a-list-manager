@@ -66,6 +66,9 @@ describe("GeminiVoiceProcessor over the real SDK", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("generativelanguage.googleapis.com");
     expect(String(url)).toContain("models/gemini-3.8-flash:generateContent");
+    // The SDK's default API version decides this; a change of default must fail a test, not surprise prod.
+    expect(String(url)).toContain("/v1/models/");
+    expect(String(url)).not.toContain("/v1beta/");
     const body = JSON.parse(init.body);
     const gc = body.generationConfig;
     expect(gc.responseMimeType).toBe("application/json");

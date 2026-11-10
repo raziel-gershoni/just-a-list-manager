@@ -42,7 +42,7 @@ export interface ItemCategorizer {
 }
 
 // JSON Schema via responseJsonSchema, as in voice: responseSchema is deprecated and
-// @google/genai 2.27 drops responseFormat on the Gemini API.
+// @google/genai 3.1 still drops responseFormat on the Gemini API.
 const nameField = { type: "string" };
 function categorizationSchema(allowNew: boolean) {
   const assignments = {

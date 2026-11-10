@@ -24,6 +24,9 @@ describe("GeminiCategorizer over the real SDK", () => {
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
     expect(String(url)).toContain("models/gemini-3.8-flash:generateContent");
+    // The SDK's default API version decides this; a change of default must fail a test, not surprise prod.
+    expect(String(url)).toContain("/v1/models/");
+    expect(String(url)).not.toContain("/v1beta/");
     const gc = JSON.parse(init.body).generationConfig;
     expect(gc.thinkingConfig).toEqual({ thinkingLevel: "LOW" });
     expect(gc.responseJsonSchema.properties.assignments.type).toBe("array");

@@ -16,7 +16,7 @@
   "dependencies": {
     "@dnd-kit/dom": "0.2.4",
     "@dnd-kit/react": "^0.2.4",
-    "@google/genai": "^2.27.0",
+    "@google/genai": "^3.1.0",
     "@supabase/supabase-js": "^2.95.3",
     "@upstash/ratelimit": "^2.2.0",
     "@upstash/redis": "^1.41.0",

@@ -27,7 +27,7 @@ const VOICE_TIMEOUT_MS = 25_000;
 const VOICE_ATTEMPTS = 2;
 
 // JSON Schema via responseJsonSchema: the API reference marks responseSchema deprecated,
-// and @google/genai 2.27 drops its replacement, responseFormat, on the Gemini API.
+// and @google/genai 3.1 still drops its replacement, responseFormat, on the Gemini API.
 const voiceResultSchema = {
   type: "object",
   properties: {
