@@ -4,10 +4,9 @@
  * Uses polling: false — webhook route feeds updates via processUpdate().
  */
 
-import TelegramBot from "node-telegram-bot-api";
+import TelegramBot, { type CallbackQuery, type Message } from "node-telegram-bot-api";
 import { createServerClient } from "@/src/lib/supabase";
 import { serverEnv } from "@/src/lib/env";
-import { redactTelegramErrors } from "@/src/lib/telegram-errors";
 import enMessages from "@/messages/en.json";
 import heMessages from "@/messages/he.json";
 import ruMessages from "@/messages/ru.json";
@@ -31,7 +30,6 @@ export function getMsg(lang: string | undefined, path: string): string {
 let _bot: TelegramBot | null = null;
 function getBot(): TelegramBot {
   if (!_bot) {
-    redactTelegramErrors(TelegramBot);
     _bot = new TelegramBot(serverEnv().TELEGRAM_BOT_TOKEN, {
       polling: false,
     });
@@ -52,7 +50,7 @@ function getAppUrl(): string {
   return serverEnv().NEXT_PUBLIC_APP_URL;
 }
 
-type CommandHandler = (msg: TelegramBot.Message, match: RegExpExecArray | null) => Promise<void>;
+type CommandHandler = (msg: Message, match: RegExpExecArray | null) => Promise<void>;
 
 // Command handlers still running. processUpdate calls onText handlers synchronously, so a
 // handler's promise is in this set by the time processUpdate returns.
@@ -62,7 +60,7 @@ const inFlight = new Set<Promise<void>>();
 // unhandled rejection. Log it here instead, with the chat it came from, and track the
 // promise so the webhook can wait for it (waitForBotHandlers).
 function logFailures(command: string, handler: CommandHandler) {
-  return (msg: TelegramBot.Message, match: RegExpExecArray | null) => {
+  return (msg: Message, match: RegExpExecArray | null) => {
     const run = handler(msg, match).catch((err) => {
       console.error(`[Bot] ${command} handler failed, chatId:`, msg.chat.id, err);
     });
@@ -287,7 +285,7 @@ export async function sendListReady(
 }
 
 // Handle approval/decline callbacks (called directly from webhook route)
-export async function handleCallbackQuery(query: TelegramBot.CallbackQuery): Promise<void> {
+export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
   const data = query.data;
   if (!data) return;
 

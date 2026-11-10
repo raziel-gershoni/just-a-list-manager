@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { serverEnv } from "@/src/lib/env";
 import { describeBodyParseError } from "@/src/lib/api-validation";
-import type TelegramBot from "node-telegram-bot-api";
+import type { CallbackQuery, Update } from "node-telegram-bot-api";
 import type { TgVoice, TgFrom } from "@/src/services/voice-handler";
 
 /** Telegram Update shape matching the webhook payload fields we route on */
 interface TelegramUpdate {
   update_id: number;
-  callback_query?: TelegramBot.CallbackQuery;
+  callback_query?: CallbackQuery;
   message?: {
     chat: { id: number };
     from: TgFrom;
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       // Feed all other updates to bot for command handling. processUpdate starts the
       // /start and /help handlers without waiting for them; wait here so the function
       // is not frozen before their database write and reply finish.
-      bot.processUpdate(body as TelegramBot.Update);
+      bot.processUpdate(body as Update);
       await waitForBotHandlers();
     } catch (error) {
       console.error("[Webhook] Error processing update:", error);

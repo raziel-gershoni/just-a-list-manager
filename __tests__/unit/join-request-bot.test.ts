@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type TelegramBot from "node-telegram-bot-api";
+import type { CallbackQuery } from "node-telegram-bot-api";
 import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-supabase";
 import en from "@/messages/en.json";
 import he from "@/messages/he.json";
@@ -73,7 +73,7 @@ function use(opts: { collab?: unknown; readError?: unknown; updateError?: unknow
   }) as typeof h.fake;
 }
 
-function tap(data: string): TelegramBot.CallbackQuery {
+function tap(data: string): CallbackQuery {
   return {
     id: "cb-1",
     from: { id: OWNER_TG, is_bot: false, first_name: "Owner", language_code: "ru" },

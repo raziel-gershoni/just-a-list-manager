@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type TelegramBot from "node-telegram-bot-api";
+import type { CallbackQuery } from "node-telegram-bot-api";
 import en from "@/messages/en.json";
 import he from "@/messages/he.json";
 import ru from "@/messages/ru.json";
@@ -107,7 +107,7 @@ const STRIPPED = {
   options: { chat_id: CHAT_ID, message_id: MESSAGE_ID },
 };
 
-function tap(data: string, withMessage = true): TelegramBot.CallbackQuery {
+function tap(data: string, withMessage = true): CallbackQuery {
   return {
     id: "cb-1",
     from: { id: TELEGRAM_USER_ID, is_bot: false, first_name: "Dana" },

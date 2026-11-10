@@ -1,55 +1,122 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { format, inspect } from "util";
+import { createServer, type AddressInfo } from "net";
 import TelegramBot from "node-telegram-bot-api";
 
-// A failed Telegram API call rejects with an error that keeps the raw HTTP response, and the
-// response's request line holds the bot token. Logging that error with console.error printed
-// the token. This runs the real library's error class and the real bot module.
-vi.mock("@/src/lib/env", () => ({
-  serverEnv: () => ({ TELEGRAM_BOT_TOKEN: "123456:BOT_TOKEN_SECRET", NEXT_PUBLIC_APP_URL: "https://app.test" }),
-}));
-vi.mock("@/src/lib/supabase", () => ({ createServerClient: () => ({}) }));
+// Every Bot API call goes to https://api.telegram.org/bot<token>/<method>, so the token is in
+// every request URL. The bot's catches log the errors the library rejects with, so those errors
+// must never carry the token. This drives the real library (only fetch is faked) through each way
+// a call fails and checks everything a log line could print.
+const TOKEN = "123456:BOT_TOKEN_SECRET";
+const SECRET = "BOT_TOKEN_SECRET";
 
-type ErrorClass = new (message: string, response?: unknown) => Error & { code?: string; response?: unknown };
-const errors = (TelegramBot as unknown as { errors: Record<string, ErrorClass> }).errors;
+type Fetch = typeof fetch;
 
-// The same shape the library attaches: an http.IncomingMessage whose req/request carry the URL.
-const response = {
-  statusCode: 403,
-  req: { _header: "POST /bot123456:BOT_TOKEN_SECRET/sendMessage HTTP/1.1\r\nHost: api.telegram.org" },
-  request: { href: "https://api.telegram.org/bot123456:BOT_TOKEN_SECRET/sendMessage" },
-};
-const blocked = () => new errors.TelegramError("403 Forbidden: bot was blocked by the user", response);
+function botWith(fetchImpl: Fetch, baseApiUrl?: string): TelegramBot {
+  return new TelegramBot(TOKEN, { polling: false, baseApiUrl, request: { fetch: fetchImpl } });
+}
 
-describe("Telegram API errors never print the bot token", () => {
-  it("the library's error carries the token in its response (the leak this guards)", () => {
-    expect(inspect(blocked(), { customInspect: false })).toContain("BOT_TOKEN_SECRET");
-  });
+/** Telegram's JSON envelope, as the Bot API answers a failed call. */
+function answer(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
 
-  it("once the bot is created, a logged Telegram error shows its code and description but not the token", async () => {
-    const { default: bot } = await import("@/src/services/bot");
-    void bot.getMe; // reading any property creates the bot
+/** Every way a caught error reaches the logs: console.error formats it with util.inspect. */
+function printed(err: Error): string[] {
+  return [
+    err.message,
+    err.stack ?? "",
+    inspect(err),
+    inspect(err, { depth: Infinity, showHidden: true }),
+    format("[Bot] send failed:", err),
+    format("%s", err),
+    format({ err }),
+    JSON.stringify(err),
+  ];
+}
 
-    const err = blocked();
-    const printed = format("[X] failed:", err);
-    expect(printed).not.toContain("BOT_TOKEN_SECRET");
-    expect(printed).toContain("ETELEGRAM: 403 Forbidden: bot was blocked by the user");
-    expect(printed).toContain("[X] failed:");
+function expectNoToken(err: unknown): Error {
+  expect(err).toBeInstanceOf(TelegramBot.errors.BaseError);
+  const e = err as Error;
+  for (const text of printed(e)) {
+    expect(text).not.toContain(SECRET);
+  }
+  return e;
+}
 
-    // Wrapped or nested errors print through the same hook.
-    expect(format(new Error("send failed", { cause: err }))).not.toContain("BOT_TOKEN_SECRET");
-    expect(format({ err })).not.toContain("BOT_TOKEN_SECRET");
+afterEach(() => {
+  vi.useRealTimers();
+});
 
-    // Only printing changes: the error object itself is untouched.
-    expect(err.response).toBe(response);
-    expect(err.code).toBe("ETELEGRAM");
+describe("Telegram API errors never carry the bot token", () => {
+  it("a 4xx answer (bot blocked) shows the code and description, not the token", async () => {
+    const urls: string[] = [];
+    const fake = vi.fn(async (url: string | URL | Request) => {
+      urls.push(String(url));
+      return answer(403, { ok: false, error_code: 403, description: "Forbidden: bot was blocked by the user" });
+    });
+
+    const err = expectNoToken(await botWith(fake as Fetch).sendMessage(42, "hi").catch((e: unknown) => e));
+
+    // The token really was in play: the request went to /bot<token>/sendMessage.
+    expect(urls).toEqual([`https://api.telegram.org/bot${TOKEN}/sendMessage`]);
+    expect(err).toBeInstanceOf(TelegramBot.errors.TelegramError);
     expect(err.message).toBe("ETELEGRAM: 403 Forbidden: bot was blocked by the user");
+    expect(inspect(err)).toContain("ETELEGRAM: 403 Forbidden: bot was blocked by the user");
   });
 
-  it("covers the library's other error types too", async () => {
-    const { default: bot } = await import("@/src/services/bot");
-    void bot.getMe; // reading any property creates the bot, which installs the redaction
-    expect(format(new errors.ParseError("Error parsing response: <html>", response))).not.toContain("BOT_TOKEN_SECRET");
-    expect(format(new errors.FatalError("Telegram Bot Token not provided!"))).toContain("EFATAL");
+  it("a 429 is retried after retry_after, and the final error has no token", async () => {
+    vi.useFakeTimers();
+    const fake = vi.fn(async () =>
+      answer(429, { ok: false, error_code: 429, description: "Too Many Requests: retry after 1", parameters: { retry_after: 1 } }),
+    );
+
+    const pending = botWith(fake as Fetch).sendMessage(42, "hi").catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const err = expectNoToken(await pending);
+
+    expect(fake).toHaveBeenCalledTimes(3); // the first try plus the library's 2 retries
+    expect(err.message).toBe("ETELEGRAM: 429 Too Many Requests: retry after 1");
+  });
+
+  it("an unparseable answer (a proxy's HTML 502) has no token", async () => {
+    const fake = vi.fn(async () => new Response("<html><body>502 Bad Gateway</body></html>", { status: 502 }));
+
+    const err = expectNoToken(await botWith(fake as Fetch).sendMessage(42, "hi").catch((e: unknown) => e));
+
+    expect(err).toBeInstanceOf(TelegramBot.errors.ParseError);
+    expect(err.message).toContain("EPARSE");
+  });
+
+  it("a network failure has no token and keeps its root cause", async () => {
+    const fake = vi.fn(async () => {
+      const cause = Object.assign(new Error("getaddrinfo ENOTFOUND api.telegram.org"), {
+        code: "ENOTFOUND",
+        hostname: "api.telegram.org",
+      });
+      throw new TypeError("fetch failed", { cause });
+    });
+
+    const err = expectNoToken(await botWith(fake as Fetch).sendMessage(42, "hi").catch((e: unknown) => e));
+
+    expect(err).toBeInstanceOf(TelegramBot.errors.FatalError);
+    expect(err.message).toBe("EFATAL: fetch failed");
+    expect(inspect(err, { depth: Infinity })).toContain("ENOTFOUND");
+  });
+
+  it("a real fetch that cannot connect has no token and keeps its root cause", async () => {
+    // Node's own fetch against a local port that was just closed: a real transport error, no
+    // outside call.
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
+
+    const err = expectNoToken(
+      await botWith(fetch, `http://127.0.0.1:${port}`).sendMessage(42, "hi").catch((e: unknown) => e),
+    );
+
+    expect(err).toBeInstanceOf(TelegramBot.errors.FatalError);
+    expect(inspect(err, { depth: Infinity })).toContain("ECONNREFUSED");
   });
 });
