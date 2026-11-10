@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { validateInitData } from "@/src/lib/telegram-auth";
 import { createServerClient } from "@/src/lib/supabase";
-import { getJwtSecret, signToken } from "@/src/lib/jwt";
+import { getJwtSecret, signToken, REFRESH_TOLERANCE_SECONDS } from "@/src/lib/jwt";
 import {
   authIpRateLimiter,
   authUserRateLimiter,
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     try {
       // Accept tokens within 10-minute grace period past expiry
       const { payload } = await jwtVerify(existingToken, getJwtSecret(), {
-        clockTolerance: 604800, // 7 days
+        clockTolerance: REFRESH_TOLERANCE_SECONDS,
       });
 
       const userId = payload.sub as string;

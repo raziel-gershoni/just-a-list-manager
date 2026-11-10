@@ -12,6 +12,9 @@ export function getJwtSecret(): Uint8Array {
 
 export const JWT_EXPIRY = "7d";
 
+// How long past expiry the token refresh route still accepts a token, in seconds (7 days).
+export const REFRESH_TOLERANCE_SECONDS = 604800;
+
 export async function signToken(
   userId: string,
   telegramId: number

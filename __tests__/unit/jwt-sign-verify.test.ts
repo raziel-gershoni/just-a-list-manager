@@ -5,10 +5,8 @@ vi.mock("@/src/lib/env", () => ({
   serverEnv: () => ({ SUPABASE_JWT_SECRET: "test-secret-for-jose" }),
 }));
 
-import { signToken, getJwtSecret } from "@/src/lib/jwt";
+import { signToken, getJwtSecret, REFRESH_TOLERANCE_SECONDS as REFRESH_TOLERANCE } from "@/src/lib/jwt";
 
-// The same tolerance the token refresh route passes to jwtVerify (app/api/auth/token/route.ts).
-const REFRESH_TOLERANCE = 604800;
 const DAY = 86400;
 const claims = { sub: "u1", aud: "authenticated", role: "authenticated", iss: "supabase", telegram_user_id: 123 };
 
@@ -34,7 +32,10 @@ describe("tokens signed and verified with the real jose", () => {
     await expect(jwtVerify(expiredYesterday, getJwtSecret())).rejects.toMatchObject({ code: "ERR_JWT_EXPIRED" });
     await expect(jwtVerify(expiredYesterday, getJwtSecret(), { clockTolerance: REFRESH_TOLERANCE })).resolves.toBeTruthy();
 
-    const expiredLongAgo = await signAt(now - 20 * DAY, now - 10 * DAY);
+    const expiredSixDaysAgo = await signAt(now - 13 * DAY, now - 6 * DAY);
+    await expect(jwtVerify(expiredSixDaysAgo, getJwtSecret(), { clockTolerance: REFRESH_TOLERANCE })).resolves.toBeTruthy();
+
+    const expiredLongAgo = await signAt(now - 20 * DAY, now - 8 * DAY);
     await expect(jwtVerify(expiredLongAgo, getJwtSecret(), { clockTolerance: REFRESH_TOLERANCE })).rejects.toMatchObject({
       code: "ERR_JWT_EXPIRED",
     });
@@ -50,6 +51,8 @@ describe("tokens signed and verified with the real jose", () => {
   it("refuses an unsigned alg:none token", async () => {
     const part = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
     const unsigned = `${part({ alg: "none" })}.${part({ ...claims, exp: Math.floor(Date.now() / 1000) + DAY })}.`;
-    await expect(jwtVerify(unsigned, getJwtSecret())).rejects.toBeTruthy();
+    await expect(jwtVerify(unsigned, getJwtSecret())).rejects.toMatchObject({
+      code: "ERR_JOSE_NOT_SUPPORTED",
+    });
   });
 });
