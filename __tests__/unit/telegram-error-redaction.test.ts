@@ -72,7 +72,9 @@ describe("Telegram API errors never carry the bot token", () => {
     );
 
     const pending = botWith(fake as Fetch).sendMessage(42, "hi").catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(10_000);
+    // Run every retry sleep, however long the library makes it, so a change to its delay
+    // formula cannot break this test.
+    await vi.runAllTimersAsync();
     const err = expectNoToken(await pending);
 
     expect(fake).toHaveBeenCalledTimes(3); // the first try plus the library's 2 retries
