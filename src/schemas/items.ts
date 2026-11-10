@@ -12,7 +12,8 @@ export const createItemIdempotentSchema = z.object({
 // POST /api/lists/[id]/items — non-idempotent paths
 export const createItemSchema = z.object({
   text: z.string().min(1).max(500).optional(),
-  items: z.array(z.object({ text: z.string().min(1).max(500) })).optional(),
+  // .max(500): zod 4.6's memory guard only covers an array that declares a size cap.
+  items: z.array(z.object({ text: z.string().min(1).max(500) })).max(500).optional(),
   recycleId: z.string().uuid().optional(),
 });
 
