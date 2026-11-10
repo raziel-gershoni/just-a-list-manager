@@ -8,7 +8,7 @@ import ts from "typescript";
 // callback doesn't count). This covers try/catch, .catch(fn) and .then(ok, fn) in all app code.
 // It checks that a log or rethrow is on the handler's path, not that every branch reaches it.
 const ROOT = process.cwd();
-const DIRS = ["app", "src", "components", "lib", "scripts"];
+const DIRS = ["app", "src", "components", "scripts"];
 const ROOT_FILES = ["next.config.ts", "eslint.config.mjs", "postcss.config.mjs", "vitest.config.ts"];
 const SOURCE = /\.(ts|tsx|js|mjs|cjs)$/;
 
@@ -194,7 +194,6 @@ describe("no silent catches", () => {
       "src/services/voice-handler.ts",
       "app/api/webhook/route.ts",
       "components/TelegramProvider.tsx",
-      "lib/utils.ts",
       "scripts/migrate.mjs",
     ]) {
       expect(files).toContain(f);

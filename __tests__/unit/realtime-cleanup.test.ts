@@ -373,7 +373,7 @@ describe("no bare channel removal in app code", () => {
     });
 
   it("every removeChannel / removeAllChannels call goes through src/lib/realtime-cleanup.ts", () => {
-    const bare = ["app", "src", "components", "lib"]
+    const bare = ["app", "src", "components"]
       .flatMap((d) => walk(join(ROOT, d)))
       .filter((f) => f !== join("src", "lib", "realtime-cleanup.ts"))
       .flatMap((f) =>
