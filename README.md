@@ -52,7 +52,7 @@ A real-time collaborative list app for two-person households, built to run both 
 - **Data:** Supabase Postgres with Row-Level Security, Realtime, and `pg_trgm`; `postgres` (postgres-js); custom SQL migration runner
 - **AI:** Gemini 3.8 Flash (`@google/genai`) with a strict response schema for audio → structured actions
 - **Infra:** Vercel; Upstash Redis + Ratelimit (rate limiting and distributed voice-processing locks); Supabase `pg_cron` for the daily soft-delete cleanup
-- **Testing:** Vitest, Testing Library
+- **Testing:** Vitest
 
 ## 🚀 Getting started
 
@@ -106,7 +106,7 @@ npm run start
 
 ## 🧪 Testing
 
-Unit tests run on Vitest (with Testing Library), covering the voice/duplicate-detection logic, the mutation queue and executor factory, `initData` validation, text normalization, and list helpers.
+Unit tests run on Vitest, covering the voice/duplicate-detection logic, the mutation queue and executor factory, `initData` validation, text normalization, and list helpers.
 
 ```bash
 # Watch mode
