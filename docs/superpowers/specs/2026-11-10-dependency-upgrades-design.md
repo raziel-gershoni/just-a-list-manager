@@ -1,8 +1,13 @@
 # Dependency upgrades
 
 **Date:** 2026-11-10
-**Status:** owner approved the recommendations (2026-11-10): "go with your recommendations, I'll test
-everything in the end".
+**Status:** shipped (2026-11-10). The owner approved the recommendations: "go with your
+recommendations, I'll test everything in the end". After the sweep, `npm audit --omit=dev` reports 0
+vulnerabilities. A full `npm audit` reports 14 (2 low, 12 moderate), all in dev tooling:
+- minimatch, through eslint, typescript-eslint and shadcn's ts-morph
+- deepmerge, through the shadcn CLI
+
+None of them runs in the app. They clear once those tools pick up the upstream patches.
 
 ## Why
 
