@@ -42,7 +42,7 @@ vi.mock("node-telegram-bot-api", () => ({
   },
 }));
 
-import { handleCallbackQuery, sendApprovalRequest } from "@/src/services/bot";
+import { handleCallbackQuery, sendApprovalRequest, sendListReady, sendListReminder } from "@/src/services/bot";
 
 const DB_DOWN = { message: "connection terminated unexpectedly", code: "08006" };
 const OWNER_TG = 777;
@@ -131,6 +131,28 @@ describe("handleCallbackQuery: Approve / Decline a join request", () => {
       },
     ]);
     expect(h.answers).toEqual([{ id: "cb-1", options: { text: he.bot.approvedToast } }]);
+  });
+
+  // A missing requester name or list name is worded in each reader's language: the requester
+  // reads Russian, the owner Hebrew.
+  it.each([
+    ["approve", ru.share.approvedMessage, he.bot.approved],
+    ["decline", ru.share.declinedMessage, he.bot.declined],
+  ])("%s: a missing requester name and list name fall back in each reader's language", async (action, toRequester, toOwner) => {
+    use({
+      collab: {
+        ...COLLAB,
+        users: { telegram_id: REQUESTER_TG, name: null, language: "ru" },
+        lists: { ...COLLAB.lists, name: null },
+      },
+    });
+
+    await handleCallbackQuery(tap(`${action}:c1`, { language_code: "en" }));
+
+    expect(h.sends.map((s) => s.text)).toEqual([toRequester.replace("{listName}", ru.bot.aListFallback)]);
+    expect(h.textEdits.map((e) => e.text)).toEqual([
+      toOwner.replace("{userName}", he.bot.someone).replace("{listName}", he.bot.aListFallback),
+    ]);
   });
 
   it("decline: the toast is in the owner's language", async () => {
@@ -226,5 +248,30 @@ describe("sendApprovalRequest", () => {
 
     await expect(sendApprovalRequest(OWNER_TG, "u2", "Dana", "L1", "Groceries", "c1", "he")).resolves.toBe(false);
     expect(console.error).toHaveBeenCalledWith("[Bot] Failed to send approval request:", h.sendError);
+  });
+});
+
+describe.each([
+  ["sendListReminder", sendListReminder, "listReminder"],
+  ["sendListReady", sendListReady, "listReady"],
+] as const)("%s", (_name, send, key) => {
+  it.each([
+    ["en", en],
+    ["he", he],
+    ["ru", ru],
+  ] as const)("a sender with no name is signed 'someone' in the recipient's language (%s)", async (lang, msgs) => {
+    await send(OWNER_TG, lang, null, "Groceries", "L1");
+
+    expect(h.sends.map((s) => s.text)).toEqual([
+      msgs.bot[key].replace("{senderName}", msgs.bot.someone).replace("{listName}", "Groceries"),
+    ]);
+  });
+
+  it("a sender's name is used as is", async () => {
+    await send(OWNER_TG, "he", "Dana", "Groceries", "L1");
+
+    expect(h.sends.map((s) => s.text)).toEqual([
+      he.bot[key].replace("{senderName}", "Dana").replace("{listName}", "Groceries"),
+    ]);
   });
 });

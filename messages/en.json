@@ -201,6 +201,8 @@
     "approvalRequest": "{userName} wants to join your list \"{listName}\"",
     "approved": "✅ {userName} has been added to \"{listName}\"",
     "declined": "❌ Request from {userName} for \"{listName}\" was declined",
+    "someone": "Someone",
+    "aListFallback": "a list",
     "listReminder": "{senderName} is reminding you to update \"{listName}\"",
     "listReady": "\"{listName}\" is ready! ✅ Over to you — {senderName}.",
     "openList": "Open List",

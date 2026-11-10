@@ -201,6 +201,8 @@
     "approvalRequest": "{userName} רוצה להצטרף לרשימה \"{listName}\"",
     "approved": "✅ {userName} נוסף לרשימה \"{listName}\"",
     "declined": "❌ הבקשה של {userName} לרשימה \"{listName}\" נדחתה",
+    "someone": "מישהו",
+    "aListFallback": "רשימה",
     "listReminder": "{senderName} מזכיר לך לעדכן את \"{listName}\"",
     "listReady": "»{listName}« מוכנה! ✅ תורך — {senderName}.",
     "openList": "פתח רשימה",

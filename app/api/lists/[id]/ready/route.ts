@@ -41,10 +41,11 @@ export async function POST(
     .eq("id", auth.userId)
     .maybeSingle();
   // A message signed by the wrong person can't be taken back: send nothing if the name
-  // can't be read. "Someone" is only for a sender with no row.
+  // can't be read. The "someone" fallback is only for a sender with no row.
   if (senderError) return dbError("Ready", "Sender read", senderError, { listId, userId: auth.userId });
 
-  const senderName = sender?.name || "Someone";
+  // No name: the bot signs it with "someone" in each recipient's language.
+  const senderName = sender?.name || null;
 
   // Owner + approved collaborators, excluding sender (see src/lib/list-notify.ts)
   const recipients = await resolveListRecipients(supabase, listId, auth.userId);

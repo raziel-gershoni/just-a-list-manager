@@ -201,6 +201,8 @@
     "approvalRequest": "{userName} хочет присоединиться к списку \"{listName}\"",
     "approved": "✅ {userName} добавлен в \"{listName}\"",
     "declined": "❌ Запрос от {userName} для \"{listName}\" отклонён",
+    "someone": "Кто-то",
+    "aListFallback": "список",
     "listReminder": "{senderName} напоминает вам обновить \"{listName}\"",
     "listReady": "«{listName}» готов! ✅ Ваша очередь — {senderName}.",
     "openList": "Открыть список",

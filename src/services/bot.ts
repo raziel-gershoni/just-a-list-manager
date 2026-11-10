@@ -223,7 +223,7 @@ export async function sendApprovalRequest(
 export async function sendListReminder(
   telegramId: number,
   language: string,
-  senderName: string,
+  senderName: string | null,
   listName: string,
   listId: string
 ) {
@@ -231,7 +231,7 @@ export async function sendListReminder(
     await bot.sendMessage(
       telegramId,
       getMsg(language, "bot.listReminder")
-        .replace("{senderName}", () => senderName)
+        .replace("{senderName}", () => senderName || getMsg(language, "bot.someone"))
         .replace("{listName}", () => listName),
       {
         reply_markup: {
@@ -255,7 +255,7 @@ export async function sendListReminder(
 export async function sendListReady(
   telegramId: number,
   language: string,
-  senderName: string,
+  senderName: string | null,
   listName: string,
   listId: string
 ) {
@@ -263,7 +263,7 @@ export async function sendListReady(
     await bot.sendMessage(
       telegramId,
       getMsg(language, "bot.listReady")
-        .replace("{senderName}", () => senderName)
+        .replace("{senderName}", () => senderName || getMsg(language, "bot.someone"))
         .replace("{listName}", () => listName),
       {
         reply_markup: {
@@ -336,8 +336,10 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
     }
 
     const requesterTgId = collabData.users?.telegram_id;
-    const requesterName = collabData.users?.name || "Someone";
-    const listName = collabData.lists?.name || "a list";
+    // A missing name falls back to a word in the reader's language: the requester and the
+    // owner can read different languages.
+    const requesterNameFor = (lang: string) => collabData.users?.name || getMsg(lang, "bot.someone");
+    const listNameFor = (lang: string) => collabData.lists?.name || getMsg(lang, "bot.aListFallback");
     const requesterLang = collabData.users?.language || "en";
     const ownerLang = collabData.lists?.users?.language || "en";
 
@@ -371,7 +373,7 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
         if (isApprove) {
           await bot.sendMessage(
             requesterTgId,
-            getMsg(requesterLang, "share.approvedMessage").replace("{listName}", () => listName),
+            getMsg(requesterLang, "share.approvedMessage").replace("{listName}", () => listNameFor(requesterLang)),
             {
               reply_markup: {
                 inline_keyboard: [
@@ -383,7 +385,7 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
         } else {
           await bot.sendMessage(
             requesterTgId,
-            getMsg(requesterLang, "share.declinedMessage").replace("{listName}", () => listName)
+            getMsg(requesterLang, "share.declinedMessage").replace("{listName}", () => listNameFor(requesterLang))
           );
         }
       } catch (e) {
@@ -400,8 +402,8 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
     try {
       await bot.editMessageText(
         isApprove
-          ? getMsg(ownerLang, "bot.approved").replace("{userName}", () => requesterName).replace("{listName}", () => listName)
-          : getMsg(ownerLang, "bot.declined").replace("{userName}", () => requesterName).replace("{listName}", () => listName),
+          ? getMsg(ownerLang, "bot.approved").replace("{userName}", () => requesterNameFor(ownerLang)).replace("{listName}", () => listNameFor(ownerLang))
+          : getMsg(ownerLang, "bot.declined").replace("{userName}", () => requesterNameFor(ownerLang)).replace("{listName}", () => listNameFor(ownerLang)),
         {
           chat_id: query.message!.chat.id,
           message_id: query.message!.message_id,

@@ -60,7 +60,7 @@ describe.each([
     expect(console.error).not.toHaveBeenCalled();
   });
 
-  it("answers a logged 500 and sends nothing signed 'Someone' when the sender read fails", async () => {
+  it("answers a logged 500 and sends nothing signed 'someone' when the sender read fails", async () => {
     use(() => list, () => ({ data: null, error: boom }));
     const res = await call(route, path);
     expect(res.status).toBe(500);
@@ -68,12 +68,12 @@ describe.each([
     expect(console.error).toHaveBeenCalledWith(`[${tag}] Sender read failed:`, { listId: "L", userId: "u1" }, boom);
   });
 
-  it("signs the message 'Someone' only when the sender has no row", async () => {
+  it("passes no sender name only when the sender has no row (the bot words it per recipient)", async () => {
     use(() => list, noRow);
     const res = await call(route, path);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ sent: 1 });
-    expect(send).toHaveBeenCalledWith(7, "he", "Someone", "Groceries", "L");
+    expect(send).toHaveBeenCalledWith(7, "he", null, "Groceries", "L");
   });
 
   it("signs the message with the sender's name", async () => {

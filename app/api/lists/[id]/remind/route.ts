@@ -37,7 +37,7 @@ export async function POST(
   }
 
   // Get sender info. A reminder signed by the wrong person can't be taken back: send
-  // nothing if the name can't be read. "Someone" is only for a sender with no row.
+  // nothing if the name can't be read. The "someone" fallback is only for a sender with no row.
   const { data: sender, error: senderError } = await supabase
     .from("users")
     .select("name, telegram_id")
@@ -45,7 +45,8 @@ export async function POST(
     .maybeSingle();
   if (senderError) return dbError("Remind", "Sender read", senderError, { listId, userId: auth.userId });
 
-  const senderName = sender?.name || "Someone";
+  // No name: the bot signs it with "someone" in each recipient's language.
+  const senderName = sender?.name || null;
 
   // Owner + approved collaborators, excluding sender (see src/lib/list-notify.ts)
   const recipients = await resolveListRecipients(supabase, listId, auth.userId);
