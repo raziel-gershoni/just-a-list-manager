@@ -205,6 +205,11 @@
     "listReady": "\"{listName}\" is ready! ✅ Over to you — {senderName}.",
     "openList": "Open List",
     "openAppButton": "Open App",
+    "inviteOpen": "Open the app to accept the invitation:",
+    "requestNotFound": "Request not found.",
+    "ownerOnlyDecision": "Only the list owner can approve or decline.",
+    "approvedToast": "Approved!",
+    "declinedToast": "Declined.",
     "remindersRemoved": "Reminders have been removed from the app."
   },
   "categories": {

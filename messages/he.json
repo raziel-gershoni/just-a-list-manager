@@ -205,6 +205,11 @@
     "listReady": "»{listName}« מוכנה! ✅ תורך — {senderName}.",
     "openList": "פתח רשימה",
     "openAppButton": "פתח את האפליקציה",
+    "inviteOpen": "פתח את האפליקציה כדי לקבל את ההזמנה:",
+    "requestNotFound": "הבקשה לא נמצאה.",
+    "ownerOnlyDecision": "רק בעל הרשימה יכול לאשר או לדחות.",
+    "approvedToast": "אושר!",
+    "declinedToast": "נדחה.",
     "remindersRemoved": "התזכורות הוסרו מהאפליקציה."
   },
   "categories": {

@@ -12,8 +12,8 @@ type Button = { text: string; web_app?: { url: string } };
 type Sent = { text: string; buttons: Button[] };
 
 const h = vi.hoisted(() => ({
-  handlers: [] as { regexp: RegExp; handler: (msg: unknown, match: RegExpExecArray | null) => unknown }[],
-  sent: [] as { text: string; buttons: { text: string; web_app?: { url: string } }[] }[],
+  handlers: [] as { regexp: RegExp; handler: Handler }[],
+  sent: [] as Sent[],
   menuButtons: [] as unknown[],
   db: null as null | { client: unknown; calls: unknown[] },
 }));
@@ -54,6 +54,7 @@ vi.mock("node-telegram-bot-api", () => ({
 
 import { handleVoiceMessage } from "@/src/services/voice-handler";
 
+const MESSAGES = { en, he, ru };
 const LABELS = { en: en.bot.openAppButton, he: he.bot.openAppButton, ru: ru.bot.openAppButton };
 const ok = (data: unknown): FakeResult => ({ data, error: null });
 
@@ -82,8 +83,9 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("the Open App label follows the user's language", () => {
-  it("the three languages have their own label", () => {
+  it("the three languages have their own label and invitation text", () => {
     expect(new Set(Object.values(LABELS)).size).toBe(3);
+    expect(new Set(Object.values(MESSAGES).map((m) => m.bot.inviteOpen)).size).toBe(3);
   });
 
   describe.each(Object.entries(LABELS))("%s", (lang, label) => {
@@ -93,8 +95,9 @@ describe("the Open App label follows the user's language", () => {
       expect(h.menuButtons).toEqual([{ type: "web_app", text: label, web_app: { url: "https://app.test" } }]);
     });
 
-    it("/start invite_…: the invitation button", async () => {
+    it("/start invite_…: the invitation text and button", async () => {
       await run("/start invite_abc", lang);
+      expect(h.sent.map((m) => m.text)).toEqual([MESSAGES[lang as keyof typeof MESSAGES].bot.inviteOpen]);
       expect(appButtons()).toEqual([{ text: label, web_app: { url: "https://app.test/invite/abc" } }]);
     });
 

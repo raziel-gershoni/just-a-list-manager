@@ -116,7 +116,7 @@ function registerBotHandlers(botInstance: TelegramBot) {
       const token = startParam.replace("invite_", "");
       await botInstance.sendMessage(
         chatId,
-        `Open the app to accept the invitation:`,
+        getMsg(language, "bot.inviteOpen"),
         {
           reply_markup: {
             inline_keyboard: [
@@ -311,9 +311,10 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
       });
       return;
     }
+    // No owner row either, so the tapper's Telegram language again.
     if (!collab) {
       await bot.answerCallbackQuery(query.id, {
-        text: "Request not found.",
+        text: getMsg(query.from.language_code, "bot.requestNotFound"),
       });
       return;
     }
@@ -324,11 +325,12 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
       lists?: { name?: string; users?: { telegram_id?: number; language?: string } };
     };
 
-    // Verify the callback sender is the list owner
+    // Verify the callback sender is the list owner. The tapper is not the owner here, so
+    // answer in the tapper's Telegram language.
     const ownerTelegramId = collabData.lists?.users?.telegram_id;
     if (!query.from?.id || query.from.id !== ownerTelegramId) {
       await bot.answerCallbackQuery(query.id, {
-        text: "Only the list owner can approve or decline.",
+        text: getMsg(query.from?.language_code, "bot.ownerOnlyDecision"),
       });
       return;
     }
@@ -359,7 +361,7 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
     // tell nobody and leave the owner's message alone.
     if (!updatedRow) {
       console.warn("[Bot] Join request was gone before the status update, collaboratorId:", collaboratorId);
-      await bot.answerCallbackQuery(query.id, { text: "Request not found." });
+      await bot.answerCallbackQuery(query.id, { text: getMsg(ownerLang, "bot.requestNotFound") });
       return;
     }
 
@@ -373,7 +375,7 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
             {
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: "Open List", web_app: { url: getAppUrl() } }],
+                  [{ text: getMsg(requesterLang, "bot.openAppButton"), web_app: { url: getAppUrl() } }],
                 ],
               },
             }
@@ -391,7 +393,7 @@ export async function handleCallbackQuery(query: CallbackQuery): Promise<void> {
 
     // Update the owner's message
     await bot.answerCallbackQuery(query.id, {
-      text: isApprove ? "Approved!" : "Declined.",
+      text: getMsg(ownerLang, isApprove ? "bot.approvedToast" : "bot.declinedToast"),
     });
 
     // Edit the original message to reflect the decision

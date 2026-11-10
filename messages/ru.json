@@ -205,6 +205,11 @@
     "listReady": "«{listName}» готов! ✅ Ваша очередь — {senderName}.",
     "openList": "Открыть список",
     "openAppButton": "Открыть приложение",
+    "inviteOpen": "Откройте приложение, чтобы принять приглашение:",
+    "requestNotFound": "Запрос не найден.",
+    "ownerOnlyDecision": "Одобрить или отклонить запрос может только владелец списка.",
+    "approvedToast": "Одобрено!",
+    "declinedToast": "Отклонено.",
     "remindersRemoved": "Напоминаний в приложении больше нет."
   },
   "categories": {

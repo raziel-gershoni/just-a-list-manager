@@ -12,7 +12,7 @@ const h = vi.hoisted(() => ({
   fake: null as unknown as { client: unknown; calls: { table: string; op: string; values?: unknown; filters: string[] }[] },
   answers: [] as { id: string; options: unknown }[],
   textEdits: [] as { text: string; options: unknown }[],
-  sends: [] as { chatId: number; text: string }[],
+  sends: [] as { chatId: number; text: string; buttons?: unknown[] }[],
   sendError: null as Error | null,
 }));
 
@@ -33,9 +33,10 @@ vi.mock("node-telegram-bot-api", () => ({
       h.textEdits.push({ text, options });
       return true;
     }
-    async sendMessage(chatId: number, text: string) {
+    async sendMessage(chatId: number, text: string, options?: { reply_markup?: { inline_keyboard?: unknown[][] } }) {
       if (h.sendError) throw h.sendError;
-      h.sends.push({ chatId, text });
+      const buttons = options?.reply_markup?.inline_keyboard?.flat();
+      h.sends.push(buttons ? { chatId, text, buttons } : { chatId, text });
       return {};
     }
   },
@@ -73,10 +74,10 @@ function use(opts: { collab?: unknown; readError?: unknown; updateError?: unknow
   }) as typeof h.fake;
 }
 
-function tap(data: string): CallbackQuery {
+function tap(data: string, from: { id?: number; language_code?: string } = {}): CallbackQuery {
   return {
     id: "cb-1",
-    from: { id: OWNER_TG, is_bot: false, first_name: "Owner", language_code: "ru" },
+    from: { id: OWNER_TG, is_bot: false, first_name: "Owner", language_code: "ru", ...from },
     chat_instance: "ci-1",
     data,
     message: { message_id: 42, date: 0, chat: { id: OWNER_TG, type: "private" as const } },
@@ -105,18 +106,62 @@ describe("handleCallbackQuery: Approve / Decline a join request", () => {
     expect(updates()[0].values).toEqual({ status: "approved" });
     expect(updates()[0].filters).toContain("eq:id=c1");
     expect(h.sends).toEqual([
-      { chatId: REQUESTER_TG, text: en.share.approvedMessage.replace("{listName}", "Groceries") },
+      {
+        chatId: REQUESTER_TG,
+        text: en.share.approvedMessage.replace("{listName}", "Groceries"),
+        buttons: [{ text: en.bot.openAppButton, web_app: { url: "https://app.test" } }],
+      },
     ]);
-    expect(h.answers).toEqual([{ id: "cb-1", options: { text: "Approved!" } }]);
+    expect(h.answers).toEqual([{ id: "cb-1", options: { text: he.bot.approvedToast } }]);
     expect(h.textEdits).toHaveLength(1);
   });
 
-  it("still says 'Request not found.' for a request that is really gone, and logs no error", async () => {
+  // Three different languages: the requester's row says Russian, the owner's row Hebrew and
+  // the owner's Telegram client English, so each string shows whose language it used.
+  it("approve: the requester's message and button are in the requester's language, the toast in the owner's", async () => {
+    use({ collab: { ...COLLAB, users: { ...COLLAB.users, language: "ru" } } });
+
+    await handleCallbackQuery(tap("approve:c1", { language_code: "en" }));
+
+    expect(h.sends).toEqual([
+      {
+        chatId: REQUESTER_TG,
+        text: ru.share.approvedMessage.replace("{listName}", "Groceries"),
+        buttons: [{ text: ru.bot.openAppButton, web_app: { url: "https://app.test" } }],
+      },
+    ]);
+    expect(h.answers).toEqual([{ id: "cb-1", options: { text: he.bot.approvedToast } }]);
+  });
+
+  it("decline: the toast is in the owner's language", async () => {
+    use();
+
+    await handleCallbackQuery(tap("decline:c1", { language_code: "en" }));
+
+    expect(updates()[0].values).toEqual({ status: "declined" });
+    expect(h.answers).toEqual([{ id: "cb-1", options: { text: he.bot.declinedToast } }]);
+  });
+
+  it.each(["approve", "decline"])(
+    "%s by someone who is not the owner: refused in the tapper's Telegram language, nothing changes",
+    async (action) => {
+      use();
+
+      await handleCallbackQuery(tap(`${action}:c1`, { id: 555, language_code: "ru" }));
+
+      expect(h.answers).toEqual([{ id: "cb-1", options: { text: ru.bot.ownerOnlyDecision } }]);
+      expect(updates()).toEqual([]);
+      expect(h.sends).toEqual([]);
+      expect(h.textEdits).toEqual([]);
+    }
+  );
+
+  it("a request that is really gone says requestNotFound in the tapper's Telegram language, and logs no error", async () => {
     use({ collab: null });
 
     await handleCallbackQuery(tap("approve:c1"));
 
-    expect(h.answers).toEqual([{ id: "cb-1", options: { text: "Request not found." } }]);
+    expect(h.answers).toEqual([{ id: "cb-1", options: { text: ru.bot.requestNotFound } }]);
     expect(console.error).not.toHaveBeenCalled();
     expect(updates()).toEqual([]);
   });
@@ -129,7 +174,7 @@ describe("handleCallbackQuery: Approve / Decline a join request", () => {
       await handleCallbackQuery(tap(`${action}:c1`));
 
       expect(console.warn).toHaveBeenCalledWith("[Bot] Join request was gone before the status update, collaboratorId:", "c1");
-      expect(h.answers).toEqual([{ id: "cb-1", options: { text: "Request not found." } }]);
+      expect(h.answers).toEqual([{ id: "cb-1", options: { text: he.bot.requestNotFound } }]);
       expect(h.sends).toEqual([]);
       expect(h.textEdits).toEqual([]);
     }
