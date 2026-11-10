@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   if (authHeader?.startsWith("Bearer ")) {
     const existingToken = authHeader.slice(7);
     try {
-      // Accept tokens within 10-minute grace period past expiry
+      // Accept tokens up to REFRESH_TOLERANCE_SECONDS (7 days) past expiry
       const { payload } = await jwtVerify(existingToken, getJwtSecret(), {
         clockTolerance: REFRESH_TOLERANCE_SECONDS,
       });

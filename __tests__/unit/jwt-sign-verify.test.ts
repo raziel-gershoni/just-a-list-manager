@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { SignJWT, jwtVerify } from "jose";
 
 vi.mock("@/src/lib/env", () => ({
@@ -54,5 +56,10 @@ describe("tokens signed and verified with the real jose", () => {
     await expect(jwtVerify(unsigned, getJwtSecret())).rejects.toMatchObject({
       code: "ERR_JOSE_NOT_SUPPORTED",
     });
+  });
+
+  it("the refresh route hands the shared tolerance to jwtVerify", () => {
+    const src = readFileSync(join(process.cwd(), "app/api/auth/token/route.ts"), "utf8");
+    expect(src).toMatch(/jwtVerify\(existingToken,\s*getJwtSecret\(\),\s*\{\s*clockTolerance:\s*REFRESH_TOLERANCE_SECONDS,?\s*\}\)/);
   });
 });
