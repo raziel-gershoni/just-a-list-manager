@@ -71,25 +71,29 @@ export default function SortableListCard({
   );
 
   return (
-    <div
-      ref={setCardRef}
-      className={`touch-pan-y select-none transition-transform duration-150 ${isDragSource ? "opacity-50 scale-[1.02] shadow-lg rounded-2xl" : ""}`}
-    >
-      <ListCard
-        id={id}
-        name={name}
-        type={type}
-        icon={icon}
-        color={color}
-        activeCount={activeCount}
-        completedCount={completedCount}
-        isShared={isShared}
-        role={role}
-        onClick={onClick}
-        onEdit={onEdit}
-        onDelete={onDelete}
-        onArchive={onArchive}
-      />
+    <div ref={setCardRef} className="touch-pan-y select-none">
+      {/* The drag look and its transition sit on this inner div. dnd-kit 0.4+ copies the ref
+          element's computed transition onto the dragged element after splitting it on commas,
+          which breaks Tailwind's cubic-bezier value, so the ref element carries no transition. */}
+      <div
+        className={`transition-transform duration-150 ${isDragSource ? "opacity-50 scale-[1.02] shadow-lg rounded-2xl" : ""}`}
+      >
+        <ListCard
+          id={id}
+          name={name}
+          type={type}
+          icon={icon}
+          color={color}
+          activeCount={activeCount}
+          completedCount={completedCount}
+          isShared={isShared}
+          role={role}
+          onClick={onClick}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onArchive={onArchive}
+        />
+      </div>
     </div>
   );
 }

@@ -37,11 +37,13 @@ export function useListsDragDrop<T extends ReorderableList>({
   // is active and for a short window after it ends. Item rows never needed
   // this — they don't navigate.
   //
-  // `active` is deliberately NOT the only signal: @dnd-kit/dom 0.2.4's
-  // PointerSensor binds pointerup but not pointercancel, so a gesture the OS or
-  // Telegram's own swipe handling steals never produces a dragend. Window-level
-  // pointercancel/pointerup listeners below clear `active` regardless, or every
-  // card tap would stay dead until the page remounts.
+  // `active` is deliberately NOT the only signal. Since 0.3, @dnd-kit/dom's
+  // PointerSensor ends a gesture the OS or Telegram's own swipe handling steals
+  // as a canceled drag, but it hears pointercancel only through a bubbling
+  // document listener, so anything that stops the event on the way up still
+  // leaves the drag without a dragend. Window-level capture listeners for
+  // pointercancel/pointerup below clear `active` regardless, or every card tap
+  // would stay dead until the page remounts.
   const dragRef = useRef({ active: false, endedAt: 0 });
 
   const endDrag = useCallback(() => {

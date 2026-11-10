@@ -66,31 +66,35 @@ export default function SortableItem({
   });
 
   return (
-    <div
-      ref={ref}
-      className={`touch-pan-y select-none transition-transform duration-150 ${isDragSource ? "opacity-50 scale-[1.02] shadow-lg rounded-xl" : ""}`}
-    >
-      <ItemRow
-        id={id}
-        text={text}
-        completed={false}
-        isPending={isPending}
-        isDuplicate={isDuplicate}
-        creatorName={creatorName}
-        isOwnItem={isOwnItem}
-        editorName={editorName}
-        isOwnEdit={isOwnEdit}
-        onToggle={onToggle}
-        onDelete={onDelete}
-        onEdit={onEdit}
-        ordered={ordered}
-        recurring={recurring}
-        quantity={quantity}
-        onOpenDetails={onOpenDetails}
-        onRemoveDuplicates={onRemoveDuplicates}
-        isExiting={isExiting}
-        isJustAdded={isJustAdded}
-      />
+    <div ref={ref} className="touch-pan-y select-none">
+      {/* The drag look and its transition sit on this inner div. dnd-kit 0.4+ copies the ref
+          element's computed transition onto the dragged element after splitting it on commas,
+          which breaks Tailwind's cubic-bezier value, so the ref element carries no transition. */}
+      <div
+        className={`transition-transform duration-150 ${isDragSource ? "opacity-50 scale-[1.02] shadow-lg rounded-xl" : ""}`}
+      >
+        <ItemRow
+          id={id}
+          text={text}
+          completed={false}
+          isPending={isPending}
+          isDuplicate={isDuplicate}
+          creatorName={creatorName}
+          isOwnItem={isOwnItem}
+          editorName={editorName}
+          isOwnEdit={isOwnEdit}
+          onToggle={onToggle}
+          onDelete={onDelete}
+          onEdit={onEdit}
+          ordered={ordered}
+          recurring={recurring}
+          quantity={quantity}
+          onOpenDetails={onOpenDetails}
+          onRemoveDuplicates={onRemoveDuplicates}
+          isExiting={isExiting}
+          isJustAdded={isJustAdded}
+        />
+      </div>
     </div>
   );
 }
