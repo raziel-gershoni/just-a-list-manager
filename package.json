@@ -10,6 +10,9 @@
     "test": "vitest",
     "test:run": "vitest run"
   },
+  "engines": {
+    "node": "24.x"
+  },
   "dependencies": {
     "@dnd-kit/dom": "0.2.4",
     "@dnd-kit/react": "^0.2.4",
@@ -31,7 +34,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^24.19.2",
     "@types/node-telegram-bot-api": "^0.64.13",
     "@types/react": "^19",
     "@types/react-dom": "^19",

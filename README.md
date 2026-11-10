@@ -58,7 +58,7 @@ A real-time collaborative list app for two-person households, built to run both 
 
 ### Prerequisites
 
-- Node.js 20+ and npm
+- Node.js 24 and npm
 - A Supabase project (Postgres + Realtime) and its direct database connection string
 - A Telegram bot (token + webhook secret) and a Telegram OAuth client for standalone web login
 - A Google Gemini API key
