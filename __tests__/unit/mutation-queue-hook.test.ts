@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/rules-of-hooks -- react is stubbed below; the hook runs as a plain function */
-import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { AnyMock } from "../helpers/mock-fn";
 
 // Runs the real useMutationQueue over the real sync engine and executor factory, with a
 // slot-based stand-in for React (pattern: restore-skipped-flow.test.ts): refs and memoized

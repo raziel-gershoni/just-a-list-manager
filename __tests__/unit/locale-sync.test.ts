@@ -1,5 +1,5 @@
-import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { AnyMock } from "../helpers/mock-fn";
 
 // useLocaleSync only uses useState and useCallback; React's own throw outside a render.
 vi.mock("react", async (importOriginal) => ({

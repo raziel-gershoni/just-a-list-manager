@@ -1,5 +1,5 @@
-import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { AnyMock } from "../helpers/mock-fn";
 
 // The real @google/genai client runs here; only the network (global fetch) is faked.
 // This pins what actually goes over the wire, which the mocked-client tests can't see.

@@ -1,5 +1,5 @@
-import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { AnyMock } from "../helpers/mock-fn";
 import { requestToJoin, cancelJoinRequest, inviteAuthHeaders } from "@/src/utils/invite-requests";
 
 // The invite page's two requests. A server failure or a dropped connection must never be shown

@@ -1,5 +1,5 @@
-import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { AnyMock } from "../helpers/mock-fn";
 import { NextRequest } from "next/server";
 import { fakeSupabase, type FakeCall, type FakeResult } from "../helpers/fake-supabase";
 

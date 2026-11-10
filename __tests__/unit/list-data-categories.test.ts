@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/rules-of-hooks -- react is stubbed below; the hook runs as a plain function */
-import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { AnyMock } from "../helpers/mock-fn";
 
 // Runs the real useListData against a faked network with a minimal slot-based React
 // stand-in (state and refs persist across calls, callbacks follow their deps, effects run

@@ -1,5 +1,5 @@
-import type { AnyMock } from "@/__tests__/helpers/mock-fn";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { AnyMock } from "../helpers/mock-fn";
 
 // Calls the real TelegramProvider as a plain function with slot-based stand-ins for React's
 // hooks (pattern: telegram-provider-bootstrap.test.ts). Effects are recorded; the test runs
