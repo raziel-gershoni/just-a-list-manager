@@ -30,7 +30,9 @@ agent then tried to refute each finding against the real changelogs and the code
    `GOOGLE_GENAI_API_VERSION=v1beta`.
 4. **Remove the unused shadcn leftovers:** `radix-ui`, `class-variance-authority`, `clsx`,
    `tailwind-merge` and `lib/utils.ts`. `shadcn` itself stays, because `app/globals.css` imports
-   `shadcn/tailwind.css`.
+   `shadcn/tailwind.css`. `components.json` stays too, so the shadcn CLI still works. Its
+   `aliases.utils` still points at `@/lib/utils`, so `npx shadcn add <component>` brings back
+   `lib/utils.ts`, `clsx` and `tailwind-merge`. That is expected: the added component needs them.
 
 ### Small calls (mine, approved with the rest)
 
@@ -68,6 +70,12 @@ agent then tried to refute each finding against the real changelogs and the code
 | 14 | `npm audit fix` sweep (lockfile only, no `--force`) | low |
 
 Every batch passes the full gate before its commit, and commits the exact lockfile the gate ran on.
+
+`eslint` 10 is outside the peer ranges of `eslint-plugin-import`, `eslint-plugin-jsx-a11y` and
+`eslint-plugin-react` (all `^9` at most, bundled by `eslint-config-next` 16.4.6), so `npm ls` marks it
+"invalid". Lint passes and `npm ci` installs, so it stays. If a lint rule ever crashes on an ESLint 10
+API or a strict-peer install fails, drop to the fallback `eslint` ^9.39.5 until `eslint-config-next`
+raises those ranges.
 
 ## Holds
 

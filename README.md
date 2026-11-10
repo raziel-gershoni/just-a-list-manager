@@ -47,7 +47,7 @@ A real-time collaborative list app for two-person households, built to run both 
 
 ## 🛠️ Tech stack
 
-- **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn / Radix UI, dnd-kit, next-intl (en / he-RTL / ru)
+- **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 (shadcn theme tokens via `shadcn/tailwind.css`), dnd-kit, next-intl (en / he-RTL / ru)
 - **Backend / API:** Next.js Route Handlers, `node-telegram-bot-api` (webhook), Telegram Mini App `initData` + Telegram OAuth 2.0 / OIDC with PKCE, `jose` (JWT), `zod` validation
 - **Data:** Supabase Postgres with Row-Level Security, Realtime, and `pg_trgm`; `postgres` (postgres-js); custom SQL migration runner
 - **AI:** Gemini 3.8 Flash (`@google/genai`) with a strict response schema for audio → structured actions
