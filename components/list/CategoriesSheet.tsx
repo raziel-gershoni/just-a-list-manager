@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { DragDropProvider } from "@dnd-kit/react";
-import type { DragDropEvents } from "@dnd-kit/react";
+import type { DragDropEventHandlers } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 import type { ListCategory } from "@/src/types";
@@ -114,7 +114,7 @@ export default function CategoriesSheet({ listId, jwtRef, categories, counts, se
     run((jwt) => deleteCategory(listId, jwt, original.id), () => setCategories((prev) => restoreCategory(prev, original)));
   };
 
-  const onDragEnd: DragDropEvents["dragend"] = (event) => {
+  const onDragEnd: DragDropEventHandlers["onDragEnd"] = (event) => {
     if (event.canceled) return;
     const { source } = event.operation;
     const to = (source as { sortable?: { index: number } } | null)?.sortable?.index;

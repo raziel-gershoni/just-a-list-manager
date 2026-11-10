@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback } from "react";
-import type { DragDropEvents } from "@dnd-kit/react";
+import type { DragDropEventHandlers } from "@dnd-kit/react";
 import type { ItemData, CategoryGroup } from "@/src/types";
 import { getTelegramWebApp } from "@/src/types/telegram";
 import { genMutId } from "@/src/utils/list-helpers";
@@ -24,13 +24,13 @@ export function useListDragDrop({
 }: UseListDragDropParams) {
   const isDraggingRef = useRef(false);
 
-  const handleDragStart: DragDropEvents["dragstart"] = useCallback(() => {
+  const handleDragStart: DragDropEventHandlers["onDragStart"] = useCallback(() => {
     isDraggingRef.current = true;
     const tg = getTelegramWebApp();
     tg?.HapticFeedback?.impactOccurred("medium");
   }, []);
 
-  const handleDragEnd: DragDropEvents["dragend"] = useCallback(
+  const handleDragEnd: DragDropEventHandlers["onDragEnd"] = useCallback(
     (event) => {
       // The items change only at a drop, so a canceled drag has nothing to put back. A copy
       // taken at the drag's start would undo what came in during it (a collaborator's change,

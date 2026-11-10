@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, useEffect } from "react";
-import type { DragDropEvents } from "@dnd-kit/react";
+import type { DragDropEventHandlers } from "@dnd-kit/react";
 import { getTelegramWebApp } from "@/src/types/telegram";
 
 // How long after a drag gesture ends a click is still treated as its tail.
@@ -66,14 +66,14 @@ export function useListsDragDrop<T extends ReorderableList>({
     return active || Date.now() - endedAt < CLICK_SUPPRESS_MS;
   }, []);
 
-  const handleDragStart: DragDropEvents["dragstart"] = useCallback(() => {
+  const handleDragStart: DragDropEventHandlers["onDragStart"] = useCallback(() => {
     previousListsRef.current = [...lists];
     dragRef.current = { active: true, endedAt: 0 };
     const tg = getTelegramWebApp();
     tg?.HapticFeedback?.impactOccurred("medium");
   }, [lists]);
 
-  const handleDragEnd: DragDropEvents["dragend"] = useCallback(
+  const handleDragEnd: DragDropEventHandlers["onDragEnd"] = useCallback(
     (event) => {
       endDrag();
 
